@@ -1,0 +1,41 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - unconvert
+    - copyloopvar
+    - durationcheck
+    - nilerr
+  settings:
+    gosec:
+      excludes:
+        # IPv4 arithmetic converts between uint32/int64/int constantly; all
+        # conversions are range-checked at the validation layer.
+        - G115
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/meister119/leasorix

@@ -1,0 +1,131 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func envMap(m map[string]string) func(string) (string, bool) {
+	return func(k string) (string, bool) {
+		v, ok := m[k]
+		return v, ok
+	}
+}
+
+func writeFile(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "leasorix.yml")
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestDefaultsAreValid(t *testing.T) {
+	cfg, err := load("", envMap(nil))
+	if err != nil {
+		t.Fatalf("defaults invalid: %v", err)
+	}
+	if cfg.HTTP.Listen != "127.0.0.1:8067" {
+		t.Errorf("default listen = %q", cfg.HTTP.Listen)
+	}
+}
+
+func TestLoadYAMLAndEnvOverride(t *testing.T) {
+	p := writeFile(t, `
+data_dir: /tmp/lx
+log:
+  level: debug
+  format: text
+http:
+  listen: 0.0.0.0:9000
+  shutdown_timeout: 3s
+`)
+	cfg, err := load(p, envMap(map[string]string{
+		"LEASORIX_HTTP_LISTEN": "10.0.0.1:8443",
+		"LEASORIX_LOG_LEVEL":   "warn",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataDir != "/tmp/lx" {
+		t.Errorf("data_dir = %q", cfg.DataDir)
+	}
+	if cfg.Log.Format != "text" {
+		t.Errorf("log.format = %q", cfg.Log.Format)
+	}
+	if cfg.Log.Level != "warn" {
+		t.Errorf("env override for log.level not applied: %q", cfg.Log.Level)
+	}
+	if cfg.HTTP.Listen != "10.0.0.1:8443" {
+		t.Errorf("env override for http.listen not applied: %q", cfg.HTTP.Listen)
+	}
+	if cfg.HTTP.ShutdownTimeout != 3*time.Second {
+		t.Errorf("shutdown_timeout = %v", cfg.HTTP.ShutdownTimeout)
+	}
+}
+
+func TestUnknownFieldRejected(t *testing.T) {
+	p := writeFile(t, "htttp:\n  listen: x\n")
+	if _, err := load(p, envMap(nil)); err == nil {
+		t.Fatal("expected error for unknown field")
+	}
+}
+
+func TestEmptyFileUsesDefaults(t *testing.T) {
+	p := writeFile(t, "")
+	if _, err := load(p, envMap(nil)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidation(t *testing.T) {
+	cases := map[string]map[string]string{
+		"bad level":    {"LEASORIX_LOG_LEVEL": "loud"},
+		"bad format":   {"LEASORIX_LOG_FORMAT": "xml"},
+		"bad listen":   {"LEASORIX_HTTP_LISTEN": "nohostport"},
+		"empty data":   {"LEASORIX_DATA_DIR": " "},
+		"bad duration": {"LEASORIX_HTTP_SHUTDOWN_TIMEOUT": "soon"},
+		"neg duration": {"LEASORIX_HTTP_SHUTDOWN_TIMEOUT": "-1s"},
+	}
+	for name, env := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := load("", envMap(env)); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestEnvSliceAndScalars(t *testing.T) {
+	type inner struct {
+		Names []string      `yaml:"names"`
+		On    bool          `yaml:"on"`
+		N     int           `yaml:"n"`
+		U     uint16        `yaml:"u"`
+		F     float64       `yaml:"f"`
+		D     time.Duration `yaml:"d"`
+	}
+	type root struct {
+		Inner inner `yaml:"inner"`
+	}
+	var r root
+	err := applyEnv(&r, "X", envMap(map[string]string{
+		"X_INNER_NAMES": "eth0, eth1,,",
+		"X_INNER_ON":    "true",
+		"X_INNER_N":     "-4",
+		"X_INNER_U":     "67",
+		"X_INNER_F":     "0.5",
+		"X_INNER_D":     "1m",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.Inner.Names, "|") != "eth0|eth1" || !r.Inner.On || r.Inner.N != -4 ||
+		r.Inner.U != 67 || r.Inner.F != 0.5 || r.Inner.D != time.Minute {
+		t.Fatalf("unexpected result: %+v", r.Inner)
+	}
+}

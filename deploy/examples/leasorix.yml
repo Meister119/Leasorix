@@ -1,0 +1,21 @@
+# Leasorix bootstrap configuration.
+#
+# Every key can be overridden by an environment variable:
+#   LEASORIX_<SECTION>_<KEY>, e.g. LEASORIX_HTTP_LISTEN=10.0.0.5:8067
+# Scopes, reservations and options are NOT configured here; they live in the
+# database and are managed through the web UI / REST API.
+
+# Directory for the SQLite database, certificates and other state.
+data_dir: /var/lib/leasorix
+
+log:
+  # debug | info | warn | error
+  level: info
+  # json | text
+  format: json
+
+http:
+  # Management listener for UI, REST API, /healthz, /readyz and /metrics.
+  # Keep it on localhost or a dedicated management interface.
+  listen: 127.0.0.1:8067
+  shutdown_timeout: 10s
