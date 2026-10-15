@@ -14,7 +14,7 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/buildinfo.Commit=$(COMMIT) \
 	-X $(PKG)/internal/buildinfo.Date=$(DATE)
 
-.PHONY: all ci build test test-race lint vuln fmt tidy clean
+.PHONY: all ci build test test-integration fuzz lint vuln fmt tidy clean
 
 all: ci
 
@@ -29,9 +29,20 @@ build:
 test:
 	$(GO) test -race -count=1 ./...
 
+## test-integration: netns based end-to-end tests (requires root, iproute2,
+## dhclient, udhcpc, dnsmasq)
+test-integration:
+	$(GO) test -tags integration -count=1 -v ./test/integration/...
+
+## fuzz: fuzz the DHCPv4 packet path
+FUZZTIME ?= 60s
+fuzz:
+	$(GO) test -run '^$$' -fuzz FuzzHandle -fuzztime $(FUZZTIME) ./internal/dhcp4
+
 ## lint: run golangci-lint
 lint:
 	$(GOLANGCI_LINT) run ./...
+	$(GOLANGCI_LINT) run --build-tags integration ./test/...
 
 ## vuln: scan dependencies for known vulnerabilities
 vuln:

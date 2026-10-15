@@ -49,6 +49,33 @@ Zwei Ebenen (siehe DECISIONS D-003):
    Logging, Interfaces, HA-Peers.
 2. **DHCP-Konfiguration** – in der Datenbank, verwaltet über API/UI.
 
+## DHCPv4-Pfad
+
+```
+socket(s0) --> Server.readLoop --> worker (max N) --> Handler.Handle
+                                                        |  per-Client-Lock
+                                                        v
+              scope.Store.Snapshot()  <-- Link-Auswahl (giaddr/82.5/118/Interface-IP)
+                                                        |
+                                    lease.Manager.Offer/Request/Release/Decline
+                                         |  (Mutex, In-Memory-Index)
+                                         |-- ICMPProber (Konflikt-Ping, außerhalb des Locks)
+                                         `-- DBStore.Apply --> Group-Commit-Writer --> SQLite
+                                                        |
+Response (Ziel nach RFC 2131 4.1) <---------------------+
+   |-- UDP an giaddr:67 / ciaddr:68 / 255.255.255.255:68
+   `-- L2-Unicast an chaddr (AF_PACKET), Fallback Broadcast
+```
+
+- **Scopes** liegen als unveränderlicher Snapshot vor (`atomic.Pointer`),
+  jede Änderung über `scope.Store` baut ihn neu und benachrichtigt Listener
+  (z. B. den Lease-Manager bei gelöschten Scopes).
+- **Leases**: Der Lease-Manager ist die Autorität. Entscheidungen erfolgen im
+  Speicher, Persistenz über den Group-Commit-Writer; ein ACK wird erst nach
+  erfolgreichem Commit gesendet.
+- **Expiry-Worker**: alle `expiry_interval` → `active`→`expired`,
+  Löschen nach Grace-Period bzw. Decline-Zeit, abgelaufene Angebote räumen.
+
 ## Persistenz
 
 SQLite im WAL-Modus unter `<data_dir>/leasorix.db`. Schreibzugriffe laufen

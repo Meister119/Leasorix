@@ -129,3 +129,30 @@ func TestEnvSliceAndScalars(t *testing.T) {
 		t.Fatalf("unexpected result: %+v", r.Inner)
 	}
 }
+
+func TestDHCP4Config(t *testing.T) {
+	p := writeFile(t, `
+dhcp4:
+  interfaces: [eth0, eth1]
+  conflict_detection:
+    enabled: false
+`)
+	cfg, err := load(p, envMap(map[string]string{"LEASORIX_DHCP4_OFFER_TIMEOUT": "30s"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.DHCP4.Interfaces, ",") != "eth0,eth1" || cfg.DHCP4.ConflictDetection.Enabled ||
+		cfg.DHCP4.OfferTimeout != 30*time.Second || cfg.DHCP4.DeclineTime != 24*time.Hour {
+		t.Fatalf("unexpected dhcp4 config %+v", cfg.DHCP4)
+	}
+	for name, env := range map[string]map[string]string{
+		"dup iface":    {"LEASORIX_DHCP4_INTERFACES": "eth0,eth0"},
+		"zero workers": {"LEASORIX_DHCP4_WORKERS": "0"},
+		"attempts":     {"LEASORIX_DHCP4_CONFLICT_DETECTION_ATTEMPTS": "9"},
+		"grace":        {"LEASORIX_DHCP4_EXPIRED_GRACE": "0s"},
+	} {
+		if _, err := load("", envMap(env)); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}

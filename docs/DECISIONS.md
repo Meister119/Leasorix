@@ -99,3 +99,130 @@ noctx, nolintlint, unconvert, copyloopvar, durationcheck, nilerr.
 `gosec G115` (Integer-Konvertierung) ist deaktiviert, weil IPv4-Arithmetik
 ständig zwischen `uint32`/`int64` konvertiert; die Wertebereiche werden in der
 Validierung geprüft. In Tests sind `gosec` und `noctx` aus.
+
+---
+
+## D-011 – Socket-Modell DHCPv4
+
+**Entscheidung:** Pro konfiguriertem Interface ein UDP-Socket auf
+`0.0.0.0:67` mit `SO_BINDTODEVICE`, `SO_BROADCAST`, `SO_REUSEADDR` und
+`IP_PKTINFO` (Zieladresse → Server-Identifier bei Unicast/Relay;
+Quelladresse beim Senden = Server-Identifier). Antworten an Clients ohne
+Adresse und ohne Broadcast-Flag gehen per `AF_PACKET`-Datagram-Socket
+(Protokoll 0, empfängt nichts) direkt an `chaddr`/`yiaddr` (RFC 2131 4.1).
+Ist das nicht möglich (kein `CAP_NET_RAW`, kein Ethernet), wird auf Broadcast
+zurückgefallen – das erlaubt RFC 2131 ausdrücklich.
+
+**Konsequenz:** Relays müssen über eines der konfigurierten Interfaces
+erreichbar sein (Pakete auf anderen Interfaces sieht kein Socket).
+Fehlt ein Interface beim Start, wird alle 5 s erneut gebunden; `/readyz`
+meldet bis dahin "not listening".
+
+## D-012 – Client-Identität und Reservierungs-Matching
+
+Ein Client wird über Option 61 (Client Identifier) identifiziert, ohne
+Option 61 über `chaddr` (RFC 2131 4.2). Gleiche MAC mit verschiedener
+Client-ID gilt als verschiedene Clients (z. B. PXE vs. Betriebssystem).
+Reservierungen matchen zuerst über die Client-ID, dann über die MAC.
+
+## D-013 – Lease-Zustände, Zeiten und Defaults
+
+| Zustand | Bedeutung |
+|---|---|
+| `active` | gebunden bis `expires_at` |
+| `expired` | abgelaufen, wird `expired_grace` lang für denselben Client vorgehalten |
+| `released` | vom Client freigegeben, Adresse sofort wieder vergebbar, Datensatz für Affinität |
+| `declined` | DECLINE oder Konflikt, gesperrt bis `expires_at` |
+
+- `expired_grace` = 4 h (Windows-Parität).
+- `decline_time` = 24 h (Kea-Default "decline-probation-period"). Windows
+  sperrt "BAD_ADDRESS" unbefristet; 24 h ist der Kompromiss zwischen
+  Sicherheit und Pool-Verlust, konfigurierbar.
+- Angebote (OFFER) werden nur im Speicher gehalten (`offer_timeout` 60 s),
+  nicht persistiert: nach einem Neustart sind sie ohnehin wertlos.
+- Lease-Zeit 0 = unbegrenzt (`0xffffffff`, ohne T1/T2). T1 = 50 %, T2 = 87,5 %.
+- Pro Client und Scope gibt es genau eine aktive Bindung; ältere werden beim
+  ACK einer neuen Adresse auf `released` gesetzt.
+
+## D-014 – Reihenfolge der Adressauswahl
+
+Reservierung > laufendes Angebot > bestehender Lease des Clients
+(aktiv vor zuletzt genutzt) > angefragte Adresse (Option 50) > nie benutzte
+Adresse (Cursor, Round-Robin) > freigegebene Adresse (älteste zuerst) >
+abgelaufene Adresse anderer Clients (älteste zuerst, auch innerhalb der
+Grace-Period). Die letzte Stufe greift nur bei erschöpftem Pool – die
+Grace-Period ist eine Präferenz, kein harter Block, damit ein voller Pool
+nicht an vergangenen Leases verhungert.
+
+## D-015 – INIT-REBOOT/RENEW ohne eigenen Datensatz
+
+RFC 2131 empfiehlt Schweigen, wenn der Server keinen Datensatz zum Client
+hat. Leasorix bestätigt stattdessen (ACK), wenn die Adresse gültig, frei und
+nicht reserviert ist, und legt den Lease an. NAK, wenn sie einem anderen
+Client gehört, reserviert/ausgeschlossen ist oder im falschen Netz liegt.
+Schweigen nur, wenn für das Link-Netz gar kein Scope existiert.
+
+**Begründung:** Nach Datenverlust oder einem Neustart ohne Datensatz würde
+"Schweigen" den Client seine Adresse unbemerkt weiterbenutzen lassen, während
+wir sie als frei betrachten → Duplikate. Mit ACK wird die Bindung erfasst.
+In Phase 6 (HA) wird das um die Pool-Zuständigkeit des Partners ergänzt.
+
+## D-016 – Reservierungen
+
+- Reservierte Adresse muss im Subnetz liegen (nicht Netz-/Broadcast-Adresse),
+  nicht zwingend im dynamischen Bereich; sie wird nie dynamisch vergeben,
+  auch nicht innerhalb einer Exclusion.
+- Hat ein Client eine Reservierung, bekommt er ausschließlich diese Adresse.
+  Ist sie gerade an einen anderen Client vergeben oder antwortet sie auf den
+  Konflikt-Ping, bekommt der reservierte Client **kein** Angebot (Warnung im
+  Log) statt einer dynamischen Ersatzadresse. Der andere Client erhält beim
+  nächsten Renew ein NAK.
+
+## D-017 – Scope-Regeln
+
+Subnetze dürfen sich nicht überlappen, Präfix /8 bis /30, das Subnetz eines
+bestehenden Scopes ist unveränderlich (wie bei Windows), Exclusions müssen im
+Bereich liegen und dürfen sich nicht überlappen, Lease-Zeit ≥ 10 s oder 0.
+Ein deaktivierter Scope macht keine Angebote mehr und beantwortet Renewals
+mit NAK, damit Clients sich umorientieren.
+
+## D-018 – Link-Auswahl bei Relays
+
+Priorität: Option 118 (Subnet Selection, RFC 3011) > Relay-Sub-Option 5
+(Link Selection, RFC 3527) > `giaddr`. Relay-Sub-Option 11 (Server
+Identifier Override, RFC 5107) wird als Server-ID verwendet. Option 82 wird
+unverändert zurückgegeben (RFC 3046), Option 61 ebenfalls (RFC 6842).
+
+## D-019 – Konflikterkennung
+
+Standardmäßig an (500 ms, 1 Versuch) – anders als Windows (Default aus), da
+ein Duplikat teurer ist als die Verzögerung beim ersten Angebot. Geprüft
+werden nur Adressen, die der Client nicht bereits aktiv hält; ein bereits
+geprüftes Angebot wird nicht erneut gepingt. Antwortet die Adresse, wird der
+ARP-Cache geprüft: kommt die Antwort vom anfragenden Client selbst, ist es
+kein Konflikt. Konflikte werden als `declined` (für `decline_time`)
+gespeichert. Raw-ICMP-Socket bevorzugt, Fallback auf unprivilegierten
+ICMP-Socket, sonst wird die Funktion mit Warnung deaktiviert.
+
+## D-020 – Persistenz der Leases: Group Commit
+
+Ein ACK wird erst gesendet, wenn der Lease durable in SQLite steht. Alle
+Schreibvorgänge laufen über eine Writer-Goroutine, die gleichzeitige
+Anfragen zu einer Transaktion bündelt (ein `fsync` für viele Leases).
+Entscheidungen fallen im Speicher unter einem Mutex; der Speicher darf dem
+Datenträger nur in die sichere Richtung voraus sein (Adresse gilt schon als
+belegt). Schlägt ein Batch fehl, werden die Anfragen einzeln wiederholt.
+
+## D-021 – BOOTP vorerst ignoriert
+
+Pakete ohne DHCP-Message-Type (BOOTP) werden in Phase 2 verworfen; BOOTP ist
+in Phase 7 optional.
+
+## D-022 – Integrationstests mit Network Namespaces
+
+Die Tests unter `test/integration` (Build-Tag `integration`, root nötig)
+bauen pro Test eigene Namespaces + veth-Paare. Der Go-Testclient erzeugt
+seine Sockets per `setns` auf einem gesperrten OS-Thread direkt im
+Client-Namespace; dieselbe Technik dient als `DialContext` für HTTP-Checks
+in den Server-Namespace. Hinweis: busybox `udhcpc -q -R` sendet kein RELEASE
+(beendet sich vor BOUND) – der Test beendet udhcpc daher per SIGTERM.

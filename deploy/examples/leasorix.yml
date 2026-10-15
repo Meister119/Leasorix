@@ -19,3 +19,25 @@ http:
   # Keep it on localhost or a dedicated management interface.
   listen: 127.0.0.1:8067
   shutdown_timeout: 10s
+
+dhcp4:
+  # Interfaces to serve (one socket per interface, SO_BINDTODEVICE).
+  # Relayed requests must arrive on one of these interfaces as well.
+  # Empty list = DHCPv4 disabled.
+  interfaces: [eth0]
+  # Max. packets processed concurrently.
+  workers: 256
+  # How long an offered address is held for the client's REQUEST.
+  offer_timeout: 60s
+  # How long declined / conflicting addresses stay blocked.
+  decline_time: 24h
+  # How long expired/released leases are kept so the client gets its
+  # previous address back (Windows: 4h).
+  expired_grace: 4h
+  expiry_interval: 10s
+  # Ping an address before offering it (needs CAP_NET_RAW or
+  # net.ipv4.ping_group_range).
+  conflict_detection:
+    enabled: true
+    timeout: 500ms
+    attempts: 1

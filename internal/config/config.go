@@ -30,9 +30,10 @@ const EnvPrefix = "LEASORIX"
 // Config is the root of the bootstrap configuration.
 type Config struct {
 	// DataDir holds the SQLite database, certificates and other state.
-	DataDir string     `yaml:"data_dir"`
-	Log     LogConfig  `yaml:"log"`
-	HTTP    HTTPConfig `yaml:"http"`
+	DataDir string      `yaml:"data_dir"`
+	Log     LogConfig   `yaml:"log"`
+	HTTP    HTTPConfig  `yaml:"http"`
+	DHCP4   DHCP4Config `yaml:"dhcp4"`
 }
 
 // LogConfig configures structured logging.
@@ -52,6 +53,33 @@ type HTTPConfig struct {
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 }
 
+// DHCP4Config configures the DHCPv4 service.
+type DHCP4Config struct {
+	// Interfaces to serve. Each one gets its own socket bound with
+	// SO_BINDTODEVICE. Relayed traffic must arrive on one of them, too.
+	// Empty = DHCPv4 service disabled.
+	Interfaces []string `yaml:"interfaces"`
+	// Workers bounds the number of packets processed concurrently.
+	Workers int `yaml:"workers"`
+	// OfferTimeout is how long an offered address is held for the client.
+	OfferTimeout time.Duration `yaml:"offer_timeout"`
+	// DeclineTime blocks declined / conflicting addresses for this long.
+	DeclineTime time.Duration `yaml:"decline_time"`
+	// ExpiredGrace keeps expired leases for the previous client this long.
+	ExpiredGrace time.Duration `yaml:"expired_grace"`
+	// ExpiryInterval is the period of the lease expiry worker.
+	ExpiryInterval time.Duration `yaml:"expiry_interval"`
+	// ConflictDetection pings addresses before offering them.
+	ConflictDetection ConflictDetectionConfig `yaml:"conflict_detection"`
+}
+
+// ConflictDetectionConfig configures ICMP conflict detection.
+type ConflictDetectionConfig struct {
+	Enabled  bool          `yaml:"enabled"`
+	Timeout  time.Duration `yaml:"timeout"`
+	Attempts int           `yaml:"attempts"`
+}
+
 // Default returns the built-in defaults.
 func Default() Config {
 	return Config{
@@ -63,6 +91,18 @@ func Default() Config {
 		HTTP: HTTPConfig{
 			Listen:          "127.0.0.1:8067",
 			ShutdownTimeout: 10 * time.Second,
+		},
+		DHCP4: DHCP4Config{
+			Workers:        256,
+			OfferTimeout:   60 * time.Second,
+			DeclineTime:    24 * time.Hour,
+			ExpiredGrace:   4 * time.Hour,
+			ExpiryInterval: 10 * time.Second,
+			ConflictDetection: ConflictDetectionConfig{
+				Enabled:  true,
+				Timeout:  500 * time.Millisecond,
+				Attempts: 1,
+			},
 		},
 	}
 }
@@ -124,5 +164,35 @@ func (c *Config) Validate() error {
 	if c.HTTP.ShutdownTimeout <= 0 {
 		errs = append(errs, errors.New("http.shutdown_timeout must be positive"))
 	}
+	errs = append(errs, c.DHCP4.validate()...)
 	return errors.Join(errs...)
+}
+
+func (d *DHCP4Config) validate() []error {
+	var errs []error
+	seen := map[string]bool{}
+	for _, n := range d.Interfaces {
+		if strings.TrimSpace(n) == "" || seen[n] {
+			errs = append(errs, fmt.Errorf("dhcp4.interfaces: empty or duplicate entry %q", n))
+		}
+		seen[n] = true
+	}
+	if d.Workers < 1 {
+		errs = append(errs, errors.New("dhcp4.workers must be at least 1"))
+	}
+	for name, v := range map[string]time.Duration{
+		"offer_timeout":   d.OfferTimeout,
+		"decline_time":    d.DeclineTime,
+		"expired_grace":   d.ExpiredGrace,
+		"expiry_interval": d.ExpiryInterval,
+	} {
+		if v <= 0 {
+			errs = append(errs, fmt.Errorf("dhcp4.%s must be positive", name))
+		}
+	}
+	cd := d.ConflictDetection
+	if cd.Enabled && (cd.Timeout <= 0 || cd.Attempts < 1 || cd.Attempts > 5) {
+		errs = append(errs, errors.New("dhcp4.conflict_detection: timeout must be positive and attempts between 1 and 5"))
+	}
+	return errs
 }
