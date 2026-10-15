@@ -13,6 +13,10 @@ log:
   level: info
   # json | text
   format: json
+  # Optional log file (default: stderr). Rotated by size.
+  # file: /var/log/leasorix/leasorixd.log
+  max_size_mb: 100
+  max_backups: 5
 
 http:
   # Management listener for UI, REST API, /healthz, /readyz and /metrics.
@@ -41,3 +45,11 @@ dhcp4:
     enabled: true
     timeout: 500ms
     attempts: 1
+
+audit:
+  # How long audit entries are kept (0 = forever). Purged every 6 hours.
+  retention: 2160h
+  # Record lease events (assign, release, decline, conflict, expire).
+  lease_events: true
+  # Also record every renewal - high volume, off by default.
+  lease_renewals: false

@@ -296,3 +296,50 @@ Allow- und Deny-Liste mit Wildcards, beide standardmäßig deaktiviert
 (Schalter in `settings`). Deny gewinnt vor Allow. Ist die Allow-Liste aktiv,
 werden nur gelistete MACs bedient. Gefilterte Clients werden für alle
 Nachrichtentypen stillschweigend ignoriert (Log auf Info-Level).
+
+---
+
+## D-028 – Audit-Log: atomar mit der Änderung
+
+- Konfigurationsänderungen schreiben ihren Audit-Eintrag **in derselben
+  Transaktion** wie die Änderung (`scope.Store.rec`). Es gibt also weder
+  Änderungen ohne Eintrag noch Einträge ohne Änderung; abgelehnte Operationen
+  hinterlassen nichts. Details enthalten `before`/`after`.
+- Lease-Events laufen als zusätzliche Ops durch den Group-Commit des
+  Lease-Writers – gleiche Atomarität, kein zusätzlicher fsync.
+- Wer: Actor + Quelle aus dem `context` (`audit.WithActor`). Die API
+  (Phase 5) setzt dort Benutzer und Client-IP; DHCP-Ereignisse laufen als
+  `dhcp` mit Quelle `<interface> [via <giaddr>]`, der Expiry-Worker als
+  `system`.
+- Lease-Renewals werden standardmäßig **nicht** auditiert
+  (`audit.lease_renewals: false`): bei 5000 Clients und 1 h Lease-Zeit wären
+  das ~10 000 Einträge pro Stunde. Zuweisung, Release, Decline, Konflikt und
+  Ablauf werden protokolliert.
+- Aufbewahrung `audit.retention` (Default 90 Tage, 0 = unbegrenzt), Purge
+  beim Start und alle 6 h in Batches à 10 000 Zeilen (kurze Schreibsperren).
+
+## D-029 – Scope-Statistik
+
+Berechnet aus dem In-Memory-Lease-Index (O(Leases + Reservierungen), nicht
+O(Poolgröße)): `usable` = Bereich − Exclusions; `in_use` = aktive Leases im
+nutzbaren Bereich; `reserved` = ungenutzte Reservierungen im nutzbaren
+Bereich; `declined` = gesperrte Adressen; `available` = Rest; Auslastung =
+(usable − available) / usable. Policy-Bereiche werden nicht gesondert
+ausgewiesen.
+
+## D-030 – Metriken
+
+Eigene Registry (kein globaler Zustand). Paketzähler je Nachrichtentyp
+(empfangen/gesendet), Drops mit Grund (`filtered`, `no_scope`,
+`no_address`, `other_server`, `not_ours`, `invalid`, `malformed`, `bootp`,
+…), interne Fehler (`persist`, `send`), Verarbeitungsdauer als Histogramm,
+Lease-Events, Commit-Dauer und Batch-Größe des Group-Commits. Scope- und
+Lease-Gauges werden erst beim Scrape berechnet (Custom Collector), damit der
+DHCP-Pfad nicht für Statistik bezahlt. Der HA-Status folgt mit Phase 6.
+
+## D-031 – Logging-Ziel und Rotation
+
+Default stderr (Container-Standard, Rotation übernimmt Docker/journald).
+Optional `log.file` mit eingebauter Größenrotation (`max_size_mb`,
+`max_backups`) ohne externe Abhängigkeit; jeder Log-Datensatz landet
+vollständig in einer Datei.

@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"net/netip"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/ip4"
 	"github.com/meister119/leasorix/internal/scope"
 	"github.com/meister119/leasorix/internal/store"
@@ -477,5 +479,103 @@ func TestCandidateRangesAndLeaseTime(t *testing.T) {
 	none := Candidate{Pool: p, Ranges: []ip4.Range{}}
 	if o := e.m.Offer(ctx, client(4), []Candidate{none}, 0); o != nil {
 		t.Fatal("offer although no range is allowed")
+	}
+}
+
+func TestScopeStats(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.scope("lan", "10.0.0.0/24", "10.0.0.10", "10.0.0.29") // 20 addresses
+	if _, err := e.scopes.AddExclusion(ctx, scope.Exclusion{ScopeID: p.ID, Start: netip.MustParseAddr("10.0.0.10"), End: netip.MustParseAddr("10.0.0.13")}); err != nil {
+		t.Fatal(err)
+	}
+	// One reservation inside the range (unused), one outside (used).
+	if _, err := e.scopes.CreateReservation(ctx, scope.Reservation{ScopeID: p.ID, IP: netip.MustParseAddr("10.0.0.20"), MAC: "aa:00:00:00:00:01"}); err != nil {
+		t.Fatal(err)
+	}
+	outside := Client{MAC: "aa:00:00:00:00:02"}
+	if _, err := e.scopes.CreateReservation(ctx, scope.Reservation{ScopeID: p.ID, IP: netip.MustParseAddr("10.0.0.200"), MAC: outside.MAC}); err != nil {
+		t.Fatal(err)
+	}
+	p = e.pool(p.ID)
+	a := e.dora(client(1), p)
+	e.dora(client(2), p)
+	e.dora(outside, p)
+	if ok, _ := e.m.Decline(ctx, client(2), p, ip("10.0.0.15")); !ok {
+		t.Fatal("decline")
+	}
+	if ok, _ := e.m.Release(ctx, client(1), a); !ok {
+		t.Fatal("release")
+	}
+	e.dora(client(3), p)
+
+	st := e.m.ScopeStats(p)
+	want := ScopeStats{Total: 20, Excluded: 4, Usable: 16, InUse: 1, Reserved: 1, Declined: 1, Available: 13, ActiveLeases: 2}
+	if st.Total != want.Total || st.Excluded != want.Excluded || st.Usable != want.Usable || st.InUse != want.InUse ||
+		st.Reserved != want.Reserved || st.Declined != want.Declined || st.Available != want.Available || st.ActiveLeases != want.ActiveLeases {
+		t.Fatalf("stats = %+v", st)
+	}
+	if st.ByState[StateActive] != 2 || st.ByState[StateReleased] != 1 || st.ByState[StateDeclined] != 1 {
+		t.Fatalf("by state = %v", st.ByState)
+	}
+	if got := st.Utilization; got < 18.74 || got > 18.76 {
+		t.Fatalf("utilization = %v", got)
+	}
+	if all := e.m.Stats(e.scopes.Snapshot()); len(all) != 1 || all[0].Name != "lan" {
+		t.Fatalf("Stats() = %+v", all)
+	}
+}
+
+func TestLeaseEventsAudited(t *testing.T) {
+	e := newEnv(t)
+	ctx := audit.WithActor(context.Background(), audit.ActorDHCP, "eth0")
+	p := e.scope("lan", "10.0.0.0/24", "10.0.0.10", "10.0.0.20")
+	log := audit.NewLog(e.db)
+	before, _ := log.Count(ctx)
+
+	c := client(1)
+	o := e.m.Offer(ctx, c, cands(p), 0)
+	if _, err := e.m.Request(ctx, c, PoolCandidate(p), o.IP); err != nil { // assign
+		t.Fatal(err)
+	}
+	if _, err := e.m.Request(ctx, c, PoolCandidate(p), o.IP); err != nil { // renew (not audited by default)
+		t.Fatal(err)
+	}
+	if _, err := e.m.Release(ctx, c, o.IP); err != nil {
+		t.Fatal(err)
+	}
+	d := client(2)
+	o = e.m.Offer(ctx, d, cands(p), 0)
+	if _, err := e.m.Decline(ctx, d, p, o.IP); err != nil {
+		t.Fatal(err)
+	}
+	f := client(3)
+	o = e.m.Offer(ctx, f, cands(p), 0)
+	if _, err := e.m.Request(ctx, f, PoolCandidate(p), o.IP); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(2 * time.Hour)
+	e.m.Expire(context.Background())
+
+	entries, err := log.List(ctx, audit.Filter{Action: "lease."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actions []string
+	for i := len(entries) - 1; i >= 0; i-- {
+		actions = append(actions, entries[i].Action)
+	}
+	got := strings.Join(actions, ",")
+	if got != "lease.assign,lease.release,lease.decline,lease.assign,lease.expire" {
+		t.Fatalf("audited lease events: %s", got)
+	}
+	if entries[len(entries)-1].Actor != audit.ActorDHCP || entries[len(entries)-1].Source != "eth0" {
+		t.Fatalf("actor/source: %+v", entries[len(entries)-1])
+	}
+	if entries[0].Actor != audit.ActorSystem {
+		t.Fatalf("expiry actor: %+v", entries[0])
+	}
+	if after, _ := log.Count(ctx); after-before != int64(len(entries)) {
+		t.Fatal("unexpected extra audit entries")
 	}
 }

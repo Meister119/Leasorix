@@ -17,6 +17,8 @@ import (
 	"golang.org/x/net/ipv4"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	"github.com/meister119/leasorix/internal/metrics"
 )
 
 // Server owns one UDP socket per configured interface. Each socket is bound
@@ -32,8 +34,12 @@ type Server struct {
 	mu    sync.Mutex
 	bound map[string]bool
 
-	raw *rawSender
+	raw     *rawSender
+	metrics *metrics.DHCP4
 }
+
+// SetMetrics enables transport metrics.
+func (s *Server) SetMetrics(m *metrics.DHCP4) { s.metrics = m }
 
 // NewServer creates a server for the given interfaces. workers bounds the
 // number of packets processed concurrently.
@@ -224,6 +230,7 @@ func (s *Server) handlePacket(ctx context.Context, ic *ifaceConn, pkt []byte, cm
 	msg, err := dhcpv4.FromBytes(pkt)
 	if err != nil {
 		s.log.Debug("dropping malformed packet", "if", ic.name, "err", err)
+		s.metrics.Dropped("malformed")
 		return
 	}
 	req := &Request{Msg: msg, IfName: ic.name, IfAddrs: ic.addresses()}
@@ -239,7 +246,10 @@ func (s *Server) handlePacket(ctx context.Context, ic *ifaceConn, pkt []byte, cm
 	}
 	if err := s.send(ic, resp); err != nil {
 		s.log.Warn("sending reply failed", "if", ic.name, "dst", resp.Dst.String(), "err", err)
+		s.metrics.Error("send")
+		return
 	}
+	s.metrics.Sent(resp.Msg.MessageType().String())
 }
 
 func (s *Server) send(ic *ifaceConn, resp *Response) error {

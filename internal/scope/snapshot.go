@@ -255,3 +255,16 @@ func buildSnapshot(version uint64, d *snapshotData) *Snapshot {
 	}
 	return snap
 }
+
+// ExcludedCount returns the number of addresses of the dynamic range that
+// are covered by exclusions.
+func (p *Pool) ExcludedCount() uint64 {
+	var n uint64
+	for _, e := range p.Exclusions {
+		start, end := max(e.Start, p.Range.Start), min(e.End, p.Range.End)
+		if start <= end {
+			n += uint64(end) - uint64(start) + 1
+		}
+	}
+	return n
+}

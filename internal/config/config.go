@@ -34,6 +34,17 @@ type Config struct {
 	Log     LogConfig   `yaml:"log"`
 	HTTP    HTTPConfig  `yaml:"http"`
 	DHCP4   DHCP4Config `yaml:"dhcp4"`
+	Audit   AuditConfig `yaml:"audit"`
+}
+
+// AuditConfig configures the audit log.
+type AuditConfig struct {
+	// Retention is how long audit entries are kept; 0 keeps them forever.
+	Retention time.Duration `yaml:"retention"`
+	// LeaseEvents records lease assign/release/decline/conflict/expire.
+	LeaseEvents bool `yaml:"lease_events"`
+	// LeaseRenewals additionally records every renewal (high volume).
+	LeaseRenewals bool `yaml:"lease_renewals"`
 }
 
 // LogConfig configures structured logging.
@@ -42,6 +53,12 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 	// Format is json or text.
 	Format string `yaml:"format"`
+	// File writes logs to this file instead of stderr, rotated by size.
+	File string `yaml:"file"`
+	// MaxSizeMB rotates the log file when it exceeds this size.
+	MaxSizeMB int `yaml:"max_size_mb"`
+	// MaxBackups is the number of rotated files to keep.
+	MaxBackups int `yaml:"max_backups"`
 }
 
 // HTTPConfig configures the management listener (UI, REST API, health, metrics).
@@ -85,8 +102,14 @@ func Default() Config {
 	return Config{
 		DataDir: "/var/lib/leasorix",
 		Log: LogConfig{
-			Level:  "info",
-			Format: "json",
+			Level:      "info",
+			Format:     "json",
+			MaxSizeMB:  100,
+			MaxBackups: 5,
+		},
+		Audit: AuditConfig{
+			Retention:   90 * 24 * time.Hour,
+			LeaseEvents: true,
 		},
 		HTTP: HTTPConfig{
 			Listen:          "127.0.0.1:8067",
@@ -163,6 +186,15 @@ func (c *Config) Validate() error {
 	}
 	if c.HTTP.ShutdownTimeout <= 0 {
 		errs = append(errs, errors.New("http.shutdown_timeout must be positive"))
+	}
+	if c.Log.File != "" && c.Log.MaxSizeMB < 1 {
+		errs = append(errs, errors.New("log.max_size_mb must be at least 1"))
+	}
+	if c.Log.MaxBackups < 0 {
+		errs = append(errs, errors.New("log.max_backups must not be negative"))
+	}
+	if c.Audit.Retention < 0 {
+		errs = append(errs, errors.New("audit.retention must not be negative (0 = keep forever)"))
 	}
 	errs = append(errs, c.DHCP4.validate()...)
 	return errors.Join(errs...)

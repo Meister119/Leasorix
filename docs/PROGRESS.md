@@ -8,7 +8,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 1 – Fundament | ✅ abgeschlossen |
 | 2 – DHCPv4-Kern | ✅ abgeschlossen |
 | 3 – Optionen, Klassen, Policies, Filter | ✅ abgeschlossen |
-| 4 – Audit, Statistiken, Metriken | offen |
+| 4 – Audit, Statistiken, Metriken | ✅ abgeschlossen |
 | 5 – REST-API, Auth, Web-UI | offen |
 | 6 – Hochverfügbarkeit | offen |
 | 7 – Komfort & Kompatibilität | offen |
@@ -128,3 +128,38 @@ in [DECISIONS.md](DECISIONS.md).
 - Gesperrte MAC bekommt keine Antwort, andere Clients werden bedient ✅
 - Standardoptionen (Router, DNS, Domain, NTP) kommen bei udhcpc an ✅
 - Unit-, Integrationstests und Lint grün.
+
+## Phase 4 – Audit, Statistiken, Metriken
+
+**Umgesetzt**
+- `internal/audit`: Einträge (Zeit, Actor, Quelle, Aktion, Objekt, Details
+  als JSON), Actor über `context`, Abfrage mit Filtern (Zeitraum, Actor,
+  Aktions-Präfix, Objekt) und Keyset-Pagination, Purge.
+- Alle Konfig-Mutationen (Scopes, Exclusions, Reservierungen, Optionen,
+  Optionsdefinitionen, Klassen, Policies, Filter, Filter-Schalter) schreiben
+  atomar einen Audit-Eintrag mit before/after.
+- Lease-Events (assign, renew optional, release, decline, conflict, expire)
+  im Audit-Log über den Group-Commit.
+- Scope-Statistik (`lease.Manager.Stats`): Gesamt, ausgeschlossen, nutzbar,
+  belegt, reserviert, gesperrt, frei, Auslastung %, Leases je Zustand.
+- Prometheus: `leasorix_dhcp4_packets_received_total{type}`,
+  `…_packets_sent_total{type}`, `…_packets_dropped_total{reason}`,
+  `…_errors_total{kind}`, `…_request_duration_seconds{type}`,
+  `leasorix_lease_events_total{event}`, `leasorix_lease_commit_duration_seconds`,
+  `leasorix_lease_commit_batch_size`, `leasorix_scope_addresses{kind}`,
+  `leasorix_scope_utilization_ratio`, `leasorix_leases{state}`.
+- Retention: `audit.retention` + Purge-Job; optionale Logdatei mit
+  Größenrotation (`log.file`, `max_size_mb`, `max_backups`).
+
+**Akzeptanz**
+- Audit-Einträge entstehen bei jeder Mutation: `TestEveryMutationIsAudited`
+  prüft alle 22 Mutationsarten (genau ein Eintrag, Actor/Quelle aus dem
+  Context), abgelehnte Operationen schreiben nichts ✅
+- Metriken erscheinen in `/metrics`: App-Test (Scope-Gauges) und
+  Integrationstest nach echtem DHCP-Verkehr (Paketzähler, Latenz,
+  Lease-Events, Auslastung 0.1 bei 1/10 belegt) ✅
+- Lease-Events landen mit Actor `dhcp` und Quelle `s0` im Audit-Log ✅
+
+**Hinweise**
+- Der HA-Status als Metrik kommt mit Phase 6 (HA existiert noch nicht).
+- Audit-Abfrage per API/UI folgt in Phase 5.
