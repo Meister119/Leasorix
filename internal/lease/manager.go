@@ -1,0 +1,672 @@
+package lease
+
+import (
+	"context"
+	"log/slog"
+	"sort"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/meister119/leasorix/internal/ip4"
+	"github.com/meister119/leasorix/internal/scope"
+)
+
+// Config tunes lease handling.
+type Config struct {
+	// OfferTimeout is how long an offered address stays reserved for the
+	// client waiting for its DHCPREQUEST.
+	OfferTimeout time.Duration
+	// DeclineTime is how long a declined / conflicting address is blocked.
+	DeclineTime time.Duration
+	// ExpiredGrace is how long expired and released records are kept so the
+	// same client gets its previous address back.
+	ExpiredGrace time.Duration
+	// ExpiryInterval is the period of the expiry worker.
+	ExpiryInterval time.Duration
+}
+
+// DefaultConfig returns the default lease settings.
+func DefaultConfig() Config {
+	return Config{
+		OfferTimeout:   60 * time.Second,
+		DeclineTime:    24 * time.Hour,
+		ExpiredGrace:   4 * time.Hour,
+		ExpiryInterval: 10 * time.Second,
+	}
+}
+
+// Prober performs conflict detection before an address is offered.
+type Prober interface {
+	// InUse reports whether ip already answers on the network. clientMAC is
+	// the requesting client; a reply from that very client is no conflict.
+	InUse(ctx context.Context, ip uint32, clientMAC string) bool
+}
+
+type offerKey struct {
+	key     ClientKey
+	scopeID int64
+}
+
+type offer struct {
+	ip      uint32
+	scopeID int64
+	key     ClientKey
+	expires time.Time
+	probed  bool
+}
+
+// Manager is the authoritative in-memory lease table. All decisions are made
+// under a single mutex; persistence happens outside the lock through the
+// group-commit writer. Memory may run ahead of disk only in the conservative
+// direction (an address is considered used before its record is durable).
+type Manager struct {
+	cfg    Config
+	log    *slog.Logger
+	db     *DBStore
+	prober Prober
+	now    func() time.Time
+
+	mu       sync.Mutex
+	leases   map[uint32]*Lease
+	byClient map[ClientKey]map[uint32]*Lease
+	byScope  map[int64]map[uint32]*Lease
+	offers   map[uint32]*offer
+	offerBy  map[offerKey]*offer
+	cursor   map[int64]uint32
+
+	clientLocks keyedMutex
+}
+
+// NewManager creates a manager. prober may be nil (conflict detection off).
+func NewManager(cfg Config, log *slog.Logger, db *DBStore, prober Prober) *Manager {
+	return &Manager{
+		cfg:      cfg,
+		log:      log,
+		db:       db,
+		prober:   prober,
+		now:      time.Now,
+		leases:   map[uint32]*Lease{},
+		byClient: map[ClientKey]map[uint32]*Lease{},
+		byScope:  map[int64]map[uint32]*Lease{},
+		offers:   map[uint32]*offer{},
+		offerBy:  map[offerKey]*offer{},
+		cursor:   map[int64]uint32{},
+	}
+}
+
+// SetClock overrides the time source (tests).
+func (m *Manager) SetClock(now func() time.Time) { m.now = now }
+
+// Load reads all leases from the database into memory.
+func (m *Manager) Load(ctx context.Context) error {
+	all, err := m.db.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range all {
+		l := all[i]
+		m.putLocked(&l)
+	}
+	m.log.Info("leases loaded", "count", len(all))
+	return nil
+}
+
+// Run starts the persistence writer and the expiry worker.
+func (m *Manager) Run(ctx context.Context) error {
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return m.db.Run(gctx) })
+	g.Go(func() error {
+		t := time.NewTicker(m.cfg.ExpiryInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-gctx.Done():
+				return nil
+			case <-t.C:
+				m.Expire(gctx)
+			}
+		}
+	})
+	return g.Wait()
+}
+
+// LockClient serialises processing for one client. It returns the unlock
+// function.
+func (m *Manager) LockClient(c Client) func() { return m.clientLocks.Lock(string(c.Key())) }
+
+// ---- index maintenance (caller holds m.mu) ---------------------------------
+
+func (m *Manager) putLocked(l *Lease) {
+	if old := m.leases[l.IP]; old != nil {
+		m.unindexLocked(old)
+	}
+	m.leases[l.IP] = l
+	if m.byScope[l.ScopeID] == nil {
+		m.byScope[l.ScopeID] = map[uint32]*Lease{}
+	}
+	m.byScope[l.ScopeID][l.IP] = l
+	if l.State != StateDeclined {
+		k := l.Key()
+		if m.byClient[k] == nil {
+			m.byClient[k] = map[uint32]*Lease{}
+		}
+		m.byClient[k][l.IP] = l
+	}
+}
+
+func (m *Manager) unindexLocked(l *Lease) {
+	if s := m.byScope[l.ScopeID]; s != nil {
+		delete(s, l.IP)
+		if len(s) == 0 {
+			delete(m.byScope, l.ScopeID)
+		}
+	}
+	k := l.Key()
+	if c := m.byClient[k]; c != nil {
+		delete(c, l.IP)
+		if len(c) == 0 {
+			delete(m.byClient, k)
+		}
+	}
+}
+
+func (m *Manager) removeLocked(ip uint32) {
+	if l := m.leases[ip]; l != nil {
+		m.unindexLocked(l)
+		delete(m.leases, ip)
+	}
+}
+
+func (m *Manager) setOfferLocked(key ClientKey, scopeID int64, ip uint32, probed bool, now time.Time) {
+	ok := offerKey{key, scopeID}
+	if prev := m.offerBy[ok]; prev != nil && prev.ip != ip {
+		delete(m.offers, prev.ip)
+	}
+	o := &offer{ip: ip, scopeID: scopeID, key: key, expires: now.Add(m.cfg.OfferTimeout), probed: probed}
+	m.offers[ip] = o
+	m.offerBy[ok] = o
+}
+
+func (m *Manager) dropOfferLocked(key ClientKey, scopeID int64) {
+	ok := offerKey{key, scopeID}
+	if o := m.offerBy[ok]; o != nil {
+		delete(m.offerBy, ok)
+		if cur := m.offers[o.ip]; cur == o {
+			delete(m.offers, o.ip)
+		}
+	}
+}
+
+// effectiveState accounts for leases that ran out but were not yet
+// processed by the expiry worker.
+func effectiveState(l *Lease, now time.Time) State {
+	if l.State == StateActive && !l.Expires.After(now) {
+		return StateExpired
+	}
+	return l.State
+}
+
+func (m *Manager) validOfferLocked(ip uint32, now time.Time) *offer {
+	if o := m.offers[ip]; o != nil && o.expires.After(now) {
+		return o
+	}
+	return nil
+}
+
+// checkAddressLocked decides whether ip in pool p may be bound to client c.
+// offered=true means we offered ip to c ourselves, which lifts the affinity
+// protection of expired records of other clients.
+func (m *Manager) checkAddressLocked(p *scope.Pool, c Client, ip uint32, offered bool, now time.Time) (bool, string) {
+	if !p.Enabled {
+		return false, "scope is disabled"
+	}
+	if !p.InSubnet(ip) {
+		return false, "address not in scope subnet"
+	}
+	key := c.Key()
+	res := p.ReservationFor(c.MAC, c.ClientID)
+	if res != nil && ip4.MustFromAddr(res.IP) != ip {
+		return false, "client has a reservation for " + res.IP.String()
+	}
+	if r := p.ReservationAt(ip); r != nil && r != res {
+		return false, "address is reserved for another client"
+	}
+	if res == nil && !p.Dynamic(ip) {
+		return false, "address is outside the dynamic range or excluded"
+	}
+	if l := m.leases[ip]; l != nil && (l.State == StateDeclined || l.Key() != key) {
+		switch effectiveState(l, now) {
+		case StateActive:
+			return false, "address is leased to another client"
+		case StateDeclined:
+			if l.Expires.After(now) {
+				return false, "address is declined / in conflict"
+			}
+		case StateExpired:
+			if !offered && l.Expires.Add(m.cfg.ExpiredGrace).After(now) {
+				return false, "address is held for its previous client"
+			}
+		case StateReleased:
+		}
+	}
+	if o := m.validOfferLocked(ip, now); o != nil && o.key != key {
+		return false, "address is offered to another client"
+	}
+	return true, ""
+}
+
+func (m *Manager) ownsActiveLocked(key ClientKey, ip uint32, now time.Time) bool {
+	l := m.leases[ip]
+	return l != nil && l.State != StateDeclined && l.Key() == key && effectiveState(l, now) == StateActive
+}
+
+// ---- DISCOVER ----------------------------------------------------------------
+
+// Offer is the result of a successful address selection.
+type Offer struct {
+	IP          uint32
+	Pool        *scope.Pool
+	Reservation *scope.Reservation
+	// LeaseTime is the lease duration to announce (0 = unlimited).
+	LeaseTime time.Duration
+}
+
+// Offer selects an address for a DHCPDISCOVER. pools are the candidate
+// scopes of the client's link in preference order; requested is option 50
+// (0 if absent). It returns nil if no address is available.
+//
+// Selection order: reservation > outstanding offer > existing lease of the
+// client > requested address > never used address > released address >
+// oldest expired address. New addresses are probed for conflicts first.
+func (m *Manager) Offer(ctx context.Context, c Client, pools []*scope.Pool, requested uint32) *Offer {
+	key := c.Key()
+	skip := map[uint32]bool{}
+	for range 8 {
+		m.mu.Lock()
+		now := m.now()
+		p, ip, res, probed := m.chooseLocked(c, pools, requested, skip, now)
+		if p == nil {
+			m.mu.Unlock()
+			return nil
+		}
+		needProbe := !probed && !m.ownsActiveLocked(key, ip, now)
+		m.setOfferLocked(key, p.ID, ip, true, now)
+		m.mu.Unlock()
+
+		if needProbe && m.prober != nil && m.prober.InUse(ctx, ip, c.MAC) {
+			m.log.Warn("address conflict detected, address blocked", "ip", ip4.String(ip), "scope", p.Name, "client", c.MAC)
+			skip[ip] = true
+			m.mu.Lock()
+			m.dropOfferLocked(key, p.ID)
+			var op *Op
+			if res == nil {
+				now = m.now()
+				l := &Lease{IP: ip, ScopeID: p.ID, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
+				m.putLocked(l)
+				o := Upsert(*l)
+				op = &o
+			}
+			m.mu.Unlock()
+			if op != nil {
+				if err := m.db.Apply(ctx, *op); err != nil {
+					m.log.Error("persisting conflict record", "ip", ip4.String(ip), "err", err)
+				}
+			}
+			if res != nil {
+				m.log.Warn("reserved address is in use by another device; client gets no offer", "ip", ip4.String(ip), "client", c.MAC)
+				return nil
+			}
+			continue
+		}
+		return &Offer{IP: ip, Pool: p, Reservation: res, LeaseTime: p.LeaseTime}
+	}
+	return nil
+}
+
+// chooseLocked returns the pool and address to offer. probed reports whether
+// the address was already probed for this client (outstanding offer).
+func (m *Manager) chooseLocked(c Client, pools []*scope.Pool, requested uint32, skip map[uint32]bool, now time.Time) (*scope.Pool, uint32, *scope.Reservation, bool) {
+	key := c.Key()
+	usable := func(p *scope.Pool, ip uint32) bool {
+		if skip[ip] {
+			return false
+		}
+		ok, _ := m.checkAddressLocked(p, c, ip, false, now)
+		return ok
+	}
+
+	// 1. Reservation.
+	for _, p := range pools {
+		if res := p.ReservationFor(c.MAC, c.ClientID); res != nil {
+			ip := ip4.MustFromAddr(res.IP)
+			if !usable(p, ip) {
+				m.log.Warn("reserved address currently unavailable", "ip", res.IP, "client", c.MAC)
+				return nil, 0, nil, false
+			}
+			o := m.offerBy[offerKey{key, p.ID}]
+			return p, ip, res, o != nil && o.ip == ip && o.probed && o.expires.After(now)
+		}
+	}
+	// 2. Outstanding offer.
+	for _, p := range pools {
+		if o := m.offerBy[offerKey{key, p.ID}]; o != nil && o.expires.After(now) && usable(p, o.ip) {
+			return p, o.ip, nil, o.probed
+		}
+	}
+	// 3. Existing lease of the client: active first, then most recently updated.
+	var (
+		bestPool  *scope.Pool
+		bestLease *Lease
+	)
+	for _, p := range pools {
+		for ip, l := range m.byClient[key] {
+			if l.ScopeID != p.ID || !usable(p, ip) {
+				continue
+			}
+			if bestLease == nil || betterAffinity(l, bestLease, now) {
+				bestPool, bestLease = p, l
+			}
+		}
+	}
+	if bestLease != nil {
+		return bestPool, bestLease.IP, nil, false
+	}
+	// 4. Requested address.
+	if requested != 0 {
+		for _, p := range pools {
+			if p.InSubnet(requested) && usable(p, requested) {
+				return p, requested, nil, false
+			}
+		}
+	}
+	// 5. Free address.
+	for _, p := range pools {
+		if !p.Enabled {
+			continue
+		}
+		if ip, ok := m.findFreeLocked(p, key, skip, now); ok {
+			return p, ip, nil, false
+		}
+	}
+	return nil, 0, nil, false
+}
+
+func betterAffinity(a, b *Lease, now time.Time) bool {
+	aa, ba := effectiveState(a, now) == StateActive, effectiveState(b, now) == StateActive
+	if aa != ba {
+		return aa
+	}
+	return a.Updated.After(b.Updated)
+}
+
+func (m *Manager) findFreeLocked(p *scope.Pool, key ClientKey, skip map[uint32]bool, now time.Time) (uint32, bool) {
+	r := p.Range
+	ip := m.cursor[p.ID]
+	if !r.Contains(ip) {
+		ip = r.Start
+	}
+	size := r.Size()
+	for i := uint64(0); i < size; i++ {
+		if !skip[ip] && m.leases[ip] == nil && p.Dynamic(ip) {
+			if o := m.validOfferLocked(ip, now); o == nil || o.key == key {
+				next := ip + 1
+				if next > r.End || next == 0 {
+					next = r.Start
+				}
+				m.cursor[p.ID] = next
+				return ip, true
+			}
+		}
+		if ip == r.End {
+			ip = r.Start
+		} else {
+			ip++
+		}
+	}
+	// Pool has no untouched address left: reuse released, then expired
+	// records of other clients (oldest first).
+	var released, expired *Lease
+	for ip, l := range m.byScope[p.ID] {
+		if skip[ip] || !p.Dynamic(ip) || l.State == StateDeclined || l.Key() == key {
+			continue
+		}
+		if o := m.validOfferLocked(ip, now); o != nil && o.key != key {
+			continue
+		}
+		switch effectiveState(l, now) {
+		case StateReleased:
+			if released == nil || l.Updated.Before(released.Updated) {
+				released = l
+			}
+		case StateExpired:
+			if expired == nil || l.Expires.Before(expired.Expires) {
+				expired = l
+			}
+		}
+	}
+	if released != nil {
+		return released.IP, true
+	}
+	if expired != nil {
+		return expired.IP, true
+	}
+	return 0, false
+}
+
+// CancelOffer drops the client's outstanding offers (client chose another
+// server).
+func (m *Manager) CancelOffer(c Client, pools []*scope.Pool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range pools {
+		m.dropOfferLocked(c.Key(), p.ID)
+	}
+}
+
+// ---- REQUEST -------------------------------------------------------------------
+
+// Result of a DHCPREQUEST.
+type Result struct {
+	Ack   bool
+	Lease Lease
+	// LeaseTime is the granted lease duration (0 = unlimited).
+	LeaseTime time.Duration
+	Reason    string // NAK reason
+}
+
+// Request binds ip in pool p to the client if allowed and persists the lease
+// before returning. An error means the lease could not be stored; the
+// caller must not acknowledge.
+func (m *Manager) Request(ctx context.Context, c Client, p *scope.Pool, ip uint32) (Result, error) {
+	key := c.Key()
+	m.mu.Lock()
+	now := m.now().Truncate(time.Second)
+	o := m.validOfferLocked(ip, now)
+	offered := o != nil && o.key == key
+	if ok, reason := m.checkAddressLocked(p, c, ip, offered, now); !ok {
+		m.mu.Unlock()
+		return Result{Reason: reason}, nil
+	}
+	res := p.ReservationFor(c.MAC, c.ClientID)
+	hostname := c.Hostname
+	if hostname == "" && res != nil {
+		hostname = res.Hostname
+	}
+	expires := Infinite
+	if p.LeaseTime > 0 {
+		expires = now.Add(p.LeaseTime)
+	}
+	l := &Lease{
+		IP: ip, ScopeID: p.ID, MAC: c.MAC, ClientID: c.ClientID, Hostname: hostname,
+		State: StateActive, Start: now, Expires: expires, Updated: now,
+	}
+	ops := []Op{Upsert(*l)}
+	// One binding per client and scope: release older ones.
+	for oip, ol := range m.byClient[key] {
+		if oip != ip && ol.ScopeID == p.ID && ol.State == StateActive {
+			ol.State, ol.Expires, ol.Updated = StateReleased, now, now
+			ops = append(ops, Upsert(*ol))
+		}
+	}
+	m.putLocked(l)
+	m.dropOfferLocked(key, p.ID)
+	out := *l
+	m.mu.Unlock()
+
+	if err := m.db.Apply(ctx, ops...); err != nil {
+		return Result{}, err
+	}
+	return Result{Ack: true, Lease: out, LeaseTime: p.LeaseTime}, nil
+}
+
+// ---- RELEASE / DECLINE ---------------------------------------------------------
+
+// Release marks the client's lease on ip as released. It returns false if the
+// client does not hold that lease.
+func (m *Manager) Release(ctx context.Context, c Client, ip uint32) (bool, error) {
+	m.mu.Lock()
+	now := m.now().Truncate(time.Second)
+	l := m.leases[ip]
+	if l == nil || l.State == StateDeclined || l.Key() != c.Key() || effectiveState(l, now) != StateActive {
+		m.mu.Unlock()
+		return false, nil
+	}
+	l.State, l.Expires, l.Updated = StateReleased, now, now
+	op := Upsert(*l)
+	m.mu.Unlock()
+	return true, m.db.Apply(ctx, op)
+}
+
+// Decline blocks ip after the client reported it in use. It returns false if
+// the address was neither leased nor offered to the client.
+func (m *Manager) Decline(ctx context.Context, c Client, p *scope.Pool, ip uint32) (bool, error) {
+	key := c.Key()
+	m.mu.Lock()
+	now := m.now().Truncate(time.Second)
+	l := m.leases[ip]
+	owned := l != nil && l.State != StateDeclined && l.Key() == key
+	o := m.validOfferLocked(ip, now)
+	if !owned && (o == nil || o.key != key) {
+		m.mu.Unlock()
+		return false, nil
+	}
+	m.dropOfferLocked(key, p.ID)
+	d := &Lease{IP: ip, ScopeID: p.ID, MAC: c.MAC, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
+	m.putLocked(d)
+	op := Upsert(*d)
+	m.mu.Unlock()
+	return true, m.db.Apply(ctx, op)
+}
+
+// ---- expiry --------------------------------------------------------------------
+
+// Expire moves run-out leases to expired, deletes records past the grace
+// period / decline time and drops stale offers.
+func (m *Manager) Expire(ctx context.Context) {
+	m.mu.Lock()
+	now := m.now().Truncate(time.Second)
+	var ops []Op
+	var expired, purged int
+	for ip, l := range m.leases {
+		switch l.State {
+		case StateActive:
+			if !l.Expires.After(now) {
+				l.State, l.Updated = StateExpired, now
+				ops = append(ops, Upsert(*l))
+				expired++
+			}
+		case StateExpired, StateReleased:
+			if !l.Expires.Add(m.cfg.ExpiredGrace).After(now) {
+				m.removeLocked(ip)
+				ops = append(ops, Delete(ip))
+				purged++
+			}
+		case StateDeclined:
+			if !l.Expires.After(now) {
+				m.removeLocked(ip)
+				ops = append(ops, Delete(ip))
+				purged++
+			}
+		}
+	}
+	for ip, o := range m.offers {
+		if !o.expires.After(now) {
+			delete(m.offers, ip)
+			if m.offerBy[offerKey{o.key, o.scopeID}] == o {
+				delete(m.offerBy, offerKey{o.key, o.scopeID})
+			}
+		}
+	}
+	m.mu.Unlock()
+	if len(ops) == 0 {
+		return
+	}
+	if err := m.db.Apply(ctx, ops...); err != nil {
+		m.log.Error("persisting lease expiry", "err", err)
+		return
+	}
+	m.log.Debug("lease expiry run", "expired", expired, "purged", purged)
+}
+
+// ScopesChanged drops in-memory state of scopes that no longer exist (the
+// database removes their leases via ON DELETE CASCADE).
+func (m *Manager) ScopesChanged(snap *scope.Snapshot) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, ls := range m.byScope {
+		if snap.ByID(id) != nil {
+			continue
+		}
+		for ip := range ls {
+			m.removeLocked(ip)
+		}
+		delete(m.cursor, id)
+	}
+	for k, o := range m.offerBy {
+		if snap.ByID(k.scopeID) == nil {
+			delete(m.offerBy, k)
+			delete(m.offers, o.ip)
+		}
+	}
+}
+
+// ---- queries -------------------------------------------------------------------
+
+// Get returns a copy of the lease record for ip.
+func (m *Manager) Get(ip uint32) (Lease, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l := m.leases[ip]
+	if l == nil {
+		return Lease{}, false
+	}
+	return *l, true
+}
+
+// ByClient returns copies of all records of a client, sorted by IP.
+func (m *Manager) ByClient(c Client) []Lease {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Lease
+	for _, l := range m.byClient[c.Key()] {
+		out = append(out, *l)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].IP < out[j].IP })
+	return out
+}
+
+// All returns copies of all lease records sorted by IP.
+func (m *Manager) All() []Lease {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Lease, 0, len(m.leases))
+	for _, l := range m.leases {
+		out = append(out, *l)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].IP < out[j].IP })
+	return out
+}
