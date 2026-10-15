@@ -119,6 +119,14 @@ func (e *env) scope(name, cidr, start, end string) *scope.Pool {
 
 func (e *env) pool(id int64) *scope.Pool { return e.scopes.Snapshot().ByID(id) }
 
+func cands(ps ...*scope.Pool) []Candidate {
+	out := make([]Candidate, len(ps))
+	for i, p := range ps {
+		out[i] = PoolCandidate(p)
+	}
+	return out
+}
+
 func ip(s string) uint32 { return ip4.MustFromAddr(netip.MustParseAddr(s)) }
 
 func client(n int) Client {
@@ -129,11 +137,11 @@ func client(n int) Client {
 func (e *env) dora(c Client, p *scope.Pool) uint32 {
 	e.t.Helper()
 	ctx := context.Background()
-	o := e.m.Offer(ctx, c, []*scope.Pool{p}, 0)
+	o := e.m.Offer(ctx, c, cands(p), 0)
 	if o == nil {
 		e.t.Fatalf("no offer for %s", c.MAC)
 	}
-	res, err := e.m.Request(ctx, c, o.Pool, o.IP)
+	res, err := e.m.Request(ctx, c, PoolCandidate(o.Pool), o.IP)
 	if err != nil || !res.Ack {
 		e.t.Fatalf("request failed: %+v %v", res, err)
 	}
@@ -186,17 +194,17 @@ func TestExclusionsAndReservationPreferred(t *testing.T) {
 		t.Fatalf("reservation not preferred: %s", ip4.String(got))
 	}
 	// The reserved client asking for another address gets a NAK.
-	res, err := e.m.Request(ctx, c, p, ip("10.0.0.14"))
+	res, err := e.m.Request(ctx, c, PoolCandidate(p), ip("10.0.0.14"))
 	if err != nil || res.Ack {
 		t.Fatalf("reserved client got other address: %+v", res)
 	}
 	// Another client may not take the reserved address.
-	res, _ = e.m.Request(ctx, client(2), p, ip("10.0.0.100"))
+	res, _ = e.m.Request(ctx, client(2), PoolCandidate(p), ip("10.0.0.100"))
 	if res.Ack {
 		t.Fatal("reserved address given to wrong client")
 	}
 	// Excluded address cannot be requested.
-	res, _ = e.m.Request(ctx, client(2), p, ip("10.0.0.11"))
+	res, _ = e.m.Request(ctx, client(2), PoolCandidate(p), ip("10.0.0.11"))
 	if res.Ack {
 		t.Fatal("excluded address acknowledged")
 	}
@@ -206,23 +214,23 @@ func TestRequestedAddressAndNak(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	p := e.scope("lan", "10.0.0.0/24", "10.0.0.10", "10.0.0.20")
-	o := e.m.Offer(ctx, client(1), []*scope.Pool{p}, ip("10.0.0.15"))
+	o := e.m.Offer(ctx, client(1), cands(p), ip("10.0.0.15"))
 	if o == nil || o.IP != ip("10.0.0.15") {
 		t.Fatalf("requested address not honoured: %+v", o)
 	}
 	// Address offered to client 1 cannot be requested by client 2.
-	if res, _ := e.m.Request(ctx, client(2), p, ip("10.0.0.15")); res.Ack {
+	if res, _ := e.m.Request(ctx, client(2), PoolCandidate(p), ip("10.0.0.15")); res.Ack {
 		t.Fatal("offered address taken by another client")
 	}
-	if res, _ := e.m.Request(ctx, client(1), p, ip("10.0.0.15")); !res.Ack {
+	if res, _ := e.m.Request(ctx, client(1), PoolCandidate(p), ip("10.0.0.15")); !res.Ack {
 		t.Fatalf("NAK: %s", res.Reason)
 	}
 	// INIT-REBOOT for a free, valid address of an unknown client is accepted.
-	if res, _ := e.m.Request(ctx, client(3), p, ip("10.0.0.18")); !res.Ack {
+	if res, _ := e.m.Request(ctx, client(3), PoolCandidate(p), ip("10.0.0.18")); !res.Ack {
 		t.Fatalf("free address not acknowledged: %s", res.Reason)
 	}
 	// ...but not for an address outside the range.
-	if res, _ := e.m.Request(ctx, client(3), p, ip("10.0.0.50")); res.Ack {
+	if res, _ := e.m.Request(ctx, client(3), PoolCandidate(p), ip("10.0.0.50")); res.Ack {
 		t.Fatal("out-of-range address acknowledged")
 	}
 	// A client gets only one active binding per scope.
@@ -272,7 +280,7 @@ func TestReleaseDeclineAndExpiry(t *testing.T) {
 	}
 
 	// Pool is now full: a, b, declined.
-	if o := e.m.Offer(ctx, client(9), []*scope.Pool{p}, 0); o != nil {
+	if o := e.m.Offer(ctx, client(9), cands(p), 0); o != nil {
 		t.Fatalf("offer from exhausted pool: %s", ip4.String(o.IP))
 	}
 
@@ -283,7 +291,7 @@ func TestReleaseDeclineAndExpiry(t *testing.T) {
 		t.Fatalf("state after expiry = %s", l.State)
 	}
 	// Exhausted pool: oldest expired record is reused for a new client.
-	if o := e.m.Offer(ctx, client(9), []*scope.Pool{p}, 0); o == nil {
+	if o := e.m.Offer(ctx, client(9), cands(p), 0); o == nil {
 		t.Fatal("expired addresses must be reusable when the pool is exhausted")
 	}
 	e.clock.Advance(DefaultConfig().ExpiredGrace)
@@ -313,7 +321,7 @@ func TestExpiredAddressHeldForPreviousClient(t *testing.T) {
 	e.clock.Advance(2 * time.Hour)
 	e.m.Expire(ctx)
 	// Another client asking explicitly for a's address is refused during grace.
-	if res, _ := e.m.Request(ctx, client(2), p, ipA); res.Ack {
+	if res, _ := e.m.Request(ctx, client(2), PoolCandidate(p), ipA); res.Ack {
 		t.Fatal("expired address handed to another client during grace")
 	}
 	// The original client gets it back.
@@ -328,7 +336,7 @@ func TestConflictDetection(t *testing.T) {
 	p := e.scope("lan", "10.0.0.0/24", "10.0.0.10", "10.0.0.20")
 	e.prober.inUse[ip("10.0.0.10")] = true
 	c := client(1)
-	o := e.m.Offer(ctx, c, []*scope.Pool{p}, 0)
+	o := e.m.Offer(ctx, c, cands(p), 0)
 	if o == nil || o.IP != ip("10.0.0.11") {
 		t.Fatalf("conflicting address offered: %+v", o)
 	}
@@ -337,18 +345,18 @@ func TestConflictDetection(t *testing.T) {
 	}
 	// Repeated DISCOVER re-uses the probed offer without probing again.
 	n := len(e.prober.calls)
-	if o2 := e.m.Offer(ctx, c, []*scope.Pool{p}, 0); o2 == nil || o2.IP != o.IP {
+	if o2 := e.m.Offer(ctx, c, cands(p), 0); o2 == nil || o2.IP != o.IP {
 		t.Fatal("offer not stable")
 	}
 	if len(e.prober.calls) != n {
 		t.Fatal("address probed twice for the same client")
 	}
 	// Renewal of an active lease is not probed.
-	if _, err := e.m.Request(ctx, c, p, o.IP); err != nil {
+	if _, err := e.m.Request(ctx, c, PoolCandidate(p), o.IP); err != nil {
 		t.Fatal(err)
 	}
 	n = len(e.prober.calls)
-	e.m.Offer(ctx, c, []*scope.Pool{p}, 0)
+	e.m.Offer(ctx, c, cands(p), 0)
 	if len(e.prober.calls) != n {
 		t.Fatal("active lease probed")
 	}
@@ -389,10 +397,10 @@ func TestDisabledScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = e.pool(p.ID)
-	if o := e.m.Offer(ctx, client(2), []*scope.Pool{p}, 0); o != nil {
+	if o := e.m.Offer(ctx, client(2), cands(p), 0); o != nil {
 		t.Fatal("offer from disabled scope")
 	}
-	if res, _ := e.m.Request(ctx, c, p, got); res.Ack {
+	if res, _ := e.m.Request(ctx, c, PoolCandidate(p), got); res.Ack {
 		t.Fatal("renewal in disabled scope acknowledged")
 	}
 }
@@ -410,12 +418,12 @@ func TestNoDuplicatesUnderConcurrency(t *testing.T) {
 			unlock := e.m.LockClient(c)
 			defer unlock()
 			ctx := context.Background()
-			o := e.m.Offer(ctx, c, []*scope.Pool{p}, 0)
+			o := e.m.Offer(ctx, c, cands(p), 0)
 			if o == nil {
 				errs <- fmt.Errorf("client %d: no offer", i)
 				return
 			}
-			res, err := e.m.Request(ctx, c, o.Pool, o.IP)
+			res, err := e.m.Request(ctx, c, PoolCandidate(o.Pool), o.IP)
 			if err != nil || !res.Ack {
 				errs <- fmt.Errorf("client %d: %w %s", i, err, res.Reason)
 				return
@@ -438,5 +446,36 @@ func TestNoDuplicatesUnderConcurrency(t *testing.T) {
 	var count int
 	if err := e.db.R.QueryRow(`SELECT COUNT(*) FROM leases WHERE state = 'active'`).Scan(&count); err != nil || count != n {
 		t.Fatalf("persisted active leases = %d (%v)", count, err)
+	}
+}
+
+func TestCandidateRangesAndLeaseTime(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p := e.scope("lan", "10.0.0.0/24", "10.0.0.10", "10.0.0.20")
+	phones := Candidate{Pool: p, Ranges: []ip4.Range{{Start: ip("10.0.0.15"), End: ip("10.0.0.16")}}, LeaseTime: 5 * time.Minute}
+	for i := range 2 {
+		c := client(i)
+		o := e.m.Offer(ctx, c, []Candidate{phones}, 0)
+		if o == nil || o.IP < ip("10.0.0.15") || o.IP > ip("10.0.0.16") || o.LeaseTime != 5*time.Minute {
+			t.Fatalf("offer outside policy range: %+v", o)
+		}
+		res, err := e.m.Request(ctx, c, phones, o.IP)
+		if err != nil || !res.Ack || !res.Lease.Expires.Equal(e.clock.Now().Add(5*time.Minute)) || res.LeaseTime != 5*time.Minute {
+			t.Fatalf("request: %+v %v", res, err)
+		}
+	}
+	// Policy range exhausted: no fallback to the general range.
+	if o := e.m.Offer(ctx, client(3), []Candidate{phones}, 0); o != nil {
+		t.Fatalf("offer from exhausted policy range: %s", ip4.String(o.IP))
+	}
+	// Requesting an address outside the allowed ranges is refused.
+	if res, _ := e.m.Request(ctx, client(3), phones, ip("10.0.0.11")); res.Ack {
+		t.Fatal("address outside policy range acknowledged")
+	}
+	// Empty (non-nil) ranges allow nothing dynamic.
+	none := Candidate{Pool: p, Ranges: []ip4.Range{}}
+	if o := e.m.Offer(ctx, client(4), []Candidate{none}, 0); o != nil {
+		t.Fatal("offer although no range is allowed")
 	}
 }

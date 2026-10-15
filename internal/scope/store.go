@@ -55,20 +55,39 @@ func (s *Store) OnChange(fn func(*Snapshot)) {
 func (s *Store) Load(ctx context.Context) error {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
-	scopes, err := s.ListScopes(ctx)
-	if err != nil {
+	var (
+		d   snapshotData
+		err error
+	)
+	if d.scopes, err = s.ListScopes(ctx); err != nil {
 		return err
 	}
-	excl, err := s.listExclusions(ctx, 0)
-	if err != nil {
+	if d.exclusions, err = s.listExclusions(ctx, 0); err != nil {
 		return err
 	}
-	res, err := s.listReservations(ctx, 0)
-	if err != nil {
+	if d.reservations, err = s.listReservations(ctx, 0); err != nil {
+		return err
+	}
+	if d.options, err = s.queryOptions(ctx, ""); err != nil {
+		return err
+	}
+	if d.policies, err = s.ListPolicies(ctx, -1); err != nil {
+		return err
+	}
+	if d.classes, err = s.ListClasses(ctx); err != nil {
+		return err
+	}
+	if d.customDefs, err = s.listCustomDefinitions(ctx); err != nil {
+		return err
+	}
+	if d.filters, err = s.ListFilters(ctx, ""); err != nil {
+		return err
+	}
+	if d.filterCfg, err = s.readFilterSettings(ctx); err != nil {
 		return err
 	}
 	s.version++
-	snap := buildSnapshot(s.version, scopes, excl, res)
+	snap := buildSnapshot(s.version, &d)
 	s.snap.Store(snap)
 
 	s.listenMu.Lock()
@@ -224,6 +243,15 @@ func (s *Store) UpdateScope(ctx context.Context, sc Scope) (Scope, error) {
 		if n > 0 {
 			var v apperr.Validator
 			v.Add("start", "%d exclusion range(s) would lie outside the new address range", n)
+			return v.Err()
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM policy_ranges r JOIN policies p ON p.id = r.policy_id
+			WHERE p.scope_id = ? AND (r.start_ip < ? OR r.end_ip > ?)`, sc.ID, r.Start, r.End).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			var v apperr.Validator
+			v.Add("start", "%d policy range(s) would lie outside the new address range", n)
 			return v.Err()
 		}
 		sc.CreatedAt = old.CreatedAt

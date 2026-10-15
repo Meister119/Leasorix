@@ -86,24 +86,40 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 		log = log.With("giaddr", m.GatewayIPAddr.String())
 	}
 
+	snap := h.scopes.Snapshot()
+	if denied, why := snap.Filtered(c.MAC); denied {
+		log.Info("client filtered, ignoring", "reason", why)
+		return nil
+	}
+	tx := &txn{log: log, req: req, snap: snap, client: c, info: clientInfoOf(m, c)}
+
 	unlock := h.leases.LockClient(c)
 	defer unlock()
 
 	switch mt {
 	case dhcpv4.MessageTypeDiscover:
-		return h.discover(ctx, log, req, c)
+		return h.discover(ctx, tx)
 	case dhcpv4.MessageTypeRequest:
-		return h.request(ctx, log, req, c)
+		return h.request(ctx, tx)
 	case dhcpv4.MessageTypeDecline:
-		h.decline(ctx, log, req, c)
+		h.decline(ctx, tx)
 	case dhcpv4.MessageTypeRelease:
-		h.release(ctx, log, req, c)
+		h.release(ctx, tx)
 	case dhcpv4.MessageTypeInform:
-		return h.inform(log, req)
+		return h.inform(tx)
 	default:
 		log.Debug("ignoring message type")
 	}
 	return nil
+}
+
+// txn bundles the per-request context.
+type txn struct {
+	log    *slog.Logger
+	req    *Request
+	snap   *scope.Snapshot
+	client lease.Client
+	info   *scope.ClientInfo
 }
 
 func clientOf(m *dhcpv4.DHCPv4) lease.Client {
@@ -223,14 +239,15 @@ func (h *Handler) isOurID(req *Request, id net.IP) bool {
 
 // ---- DISCOVER ---------------------------------------------------------------
 
-func (h *Handler) discover(ctx context.Context, log *slog.Logger, req *Request, c lease.Client) *Response {
-	snap := h.scopes.Snapshot()
+func (h *Handler) discover(ctx context.Context, t *txn) *Response {
+	log, req, snap := t.log, t.req, t.snap
 	pools := h.linkPools(snap, req)
 	if len(pools) == 0 {
 		log.Debug("no scope for client link")
 		return nil
 	}
-	o := h.leases.Offer(ctx, c, pools, u32(req.Msg.RequestedIPAddress()))
+	cands, evals := candidates(snap, pools, t.info)
+	o := h.leases.Offer(ctx, t.client, cands, u32(req.Msg.RequestedIPAddress()))
 	if o == nil {
 		log.Warn("no address available", "scopes", poolNames(pools))
 		return nil
@@ -249,8 +266,10 @@ func (h *Handler) discover(ctx context.Context, log *slog.Logger, req *Request, 
 		log.Error("building offer", "err", err)
 		return nil
 	}
+	ev := evals[o.Pool.ID]
 	h.addLeaseOptions(reply, o.Pool, sid, o.LeaseTime)
-	log.Debug("offer", "ip", ip4.String(o.IP), "scope", o.Pool.Name)
+	addConfiguredOptions(log, reply, req.Msg, snap.Options(ev, o.Reservation))
+	log.Debug("offer", "ip", ip4.String(o.IP), "scope", o.Pool.Name, "policies", ev.PolicyNames())
 	return h.addressed(req, reply, sid)
 }
 
@@ -278,9 +297,9 @@ func (h *Handler) addLeaseOptions(reply *dhcpv4.DHCPv4, p *scope.Pool, sid netip
 
 // ---- REQUEST ----------------------------------------------------------------
 
-func (h *Handler) request(ctx context.Context, log *slog.Logger, req *Request, c lease.Client) *Response {
+func (h *Handler) request(ctx context.Context, t *txn) *Response {
+	log, req, snap, c := t.log, t.req, t.snap, t.client
 	m := req.Msg
-	snap := h.scopes.Snapshot()
 	sid := m.ServerIdentifier()
 	requested := u32(m.RequestedIPAddress())
 	ciaddr := u32(m.ClientIPAddr)
@@ -337,7 +356,9 @@ func (h *Handler) request(ctx context.Context, log *slog.Logger, req *Request, c
 	}
 	log = log.With("state", state, "ip", ip4.String(ip), "scope", pool.Name)
 
-	res, err := h.leases.Request(ctx, c, pool, ip)
+	ev := snap.Evaluate(pool, t.info)
+	cand := lease.Candidate{Pool: pool, Ranges: ev.Ranges, LeaseTime: ev.LeaseTime}
+	res, err := h.leases.Request(ctx, c, cand, ip)
 	if err != nil {
 		log.Error("persisting lease failed; not acknowledging", "err", err)
 		return nil
@@ -360,7 +381,8 @@ func (h *Handler) request(ctx context.Context, log *slog.Logger, req *Request, c
 		return nil
 	}
 	h.addLeaseOptions(reply, pool, sidAddr, res.LeaseTime)
-	log.Info("lease acknowledged", "expires", res.Lease.Expires, "hostname", res.Lease.Hostname)
+	addConfiguredOptions(log, reply, m, snap.Options(&ev, pool.ReservationFor(c.MAC, c.ClientID)))
+	log.Info("lease acknowledged", "expires", res.Lease.Expires, "hostname", res.Lease.Hostname, "policies", ev.PolicyNames())
 	return h.addressed(req, reply, sidAddr)
 }
 
@@ -399,13 +421,14 @@ func (h *Handler) nak(log *slog.Logger, req *Request, p *scope.Pool, reason stri
 
 // ---- DECLINE / RELEASE --------------------------------------------------------
 
-func (h *Handler) decline(ctx context.Context, log *slog.Logger, req *Request, c lease.Client) {
+func (h *Handler) decline(ctx context.Context, t *txn) {
+	log, req, c := t.log, t.req, t.client
 	m := req.Msg
 	if sid := m.ServerIdentifier(); !isZero(sid) && !h.isOurID(req, sid) {
 		return
 	}
 	ip := u32(m.RequestedIPAddress())
-	pool := h.scopes.Snapshot().ForAddr(ip)
+	pool := t.snap.ForAddr(ip)
 	if ip == 0 || pool == nil {
 		return
 	}
@@ -420,7 +443,8 @@ func (h *Handler) decline(ctx context.Context, log *slog.Logger, req *Request, c
 	}
 }
 
-func (h *Handler) release(ctx context.Context, log *slog.Logger, req *Request, c lease.Client) {
+func (h *Handler) release(ctx context.Context, t *txn) {
+	log, req, c := t.log, t.req, t.client
 	m := req.Msg
 	if sid := m.ServerIdentifier(); !isZero(sid) && !h.isOurID(req, sid) {
 		return
@@ -442,13 +466,14 @@ func (h *Handler) release(ctx context.Context, log *slog.Logger, req *Request, c
 
 // ---- INFORM -------------------------------------------------------------------
 
-func (h *Handler) inform(log *slog.Logger, req *Request) *Response {
+func (h *Handler) inform(t *txn) *Response {
+	log, req, snap := t.log, t.req, t.snap
 	m := req.Msg
 	ciaddr := u32(m.ClientIPAddr)
 	if ciaddr == 0 {
 		return nil
 	}
-	pool := h.scopes.Snapshot().ForAddr(ciaddr)
+	pool := snap.ForAddr(ciaddr)
 	if pool == nil || !pool.Enabled {
 		log.Debug("inform from address outside our scopes", "ciaddr", m.ClientIPAddr.String())
 		return nil
@@ -469,6 +494,8 @@ func (h *Handler) inform(log *slog.Logger, req *Request) *Response {
 	// RFC 2131 3.4: no lease time in the reply to DHCPINFORM.
 	reply.UpdateOption(dhcpv4.OptServerIdentifier(sid.AsSlice()))
 	reply.UpdateOption(dhcpv4.OptSubnetMask(net.CIDRMask(pool.Bits, 32)))
+	ev := snap.Evaluate(pool, t.info)
+	addConfiguredOptions(log, reply, m, snap.Options(&ev, pool.ReservationFor(t.client.MAC, t.client.ClientID)))
 	log.Debug("inform answered", "ciaddr", m.ClientIPAddr.String(), "scope", pool.Name)
 	if !isZero(m.GatewayIPAddr) {
 		return &Response{Msg: reply, Src: sid, Dst: netip.AddrPortFrom(addrOf(m.GatewayIPAddr), ServerPort)}
