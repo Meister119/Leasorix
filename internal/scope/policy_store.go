@@ -53,8 +53,10 @@ func (s *Store) CreateClass(ctx context.Context, c Class) (Class, error) {
 		if err != nil {
 			return err
 		}
-		c.ID, err = res.LastInsertId()
-		return err
+		if c.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "class.create", "class", c.ID, change(nil, classDetails(c)))
 	})
 	return c, err
 }
@@ -65,8 +67,11 @@ func (s *Store) UpdateClass(ctx context.Context, c Class) (Class, error) {
 		return c, err
 	}
 	err := s.mutate(ctx, func(tx *sql.Tx) error {
-		var oldName string
-		err := tx.QueryRowContext(ctx, `SELECT name FROM classes WHERE id = ?`, c.ID).Scan(&oldName)
+		var old Class
+		var oldType string
+		err := tx.QueryRowContext(ctx, `SELECT name, type, data, description FROM classes WHERE id = ?`, c.ID).Scan(&old.Name, &oldType, &old.Data, &old.Description)
+		old.Type = ClassType(oldType)
+		oldName := old.Name
 		if errors.Is(err, sql.ErrNoRows) {
 			return apperr.NotFoundf("class %d", c.ID)
 		}
@@ -84,8 +89,10 @@ func (s *Store) UpdateClass(ctx context.Context, c Class) (Class, error) {
 			c.Name, string(c.Type), c.Data, c.Description, c.ID); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE policy_conditions SET value = ? WHERE field = 'class' AND value = ? COLLATE NOCASE`, c.Name, oldName)
-		return err
+		if _, err = tx.ExecContext(ctx, `UPDATE policy_conditions SET value = ? WHERE field = 'class' AND value = ? COLLATE NOCASE`, c.Name, oldName); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "class.update", "class", c.ID, change(classDetails(old), classDetails(c)))
 	})
 	return c, err
 }
@@ -108,8 +115,10 @@ func (s *Store) DeleteClass(ctx context.Context, id int64) error {
 		if n > 0 {
 			return apperr.Conflictf("class %q is used by %d policy condition(s)", name, n)
 		}
-		_, err = tx.ExecContext(ctx, `DELETE FROM classes WHERE id = ?`, id)
-		return err
+		if _, err = tx.ExecContext(ctx, `DELETE FROM classes WHERE id = ?`, id); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "class.delete", "class", id, change(map[string]any{"name": name}, nil))
 	})
 }
 
@@ -335,7 +344,10 @@ func (s *Store) CreatePolicy(ctx context.Context, p Policy) (Policy, error) {
 		if p.ID, err = res.LastInsertId(); err != nil {
 			return err
 		}
-		return writePolicyChildren(ctx, tx, &p)
+		if err := writePolicyChildren(ctx, tx, &p); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "policy.create", "policy", p.ID, change(nil, policyDetails(p)))
 	})
 	return p, err
 }
@@ -343,7 +355,11 @@ func (s *Store) CreatePolicy(ctx context.Context, p Policy) (Policy, error) {
 // UpdatePolicy replaces a policy including its conditions and ranges. The
 // level (scope) of a policy cannot change.
 func (s *Store) UpdatePolicy(ctx context.Context, p Policy) (Policy, error) {
-	err := s.mutate(ctx, func(tx *sql.Tx) error {
+	old, err := s.GetPolicy(ctx, p.ID)
+	if err != nil {
+		return p, err
+	}
+	err = s.mutate(ctx, func(tx *sql.Tx) error {
 		var scopeID int64
 		var created int64
 		err := tx.QueryRowContext(ctx, `SELECT IFNULL(scope_id, 0), created_at FROM policies WHERE id = ?`, p.ID).Scan(&scopeID, &created)
@@ -373,13 +389,20 @@ func (s *Store) UpdatePolicy(ctx context.Context, p Policy) (Policy, error) {
 			p.Name, p.Description, p.Order, p.Enabled, p.Operator, leaseArg(p.LeaseTime), p.UpdatedAt.Unix(), p.ID); err != nil {
 			return err
 		}
-		return writePolicyChildren(ctx, tx, &p)
+		if err := writePolicyChildren(ctx, tx, &p); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "policy.update", "policy", p.ID, change(policyDetails(old), policyDetails(p)))
 	})
 	return p, err
 }
 
 // DeletePolicy removes a policy, its conditions, ranges and options.
 func (s *Store) DeletePolicy(ctx context.Context, id int64) error {
+	old, err := s.GetPolicy(ctx, id)
+	if err != nil {
+		return err
+	}
 	return s.mutate(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `DELETE FROM policies WHERE id = ?`, id)
 		if err != nil {
@@ -388,7 +411,7 @@ func (s *Store) DeletePolicy(ctx context.Context, id int64) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return apperr.NotFoundf("policy %d", id)
 		}
-		return nil
+		return s.rec(ctx, tx, "policy.delete", "policy", id, change(policyDetails(old), nil))
 	})
 }
 
@@ -451,9 +474,12 @@ func (s *Store) CreateOptionDefinition(ctx context.Context, d dhcpopt.Definition
 		if n > 0 {
 			return apperr.Conflictf("option %d or name %q already defined", d.Code, d.Name)
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO option_definitions (code, name, type, description) VALUES (?, ?, ?, ?)`,
-			d.Code, d.Name, string(d.Type), d.Description)
-		return err
+		if _, err := tx.ExecContext(ctx, `INSERT INTO option_definitions (code, name, type, description) VALUES (?, ?, ?, ?)`,
+			d.Code, d.Name, string(d.Type), d.Description); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "optiondef.create", "option_definition", d.Code,
+			change(nil, map[string]any{"code": d.Code, "name": d.Name, "type": string(d.Type)}))
 	})
 	return d, err
 }
@@ -475,7 +501,7 @@ func (s *Store) DeleteOptionDefinition(ctx context.Context, code uint8) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return apperr.NotFoundf("custom option definition %d", code)
 		}
-		return nil
+		return s.rec(ctx, tx, "optiondef.delete", "option_definition", code, nil)
 	})
 }
 
@@ -621,6 +647,15 @@ func (s *Store) SetOption(ctx context.Context, ov OptionValue) (OptionValue, err
 		}
 		ov.Value = canon
 		where, args := ownerWhere(ov.Owner)
+		var before map[string]any
+		var oldValue string
+		if err := tx.QueryRowContext(ctx, `SELECT value FROM options WHERE code = ? AND `+where, append([]any{ov.Code}, args...)...).Scan(&oldValue); err == nil {
+			old := ov
+			old.Value = oldValue
+			before = optionDetails(old)
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM options WHERE code = ? AND `+where, append([]any{ov.Code}, args...)...); err != nil { //nolint:gosec // constant fragment from ownerWhere
 			return err
 		}
@@ -630,8 +665,10 @@ func (s *Store) SetOption(ctx context.Context, ov OptionValue) (OptionValue, err
 		if err != nil {
 			return err
 		}
-		ov.ID, err = res.LastInsertId()
-		return err
+		if ov.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "option.set", "option", optionObjectID(ov.Owner, ov.Code), change(before, optionDetails(ov)))
 	})
 	return ov, err
 }
@@ -640,6 +677,15 @@ func (s *Store) SetOption(ctx context.Context, ov OptionValue) (OptionValue, err
 func (s *Store) DeleteOption(ctx context.Context, o Owner, code uint8) error {
 	return s.mutate(ctx, func(tx *sql.Tx) error {
 		where, args := ownerWhere(o)
+		old := OptionValue{Owner: o, Code: code}
+		var typ string
+		if err := tx.QueryRowContext(ctx, `SELECT type, value FROM options WHERE code = ? AND `+where, append([]any{code}, args...)...).Scan(&typ, &old.Value); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return apperr.NotFoundf("option %d of %s", code, o.Kind)
+			}
+			return err
+		}
+		old.Type = dhcpopt.Type(typ)
 		res, err := tx.ExecContext(ctx, `DELETE FROM options WHERE code = ? AND `+where, append([]any{code}, args...)...) //nolint:gosec // constant fragment from ownerWhere
 		if err != nil {
 			return err
@@ -647,7 +693,7 @@ func (s *Store) DeleteOption(ctx context.Context, o Owner, code uint8) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return apperr.NotFoundf("option %d of %s", code, o.Kind)
 		}
-		return nil
+		return s.rec(ctx, tx, "option.delete", "option", optionObjectID(o, code), change(optionDetails(old), nil))
 	})
 }
 
@@ -705,8 +751,11 @@ func (s *Store) AddFilter(ctx context.Context, f MACFilter) (MACFilter, error) {
 		if err != nil {
 			return err
 		}
-		f.ID, err = res.LastInsertId()
-		return err
+		if f.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "filter.create", "mac_filter", f.ID,
+			change(nil, map[string]any{"list": f.List, "pattern": f.Pattern, "description": f.Description}))
 	})
 	return f, err
 }
@@ -714,14 +763,18 @@ func (s *Store) AddFilter(ctx context.Context, f MACFilter) (MACFilter, error) {
 // DeleteFilter removes a filter entry.
 func (s *Store) DeleteFilter(ctx context.Context, id int64) error {
 	return s.mutate(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM mac_filters WHERE id = ?`, id)
+		var list, pattern string
+		err := tx.QueryRowContext(ctx, `SELECT list, pattern FROM mac_filters WHERE id = ?`, id).Scan(&list, &pattern)
+		if errors.Is(err, sql.ErrNoRows) {
+			return apperr.NotFoundf("filter %d", id)
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return apperr.NotFoundf("filter %d", id)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mac_filters WHERE id = ?`, id); err != nil {
+			return err
 		}
-		return nil
+		return s.rec(ctx, tx, "filter.delete", "mac_filter", id, change(map[string]any{"list": list, "pattern": pattern}, nil))
 	})
 }
 
@@ -767,6 +820,7 @@ func (s *Store) SetFilterSettings(ctx context.Context, fs FilterSettings) error 
 				return err
 			}
 		}
-		return nil
+		return s.rec(ctx, tx, "filter.settings", "settings", "filters",
+			change(nil, map[string]any{"allow_enabled": fs.AllowEnabled, "deny_enabled": fs.DenyEnabled}))
 	})
 }

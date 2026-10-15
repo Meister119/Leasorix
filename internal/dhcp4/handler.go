@@ -9,9 +9,11 @@ import (
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
 
+	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/ip4"
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/macaddr"
+	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
 )
 
@@ -56,10 +58,14 @@ type ScopeSource interface {
 // Handler implements the DHCPv4 server state machine (RFC 2131). It is
 // independent of sockets and can be driven directly in tests.
 type Handler struct {
-	log    *slog.Logger
-	scopes ScopeSource
-	leases *lease.Manager
+	log     *slog.Logger
+	scopes  ScopeSource
+	leases  *lease.Manager
+	metrics *metrics.DHCP4
 }
+
+// SetMetrics enables packet metrics.
+func (h *Handler) SetMetrics(m *metrics.DHCP4) { h.metrics = m }
 
 // NewHandler creates a handler.
 func NewHandler(log *slog.Logger, scopes ScopeSource, leases *lease.Manager) *Handler {
@@ -70,17 +76,29 @@ func NewHandler(log *slog.Logger, scopes ScopeSource, leases *lease.Manager) *Ha
 func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 	m := req.Msg
 	if m.OpCode != dhcpv4.OpcodeBootRequest {
+		h.metrics.Dropped("not_request")
 		return nil
 	}
 	mt := m.MessageType()
 	if mt == dhcpv4.MessageTypeNone {
 		// BOOTP is not supported (optional, phase 7).
+		h.metrics.Received("BOOTP")
+		h.metrics.Dropped("bootp")
 		return nil
 	}
+	start := time.Now()
+	h.metrics.Received(mt.String())
+	defer func() { h.metrics.Observe(mt.String(), time.Since(start)) }()
 	if len(m.ClientHWAddr) == 0 || len(m.ClientHWAddr) > 16 {
+		h.metrics.Dropped("invalid")
 		return nil
 	}
 	c := clientOf(m)
+	source := req.IfName
+	if !isZero(m.GatewayIPAddr) {
+		source += " via " + m.GatewayIPAddr.String()
+	}
+	ctx = audit.WithActor(ctx, audit.ActorDHCP, source)
 	log := h.log.With("type", mt.String(), "mac", c.MAC, "xid", m.TransactionID.String(), "if", req.IfName)
 	if !isZero(m.GatewayIPAddr) {
 		log = log.With("giaddr", m.GatewayIPAddr.String())
@@ -89,9 +107,10 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 	snap := h.scopes.Snapshot()
 	if denied, why := snap.Filtered(c.MAC); denied {
 		log.Info("client filtered, ignoring", "reason", why)
+		h.metrics.Dropped("filtered")
 		return nil
 	}
-	tx := &txn{log: log, req: req, snap: snap, client: c, info: clientInfoOf(m, c)}
+	tx := &txn{log: log, req: req, snap: snap, client: c, info: clientInfoOf(m, c), metrics: h.metrics}
 
 	unlock := h.leases.LockClient(c)
 	defer unlock()
@@ -115,11 +134,18 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 
 // txn bundles the per-request context.
 type txn struct {
-	log    *slog.Logger
-	req    *Request
-	snap   *scope.Snapshot
-	client lease.Client
-	info   *scope.ClientInfo
+	log     *slog.Logger
+	req     *Request
+	snap    *scope.Snapshot
+	client  lease.Client
+	info    *scope.ClientInfo
+	metrics *metrics.DHCP4
+}
+
+// drop records why a packet is not answered and returns nil.
+func (t *txn) drop(reason string) *Response {
+	t.metrics.Dropped(reason)
+	return nil
 }
 
 func clientOf(m *dhcpv4.DHCPv4) lease.Client {
@@ -244,18 +270,18 @@ func (h *Handler) discover(ctx context.Context, t *txn) *Response {
 	pools := h.linkPools(snap, req)
 	if len(pools) == 0 {
 		log.Debug("no scope for client link")
-		return nil
+		return t.drop("no_scope")
 	}
 	cands, evals := candidates(snap, pools, t.info)
 	o := h.leases.Offer(ctx, t.client, cands, u32(req.Msg.RequestedIPAddress()))
 	if o == nil {
 		log.Warn("no address available", "scopes", poolNames(pools))
-		return nil
+		return t.drop("no_address")
 	}
 	sid := h.serverID(req, o.Pool)
 	if !sid.IsValid() {
 		log.Warn("no server identifier available on interface")
-		return nil
+		return t.drop("no_server_id")
 	}
 	reply, err := dhcpv4.NewReplyFromRequest(req.Msg,
 		dhcpv4.WithMessageType(dhcpv4.MessageTypeOffer),
@@ -317,7 +343,7 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 			// The client accepted another server's offer.
 			h.leases.CancelOffer(c, pools)
 			log.Debug("client selected another server", "server_id", sid.String())
-			return nil
+			return t.drop("other_server")
 		}
 		ip = requested
 		if ip == 0 {
@@ -332,7 +358,7 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 		pools := h.linkPools(snap, req)
 		if len(pools) == 0 {
 			log.Debug("init-reboot on a link without scope; staying silent")
-			return nil
+			return t.drop("no_scope")
 		}
 		ip = requested
 		pool = poolFor(pools, ip)
@@ -348,11 +374,11 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 		pool = snap.ForAddr(ip)
 		if pool == nil {
 			log.Debug("renewal for an address outside our scopes; staying silent", "ciaddr", m.ClientIPAddr.String())
-			return nil
+			return t.drop("not_ours")
 		}
 	default:
 		log.Debug("malformed request (no server id, requested address or ciaddr)")
-		return nil
+		return t.drop("invalid")
 	}
 	log = log.With("state", state, "ip", ip4.String(ip), "scope", pool.Name)
 
@@ -361,6 +387,7 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 	res, err := h.leases.Request(ctx, c, cand, ip)
 	if err != nil {
 		log.Error("persisting lease failed; not acknowledging", "err", err)
+		t.metrics.Error("persist")
 		return nil
 	}
 	if !res.Ack {
@@ -476,7 +503,7 @@ func (h *Handler) inform(t *txn) *Response {
 	pool := snap.ForAddr(ciaddr)
 	if pool == nil || !pool.Enabled {
 		log.Debug("inform from address outside our scopes", "ciaddr", m.ClientIPAddr.String())
-		return nil
+		return t.drop("no_scope")
 	}
 	sid := h.serverID(req, pool)
 	if !sid.IsValid() {

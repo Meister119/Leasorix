@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -36,7 +37,17 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "leasorixd: %v\n", err)
 		return 1
 	}
-	log, err := logging.New(os.Stderr, cfg.Log.Level, cfg.Log.Format)
+	var out io.Writer = os.Stderr
+	if cfg.Log.File != "" {
+		rf, err := logging.OpenRotating(cfg.Log.File, cfg.Log.MaxSizeMB, cfg.Log.MaxBackups)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "leasorixd: open log file: %v\n", err)
+			return 1
+		}
+		defer rf.Close()
+		out = rf
+	}
+	log, err := logging.New(out, cfg.Log.Level, cfg.Log.Format)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "leasorixd: %v\n", err)
 		return 1

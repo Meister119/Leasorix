@@ -206,8 +206,10 @@ func (s *Store) CreateScope(ctx context.Context, sc Scope) (Scope, error) {
 		if err != nil {
 			return err
 		}
-		sc.ID, err = res.LastInsertId()
-		return err
+		if sc.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "scope.create", "scope", sc.ID, change(nil, scopeDetails(sc)))
 	})
 	return sc, err
 }
@@ -260,7 +262,10 @@ func (s *Store) UpdateScope(ctx context.Context, sc Scope) (Scope, error) {
 			UPDATE scopes SET name = ?, description = ?, start_ip = ?, end_ip = ?, lease_time = ?, enabled = ?, updated_at = ?
 			WHERE id = ?`,
 			sc.Name, sc.Description, r.Start, r.End, int64(sc.LeaseTime/time.Second), sc.Enabled, sc.UpdatedAt.Unix(), sc.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "scope.update", "scope", sc.ID, change(scopeDetails(old), scopeDetails(sc)))
 	})
 	return sc, err
 }
@@ -269,14 +274,17 @@ func (s *Store) UpdateScope(ctx context.Context, sc Scope) (Scope, error) {
 // options and leases.
 func (s *Store) DeleteScope(ctx context.Context, id int64) error {
 	return s.mutate(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM scopes WHERE id = ?`, id)
+		old, err := scanScope(tx.QueryRowContext(ctx, `SELECT `+scopeCols+` FROM scopes WHERE id = ?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return apperr.NotFoundf("scope %d", id)
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return apperr.NotFoundf("scope %d", id)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM scopes WHERE id = ?`, id); err != nil {
+			return err
 		}
-		return nil
+		return s.rec(ctx, tx, "scope.delete", "scope", id, change(scopeDetails(old), nil))
 	})
 }
 
@@ -356,8 +364,10 @@ func (s *Store) AddExclusion(ctx context.Context, e Exclusion) (Exclusion, error
 		if err != nil {
 			return err
 		}
-		e.ID, err = res.LastInsertId()
-		return err
+		if e.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "exclusion.create", "exclusion", e.ID, change(nil, exclusionDetails(e)))
 	})
 	return e, err
 }
@@ -365,14 +375,19 @@ func (s *Store) AddExclusion(ctx context.Context, e Exclusion) (Exclusion, error
 // DeleteExclusion removes an exclusion of the given scope.
 func (s *Store) DeleteExclusion(ctx context.Context, scopeID, id int64) error {
 	return s.mutate(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM exclusions WHERE id = ? AND scope_id = ?`, id, scopeID)
+		var start, end int64
+		err := tx.QueryRowContext(ctx, `SELECT start_ip, end_ip FROM exclusions WHERE id = ? AND scope_id = ?`, id, scopeID).Scan(&start, &end)
+		if errors.Is(err, sql.ErrNoRows) {
+			return apperr.NotFoundf("exclusion %d", id)
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return apperr.NotFoundf("exclusion %d", id)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM exclusions WHERE id = ?`, id); err != nil {
+			return err
 		}
-		return nil
+		old := Exclusion{ID: id, ScopeID: scopeID, Start: ip4.ToAddr(uint32(start)), End: ip4.ToAddr(uint32(end))}
+		return s.rec(ctx, tx, "exclusion.delete", "exclusion", id, change(exclusionDetails(old), nil))
 	})
 }
 
@@ -522,8 +537,10 @@ func (s *Store) CreateReservation(ctx context.Context, r Reservation) (Reservati
 		if err != nil {
 			return err
 		}
-		r.ID, err = res.LastInsertId()
-		return err
+		if r.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "reservation.create", "reservation", r.ID, change(nil, reservationDetails(r)))
 	})
 	return r, err
 }
@@ -551,7 +568,10 @@ func (s *Store) UpdateReservation(ctx context.Context, r Reservation) (Reservati
 			UPDATE reservations SET ip = ?, mac = ?, client_id = ?, hostname = ?, description = ?, updated_at = ?
 			WHERE id = ?`,
 			ip4.MustFromAddr(r.IP), r.MAC, r.ClientID, r.Hostname, r.Description, r.UpdatedAt.Unix(), r.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.rec(ctx, tx, "reservation.update", "reservation", r.ID, change(reservationDetails(old), reservationDetails(r)))
 	})
 	return r, err
 }
@@ -559,14 +579,17 @@ func (s *Store) UpdateReservation(ctx context.Context, r Reservation) (Reservati
 // DeleteReservation removes a reservation.
 func (s *Store) DeleteReservation(ctx context.Context, id int64) error {
 	return s.mutate(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM reservations WHERE id = ?`, id)
+		old, err := scanReservation(tx.QueryRowContext(ctx, `SELECT `+resCols+` FROM reservations WHERE id = ?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return apperr.NotFoundf("reservation %d", id)
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return apperr.NotFoundf("reservation %d", id)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM reservations WHERE id = ?`, id); err != nil {
+			return err
 		}
-		return nil
+		return s.rec(ctx, tx, "reservation.delete", "reservation", id, change(reservationDetails(old), nil))
 	})
 }
 

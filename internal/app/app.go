@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/meister119/leasorix/internal/api"
+	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/dhcp4"
@@ -34,6 +36,7 @@ type App struct {
 	leases *lease.Manager
 	prober *lease.ICMPProber
 	dhcp4  *dhcp4.Server
+	audit  *audit.Log
 }
 
 // New opens the database, applies migrations and constructs all components.
@@ -87,15 +90,23 @@ func (a *App) init(ctx context.Context) error {
 		DeclineTime:    d.DeclineTime,
 		ExpiredGrace:   d.ExpiredGrace,
 		ExpiryInterval: d.ExpiryInterval,
+		AuditEvents:    a.cfg.Audit.LeaseEvents,
+		AuditRenewals:  a.cfg.Audit.LeaseRenewals,
 	}, a.log.With("component", "lease"), lease.NewDBStore(a.db), prober)
+	a.leases.SetMetrics(a.metrics.NewLeases())
 	if err := a.leases.Load(ctx); err != nil {
 		return fmt.Errorf("load leases: %w", err)
 	}
 	a.scopes.OnChange(a.leases.ScopesChanged)
+	a.metrics.RegisterScopeCollector(a.scopeSamples)
+	a.audit = audit.NewLog(a.db)
 
 	if len(d.Interfaces) > 0 {
+		dm := a.metrics.NewDHCP4()
 		h := dhcp4.NewHandler(a.log.With("component", "dhcp4"), a.scopes, a.leases)
+		h.SetMetrics(dm)
 		a.dhcp4 = dhcp4.NewServer(a.log.With("component", "dhcp4"), h, d.Interfaces, d.Workers)
+		a.dhcp4.SetMetrics(dm)
 		a.health.Add("dhcp4", a.dhcp4.Ready)
 	} else {
 		a.log.Warn("no dhcp4.interfaces configured; DHCPv4 service is disabled")
@@ -108,6 +119,49 @@ func (a *App) init(ctx context.Context) error {
 	})
 	return nil
 }
+
+func (a *App) scopeSamples() []metrics.ScopeSample {
+	stats := a.leases.Stats(a.scopes.Snapshot())
+	out := make([]metrics.ScopeSample, len(stats))
+	for i, st := range stats {
+		by := make(map[string]uint64, len(st.ByState))
+		for k, v := range st.ByState {
+			by[string(k)] = v
+		}
+		out[i] = metrics.ScopeSample{
+			Scope: st.Name, Subnet: st.Subnet, Usable: st.Usable, InUse: st.InUse, Reserved: st.Reserved,
+			Declined: st.Declined, Available: st.Available, Utilization: st.Utilization / 100, ByState: by,
+		}
+	}
+	return out
+}
+
+// purgeAudit deletes audit entries older than the retention period, at
+// startup and every 6 hours.
+func (a *App) purgeAudit(ctx context.Context) error {
+	if a.cfg.Audit.Retention <= 0 {
+		return nil
+	}
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for {
+		n, err := a.audit.Purge(ctx, time.Now().Add(-a.cfg.Audit.Retention))
+		switch {
+		case err != nil && ctx.Err() == nil:
+			a.log.Error("purging audit log", "err", err)
+		case n > 0:
+			a.log.Info("purged old audit entries", "count", n, "retention", a.cfg.Audit.Retention.String())
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+		}
+	}
+}
+
+// Audit exposes the audit log.
+func (a *App) Audit() *audit.Log { return a.audit }
 
 // HTTP exposes the management server (used by tests to discover the port).
 func (a *App) HTTP() *api.Server { return a.http }
@@ -124,6 +178,7 @@ func (a *App) Run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return a.http.Run(gctx) })
 	g.Go(func() error { return a.leases.Run(gctx) })
+	g.Go(func() error { return a.purgeAudit(gctx) })
 	if a.prober != nil {
 		g.Go(func() error { return a.prober.Run(gctx) })
 	}

@@ -156,3 +156,26 @@ dhcp4:
 		}
 	}
 }
+
+func TestAuditAndLogConfig(t *testing.T) {
+	cfg, err := load("", envMap(map[string]string{
+		"LEASORIX_AUDIT_RETENTION":      "720h",
+		"LEASORIX_AUDIT_LEASE_RENEWALS": "true",
+		"LEASORIX_LOG_FILE":             "/var/log/leasorix.log",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Audit.Retention != 720*time.Hour || !cfg.Audit.LeaseRenewals || !cfg.Audit.LeaseEvents || cfg.Log.MaxSizeMB != 100 {
+		t.Fatalf("%+v %+v", cfg.Audit, cfg.Log)
+	}
+	for _, env := range []map[string]string{
+		{"LEASORIX_AUDIT_RETENTION": "-1h"},
+		{"LEASORIX_LOG_FILE": "/x", "LEASORIX_LOG_MAX_SIZE_MB": "0"},
+		{"LEASORIX_LOG_MAX_BACKUPS": "-1"},
+	} {
+		if _, err := load("", envMap(env)); err == nil {
+			t.Errorf("%v accepted", env)
+		}
+	}
+}

@@ -6,18 +6,25 @@ import (
 	"errors"
 	"time"
 
+	"github.com/meister119/leasorix/internal/audit"
+	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/store"
 )
 
 // ErrClosed is returned when the persistence writer has stopped.
 var ErrClosed = errors.New("lease store closed")
 
-// Op is one persistence operation: upsert of a lease or deletion of the
-// lease with the given IP.
+// Op is one persistence operation: upsert of a lease, deletion of the
+// lease with the given IP, or an audit entry written in the same
+// transaction.
 type Op struct {
 	Delete bool
 	Lease  Lease
+	Audit  *audit.Entry
 }
+
+// AuditOp returns an op that writes an audit entry.
+func AuditOp(e audit.Entry) Op { return Op{Audit: &e} }
 
 // Upsert returns an upsert op.
 func Upsert(l Lease) Op { return Op{Lease: l} }
@@ -39,7 +46,11 @@ type DBStore struct {
 	db      *store.DB
 	queue   chan *writeReq
 	stopped chan struct{}
+	metrics *metrics.Leases
 }
+
+// SetMetrics enables commit metrics.
+func (s *DBStore) SetMetrics(m *metrics.Leases) { s.metrics = m }
 
 // NewDBStore creates the store. Run must be started for Apply to work.
 func NewDBStore(db *store.DB) *DBStore {
@@ -127,7 +138,9 @@ func (s *DBStore) Run(ctx context.Context) error {
 	}
 }
 
-func (s *DBStore) flush(batch []*writeReq) error {
+func (s *DBStore) flush(batch []*writeReq) (err error) {
+	start := time.Now()
+	defer func() { s.metrics.Commit(time.Since(start), len(batch), err) }()
 	// Use a fresh context: a request that has been accepted must be written
 	// even if shutdown starts in the meantime.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -151,6 +164,12 @@ func (s *DBStore) flush(batch []*writeReq) error {
 		defer del.Close()
 		for _, r := range batch {
 			for _, op := range r.ops {
+				if op.Audit != nil {
+					if err := audit.Insert(ctx, tx, *op.Audit); err != nil {
+						return err
+					}
+					continue
+				}
 				l := op.Lease
 				if op.Delete {
 					if _, err := del.ExecContext(ctx, int64(l.IP)); err != nil {

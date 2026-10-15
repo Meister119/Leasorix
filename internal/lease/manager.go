@@ -9,7 +9,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/ip4"
+	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
 )
 
@@ -25,6 +27,11 @@ type Config struct {
 	ExpiredGrace time.Duration
 	// ExpiryInterval is the period of the expiry worker.
 	ExpiryInterval time.Duration
+	// AuditEvents writes lease events (assign, release, decline, conflict,
+	// expire) to the audit log.
+	AuditEvents bool
+	// AuditRenewals additionally audits every renewal (high volume).
+	AuditRenewals bool
 }
 
 // DefaultConfig returns the default lease settings.
@@ -34,6 +41,7 @@ func DefaultConfig() Config {
 		DeclineTime:    24 * time.Hour,
 		ExpiredGrace:   4 * time.Hour,
 		ExpiryInterval: 10 * time.Second,
+		AuditEvents:    true,
 	}
 }
 
@@ -118,6 +126,40 @@ type Manager struct {
 	cursor   map[cursorKey]uint32
 
 	clientLocks keyedMutex
+	metrics     *metrics.Leases
+}
+
+// SetMetrics enables lease metrics (events and commit timings).
+func (m *Manager) SetMetrics(lm *metrics.Leases) {
+	m.metrics = lm
+	m.db.SetMetrics(lm)
+}
+
+func leaseDetails(l *Lease) map[string]any {
+	d := map[string]any{
+		"ip": ip4.String(l.IP), "scope_id": l.ScopeID, "state": string(l.State),
+		"mac": l.MAC, "expires": l.Expires.Format(time.RFC3339),
+	}
+	if l.ClientID != "" {
+		d["client_id"] = l.ClientID
+	}
+	if l.Hostname != "" {
+		d["hostname"] = l.Hostname
+	}
+	return d
+}
+
+// event counts a lease event and appends its audit entry to ops.
+func (m *Manager) event(ctx context.Context, ops []Op, name string, l *Lease, extra map[string]any) []Op {
+	m.metrics.Event(name)
+	if !m.cfg.AuditEvents || (name == "renew" && !m.cfg.AuditRenewals) {
+		return ops
+	}
+	d := leaseDetails(l)
+	for k, v := range extra {
+		d[k] = v
+	}
+	return append(ops, AuditOp(audit.New(ctx, "lease."+name, "lease", ip4.String(l.IP), d)))
 }
 
 // NewManager creates a manager. prober may be nil (conflict detection off).
@@ -348,17 +390,17 @@ func (m *Manager) Offer(ctx context.Context, c Client, cands []Candidate, reques
 			skip[ip] = true
 			m.mu.Lock()
 			m.dropOfferLocked(key, p.ID)
-			var op *Op
+			var ops []Op
 			if res == nil {
 				now = m.now()
 				l := &Lease{IP: ip, ScopeID: p.ID, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
 				m.putLocked(l)
-				o := Upsert(*l)
-				op = &o
+				ops = append(ops, Upsert(*l))
+				ops = m.event(ctx, ops, "conflict", l, map[string]any{"requested_by": c.MAC})
 			}
 			m.mu.Unlock()
-			if op != nil {
-				if err := m.db.Apply(ctx, *op); err != nil {
+			if len(ops) > 0 {
+				if err := m.db.Apply(ctx, ops...); err != nil {
 					m.log.Error("persisting conflict record", "ip", ip4.String(ip), "err", err)
 				}
 			}
@@ -545,8 +587,11 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 	offered := o != nil && o.key == key
 	if ok, reason := m.checkAddressLocked(&cand, c, ip, offered, now); !ok {
 		m.mu.Unlock()
+		m.metrics.Event("nak")
 		return Result{Reason: reason}, nil
 	}
+	prev := m.leases[ip]
+	renewal := prev != nil && prev.State != StateDeclined && prev.Key() == key && effectiveState(prev, now) == StateActive
 	res := p.ReservationFor(c.MAC, c.ClientID)
 	hostname := c.Hostname
 	if hostname == "" && res != nil {
@@ -561,11 +606,17 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 		State: StateActive, Start: now, Expires: expires, Updated: now,
 	}
 	ops := []Op{Upsert(*l)}
+	if renewal {
+		ops = m.event(ctx, ops, "renew", l, nil)
+	} else {
+		ops = m.event(ctx, ops, "assign", l, nil)
+	}
 	// One binding per client and scope: release older ones.
 	for oip, ol := range m.byClient[key] {
 		if oip != ip && ol.ScopeID == p.ID && ol.State == StateActive {
 			ol.State, ol.Expires, ol.Updated = StateReleased, now, now
 			ops = append(ops, Upsert(*ol))
+			ops = m.event(ctx, ops, "release", ol, map[string]any{"reason": "superseded by " + ip4.String(ip)})
 		}
 	}
 	m.putLocked(l)
@@ -592,9 +643,9 @@ func (m *Manager) Release(ctx context.Context, c Client, ip uint32) (bool, error
 		return false, nil
 	}
 	l.State, l.Expires, l.Updated = StateReleased, now, now
-	op := Upsert(*l)
+	ops := m.event(ctx, []Op{Upsert(*l)}, "release", l, nil)
 	m.mu.Unlock()
-	return true, m.db.Apply(ctx, op)
+	return true, m.db.Apply(ctx, ops...)
 }
 
 // Decline blocks ip after the client reported it in use. It returns false if
@@ -613,9 +664,9 @@ func (m *Manager) Decline(ctx context.Context, c Client, p *scope.Pool, ip uint3
 	m.dropOfferLocked(key, p.ID)
 	d := &Lease{IP: ip, ScopeID: p.ID, MAC: c.MAC, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
 	m.putLocked(d)
-	op := Upsert(*d)
+	ops := m.event(ctx, []Op{Upsert(*d)}, "decline", d, nil)
 	m.mu.Unlock()
-	return true, m.db.Apply(ctx, op)
+	return true, m.db.Apply(ctx, ops...)
 }
 
 // ---- expiry --------------------------------------------------------------------
@@ -633,6 +684,7 @@ func (m *Manager) Expire(ctx context.Context) {
 			if !l.Expires.After(now) {
 				l.State, l.Updated = StateExpired, now
 				ops = append(ops, Upsert(*l))
+				ops = m.event(ctx, ops, "expire", l, nil)
 				expired++
 			}
 		case StateExpired, StateReleased:
