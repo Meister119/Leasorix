@@ -7,7 +7,7 @@ in [DECISIONS.md](DECISIONS.md).
 |---|---|
 | 1 – Fundament | ✅ abgeschlossen |
 | 2 – DHCPv4-Kern | ✅ abgeschlossen |
-| 3 – Optionen, Klassen, Policies, Filter | offen |
+| 3 – Optionen, Klassen, Policies, Filter | ✅ abgeschlossen |
 | 4 – Audit, Statistiken, Metriken | offen |
 | 5 – REST-API, Auth, Web-UI | offen |
 | 6 – Hochverfügbarkeit | offen |
@@ -94,3 +94,37 @@ in [DECISIONS.md](DECISIONS.md).
 **Hinweise**
 - DHCP-Optionen außer Subnetzmaske, Lease-Zeit, T1/T2 und Server-ID folgen
   in Phase 3 (Router, DNS, … aus der `options`-Tabelle).
+
+## Phase 3 – Optionen, Klassen, Policies, Filter
+
+**Umgesetzt**
+- `internal/dhcpopt`: Options-Katalog (u. a. 3, 6, 12, 15, 42, 43, 60, 66,
+  67, 119, 121, 150, 249, 252) und typisierte Werte (IP, IP-Liste, String,
+  uint8/16/32, int32, bool, Hex, Domain-Liste RFC 1035, Routen RFC 3442) mit
+  Validierung, kanonischer Textform und Wire-Kodierung. Eigene
+  Optionsdefinitionen für weitere Codes.
+- Migration 00002: `classes`, `policies`, `policy_conditions`,
+  `policy_ranges`, `option_definitions`, `mac_filters`, `settings`;
+  `options` um Policy-Owner erweitert (Down-Migration getestet).
+- `internal/scope`: CRUD für Optionswerte (Server/Scope/Policy/
+  Reservierung), Klassen, Policies (inkl. Bedingungen, Bereichen,
+  Lease-Dauer), MAC-Filter und Filter-Schalter; Snapshot enthält alles
+  vorkodiert. Auswertung: Wildcard-Matching, Policy-Evaluierung (UND/ODER,
+  `eq`/`ne`, Option 82, User-Class nach RFC 3004), Bereichsberechnung,
+  Options-Vererbung, Filterentscheidung.
+- Lease-Manager: Allokation über `Candidate` (Policy-Bereiche, Lease-Dauer
+  der Policy), Cursor pro Bereich.
+- DHCP-Handler: MAC-Filter vor jeder Verarbeitung, Policies pro Scope,
+  Optionen nach Parameter Request List, PXE-Header-Felder, Größenlimit nach
+  Option 57; Optionen auch bei INFORM.
+
+**Akzeptanz**
+- Tabellengetriebene Tests der Options-Auflösung (`TestOptionResolution`:
+  Server < Scope < Server-Policy < Scope-Policy < Reservierung, Processing
+  Order, ODER, `ne`, deaktivierte Policy, Option 82 per Hex) ✅
+- PXE-Client bekommt Boot-Optionen: udhcpc mit `-V PXEClient…` erhält
+  `tftp`, `bootfile`, `siaddr`, `boot_file`; Go-Client im PXE-Stil (Option
+  60/93/97, PRL) erhält 66/67 + Header-Felder; normaler Client nicht ✅
+- Gesperrte MAC bekommt keine Antwort, andere Clients werden bedient ✅
+- Standardoptionen (Router, DNS, Domain, NTP) kommen bei udhcpc an ✅
+- Unit-, Integrationstests und Lint grün.

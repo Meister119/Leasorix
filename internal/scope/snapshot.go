@@ -2,7 +2,9 @@ package scope
 
 import (
 	"sort"
+	"strings"
 
+	"github.com/meister119/leasorix/internal/dhcpopt"
 	"github.com/meister119/leasorix/internal/ip4"
 )
 
@@ -21,7 +23,14 @@ type Pool struct {
 	resByIP      map[uint32]*Reservation
 	resByMAC     map[string]*Reservation
 	resByCID     map[string]*Reservation
+
+	options       map[uint8][]byte
+	policies      []*PolicyView // scope level, processing order
+	generalRanges []ip4.Range   // dynamic range minus policy ranges
 }
+
+// Policies returns the scope level policies in processing order.
+func (p *Pool) Policies() []*PolicyView { return p.policies }
 
 // InSubnet reports whether ip belongs to the scope's subnet (excluding the
 // network and broadcast addresses).
@@ -69,14 +78,44 @@ func (p *Pool) Reservations() []*Reservation { return p.reservations }
 // Size returns the number of addresses in the dynamic range.
 func (p *Pool) Size() uint64 { return p.Range.Size() }
 
-// Snapshot is an immutable view of all scopes.
+// Snapshot is an immutable view of the whole DHCP configuration.
 type Snapshot struct {
 	Version uint64
 	pools   []*Pool // sorted by network
 	byID    map[int64]*Pool
+
+	serverOptions      map[uint8][]byte
+	reservationOptions map[int64]map[uint8][]byte
+	serverPolicies     []*PolicyView
+	classes            map[string]*Class // by lower-case name
+	customDefs         map[uint8]dhcpopt.Definition
+	filterSettings     FilterSettings
+	allowList          []string
+	denyList           []string
 }
 
-func emptySnapshot() *Snapshot { return &Snapshot{byID: map[int64]*Pool{}} }
+func emptySnapshot() *Snapshot {
+	return &Snapshot{
+		byID:               map[int64]*Pool{},
+		serverOptions:      map[uint8][]byte{},
+		reservationOptions: map[int64]map[uint8][]byte{},
+		classes:            map[string]*Class{},
+		customDefs:         map[uint8]dhcpopt.Definition{},
+	}
+}
+
+// snapshotData is everything loaded from the database for a snapshot.
+type snapshotData struct {
+	scopes       []Scope
+	exclusions   []Exclusion
+	reservations []Reservation
+	options      []OptionValue
+	policies     []Policy
+	classes      []Class
+	customDefs   []dhcpopt.Definition
+	filters      []MACFilter
+	filterCfg    FilterSettings
+}
 
 // Pools returns all scopes ordered by network address.
 func (s *Snapshot) Pools() []*Pool { return s.pools }
@@ -98,8 +137,10 @@ func (s *Snapshot) ForAddr(ip uint32) *Pool {
 	return nil
 }
 
-func buildSnapshot(version uint64, scopes []Scope, excl []Exclusion, res []Reservation) *Snapshot {
-	snap := &Snapshot{Version: version, byID: make(map[int64]*Pool, len(scopes))}
+func buildSnapshot(version uint64, d *snapshotData) *Snapshot {
+	snap := emptySnapshot()
+	snap.Version = version
+	scopes, excl, res := d.scopes, d.exclusions, d.reservations
 	for _, sc := range scopes {
 		network := ip4.MustFromAddr(sc.Subnet.Addr())
 		bits := sc.Subnet.Bits()
@@ -113,6 +154,7 @@ func buildSnapshot(version uint64, scopes []Scope, excl []Exclusion, res []Reser
 			resByIP:   map[uint32]*Reservation{},
 			resByMAC:  map[string]*Reservation{},
 			resByCID:  map[string]*Reservation{},
+			options:   map[uint8][]byte{},
 		}
 		snap.pools = append(snap.pools, p)
 		snap.byID[sc.ID] = p
@@ -139,6 +181,76 @@ func buildSnapshot(version uint64, scopes []Scope, excl []Exclusion, res []Reser
 		}
 		if r.ClientID != "" {
 			p.resByCID[r.ClientID] = r
+		}
+	}
+
+	for _, def := range d.customDefs {
+		snap.customDefs[def.Code] = def
+	}
+	for i := range d.classes {
+		c := &d.classes[i]
+		snap.classes[strings.ToLower(c.Name)] = c
+	}
+	policyByID := map[int64]*PolicyView{}
+	for _, pol := range d.policies {
+		pv := &PolicyView{Policy: pol, options: map[uint8][]byte{}}
+		for _, r := range pol.Ranges {
+			pv.ranges = append(pv.ranges, r.ints())
+		}
+		policyByID[pol.ID] = pv
+		if pol.ScopeID == 0 {
+			snap.serverPolicies = append(snap.serverPolicies, pv)
+		} else if p := snap.byID[pol.ScopeID]; p != nil {
+			p.policies = append(p.policies, pv)
+		}
+	}
+	byOrder := func(ps []*PolicyView) {
+		sort.SliceStable(ps, func(i, j int) bool { return ps[i].Order < ps[j].Order })
+	}
+	byOrder(snap.serverPolicies)
+	for _, p := range snap.pools {
+		byOrder(p.policies)
+		var taken []ip4.Range
+		for _, pv := range p.policies {
+			if pv.Enabled {
+				taken = append(taken, pv.ranges...)
+			}
+		}
+		p.generalRanges = subtractRanges(p.Range, taken)
+	}
+
+	for _, ov := range d.options {
+		_, wire, err := dhcpopt.Parse(ov.Type, ov.Value)
+		if err != nil {
+			continue // validated on write; skip corrupt rows
+		}
+		switch ov.Owner.Kind {
+		case OwnerServer:
+			snap.serverOptions[ov.Code] = wire
+		case OwnerScope:
+			if p := snap.byID[ov.Owner.ID]; p != nil {
+				p.options[ov.Code] = wire
+			}
+		case OwnerReservation:
+			m := snap.reservationOptions[ov.Owner.ID]
+			if m == nil {
+				m = map[uint8][]byte{}
+				snap.reservationOptions[ov.Owner.ID] = m
+			}
+			m[ov.Code] = wire
+		case OwnerPolicy:
+			if pv := policyByID[ov.Owner.ID]; pv != nil {
+				pv.options[ov.Code] = wire
+			}
+		}
+	}
+
+	snap.filterSettings = d.filterCfg
+	for _, f := range d.filters {
+		if f.List == FilterAllow {
+			snap.allowList = append(snap.allowList, f.Pattern)
+		} else {
+			snap.denyList = append(snap.denyList, f.Pattern)
 		}
 	}
 	return snap

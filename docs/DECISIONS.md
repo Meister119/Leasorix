@@ -226,3 +226,73 @@ seine Sockets per `setns` auf einem gesperrten OS-Thread direkt im
 Client-Namespace; dieselbe Technik dient als `DialContext` für HTTP-Checks
 in den Server-Namespace. Hinweis: busybox `udhcpc -q -R` sendet kein RELEASE
 (beendet sich vor BOUND) – der Test beendet udhcpc daher per SIGTERM.
+
+---
+
+## D-023 – Optionsmodell
+
+- Optionswerte werden typisiert gespeichert (`ip`, `ip-list`, `string`,
+  `uint8/16/32`, `int32`, `bool`, `hex`, `domain-list`, `routes`) – in
+  kanonischer Textform; die Wire-Kodierung entsteht beim Aufbau des
+  Snapshots. Damit sind DB-Inhalte lesbar und Export/Import (Phase 7) trivial.
+- Built-in-Katalog in `internal/dhcpopt` (RFC 2132 + 3397/3442/4833/8910,
+  Cisco 150, Microsoft 249/252). Weitere Codes nur über eigene
+  Optionsdefinitionen (Code + Name + Typ), z. B. für 224–254.
+- Vom Server verwaltete Codes sind nicht konfigurierbar: 1 (aus dem Subnetz),
+  51 (Lease-Zeit von Scope/Policy), 54, 58/59 (aus der Lease-Zeit), sowie die
+  rein clientseitigen bzw. Relay-Optionen 50, 53, 55, 57, 61, 82, 118.
+- Option 43 wird als `hex` gepflegt (herstellerspezifisch gekapselt).
+
+## D-024 – Klassen wirken über Policies (keine klassen-qualifizierten Werte)
+
+Windows kennt neben Policies auch Optionswerte, die direkt an eine
+Vendor-/User-Class gebunden sind. Leasorix bildet Klassen als benannte
+Definitionen (Typ vendor = Option 60, user = Option 77, Wildcard-Muster) ab,
+die in Policy-Bedingungen referenziert werden (`field: class`). Optionen für
+eine Klasse = Policy mit Bedingung auf die Klasse + Optionswerte an der
+Policy. Das ist ausdrucksstärker (kombinierbar mit MAC/Option 82) und
+vermeidet eine zweite, konkurrierende Vererbungsachse.
+
+**Vererbung (spezifischste gewinnt):** Server → Scope → Server-Policies →
+Scope-Policies → Reservierung. Innerhalb einer Ebene gewinnt die Policy mit
+der niedrigsten Processing Order.
+
+## D-025 – Policy-Semantik
+
+- Bedingungen auf `mac`, `client_id`, `hostname`, `vendor_class`,
+  `user_class`, `class`, `relay_circuit_id`, `relay_remote_id`,
+  `relay_subscriber_id`; Operator `eq`/`ne`; Verknüpfung UND oder ODER auf
+  oberster Ebene (keine verschachtelten Gruppen – konservativ, deckt die
+  Windows-Fälle ab).
+- Wildcards `*` und `?`, Vergleich case-insensitive. Für binäre Felder
+  (Option 82, Client-ID) vergleicht ein Wert mit Präfix `0x` gegen die
+  Hex-Darstellung.
+- Option 77 wird nach RFC 3004 zerlegt; ist der Inhalt kein gültiges
+  RFC-3004-Format (Windows-Clients), gilt er als ein einzelner Eintrag.
+- **IP-Bereiche** nur für Scope-Policies. Adressen in einem Policy-Bereich
+  bekommen ausschließlich passende Clients; nicht passende Clients bekommen
+  den Rest des Scope-Bereichs. Ist der Bereich der passenden Policy(s)
+  erschöpft, gibt es **kein** Ausweichen in den allgemeinen Bereich
+  (die Trennung ist meist gewollt, z. B. VoIP).
+- Lease-Dauer: erste passende Policy mit gesetzter Dauer (Scope-Policies
+  vor Server-Policies, jeweils nach Processing Order), sonst Scope.
+- Mindestens eine Bedingung ist Pflicht; referenzierte Klassen müssen
+  existieren, eine verwendete Klasse kann nicht gelöscht werden, eine
+  Umbenennung wird in die Bedingungen übernommen.
+
+## D-026 – Auslieferung der Optionen
+
+- Sendet der Client Option 55, werden nur angeforderte Optionen geliefert (in
+  der Reihenfolge der Liste), sonst alle konfigurierten.
+- Optionen 66/67 (bzw. 150) werden zusätzlich in die BOOTP-Header-Felder
+  `sname`/`file`/`siaddr` gespiegelt, weil viele PXE-ROMs nur diese lesen.
+- Überschreitet die Antwort die maximale Nachrichtengröße (Option 57, sonst
+  576 Byte), werden Optionen vom Ende der Request-Liste entfernt und eine
+  Warnung geloggt. Option Overload (52) wird nicht verwendet.
+
+## D-027 – MAC-Filter
+
+Allow- und Deny-Liste mit Wildcards, beide standardmäßig deaktiviert
+(Schalter in `settings`). Deny gewinnt vor Allow. Ist die Allow-Liste aktiv,
+werden nur gelistete MACs bedient. Gefilterte Clients werden für alle
+Nachrichtentypen stillschweigend ignoriert (Log auf Info-Level).
