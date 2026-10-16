@@ -148,7 +148,8 @@ test("superscopes, configuration export, netsh dry run and backup", async ({ pag
   await page.getByRole("button", { name: "Anlegen" }).click();
   await expect(page.getByRole("cell", { name: "Gebäude A" })).toBeVisible();
   await page.getByRole("link", { name: "E2E-LAN" }).click();
-  await page.getByLabel("Superscope").selectOption({ label: "Gebäude A" });
+  // Exact: "Neuer Superscope" on the list page must not match while the detail page loads.
+  await page.getByLabel("Superscope", { exact: true }).selectOption({ label: "Gebäude A" });
   await page.getByRole("button", { name: "Speichern" }).click();
   await expect(page.getByText("Scope gespeichert")).toBeVisible();
   await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Scopes" }).click();
