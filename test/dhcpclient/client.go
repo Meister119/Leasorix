@@ -206,6 +206,16 @@ func (cl *Client) RequestAddress(ctx context.Context, ip net.IP) (*dhcpv4.DHCPv4
 	return cl.Conn.Exchange(ctx, m, dhcpv4.MessageTypeAck, dhcpv4.MessageTypeNak)
 }
 
+// Rebind sends a REBINDING DHCPREQUEST (broadcast, ciaddr set) as a client
+// does when its server does not answer renewals.
+func (cl *Client) Rebind(ctx context.Context, ip net.IP) (*dhcpv4.DHCPv4, error) {
+	m, err := cl.base(dhcpv4.MessageTypeRequest, dhcpv4.WithClientIP(ip))
+	if err != nil {
+		return nil, err
+	}
+	return cl.Conn.Exchange(ctx, m, dhcpv4.MessageTypeAck, dhcpv4.MessageTypeNak)
+}
+
 // DORA runs DISCOVER/OFFER/REQUEST/ACK and returns the ACK.
 func (cl *Client) DORA(ctx context.Context) (*dhcpv4.DHCPv4, error) {
 	offer, err := cl.Discover(ctx)

@@ -32,6 +32,8 @@ type Config struct {
 	AuditEvents bool
 	// AuditRenewals additionally audits every renewal (high volume).
 	AuditRenewals bool
+	// NodeID is recorded as origin of local changes (HA node id).
+	NodeID string
 }
 
 // DefaultConfig returns the default lease settings.
@@ -50,6 +52,28 @@ type Prober interface {
 	// InUse reports whether ip already answers on the network. clientMAC is
 	// the requesting client; a reply from that very client is no conflict.
 	InUse(ctx context.Context, ip uint32, clientMAC string) bool
+}
+
+// Coordinator connects the manager to a high availability partner.
+type Coordinator interface {
+	// CanAllocate reports whether this server may bind ip to a client that
+	// does not hold an active lease on it (pool share of this server).
+	CanAllocate(ip uint32) bool
+	// LeaseLimit is the longest lease that may be granted right now
+	// without confirmation by the partner (0 = no limit).
+	LeaseLimit() time.Duration
+	// Replicate forwards lease changes to the partner. For critical
+	// changes (new or renewed bindings) in synchronous mode it waits for the
+	// partner and reports whether it confirmed; otherwise it queues the
+	// changes and returns false.
+	Replicate(ctx context.Context, changes []Change, critical bool) bool
+}
+
+func limitLease(d, limit time.Duration) time.Duration {
+	if limit > 0 && (d <= 0 || d > limit) {
+		return limit
+	}
+	return d
 }
 
 type cursorKey struct {
@@ -127,6 +151,34 @@ type Manager struct {
 
 	clientLocks keyedMutex
 	metrics     *metrics.Leases
+	coord       Coordinator
+}
+
+// SetCoordinator enables HA coordination. It must be called before the
+// manager serves requests.
+func (m *Manager) SetCoordinator(c Coordinator) { m.coord = c }
+
+func (m *Manager) canAllocate(ip uint32) bool { return m.coord == nil || m.coord.CanAllocate(ip) }
+
+func (m *Manager) leaseLimit() time.Duration {
+	if m.coord == nil {
+		return 0
+	}
+	return m.coord.LeaseLimit()
+}
+
+func (m *Manager) replicate(ctx context.Context, critical bool, changes ...Change) bool {
+	if m.coord == nil || len(changes) == 0 {
+		return true
+	}
+	return m.coord.Replicate(ctx, changes, critical)
+}
+
+// stamps returns the second-precision time used for lease start/expiry and
+// the millisecond-precision change time.
+func (m *Manager) stamps() (now, updated time.Time) {
+	t := m.now()
+	return t.Truncate(time.Second), t.Truncate(time.Millisecond)
 }
 
 // SetMetrics enables lease metrics (events and commit timings).
@@ -343,6 +395,9 @@ func (m *Manager) checkAddressLocked(cand *Candidate, c Client, ip uint32, offer
 	if o := m.validOfferLocked(ip, now); o != nil && o.key != key {
 		return false, "address is offered to another client"
 	}
+	if res == nil && !m.canAllocate(ip) && !m.ownsActiveLocked(key, ip, now) {
+		return false, "address belongs to the HA partner's share of the pool"
+	}
 	return true, ""
 }
 
@@ -390,18 +445,24 @@ func (m *Manager) Offer(ctx context.Context, c Client, cands []Candidate, reques
 			skip[ip] = true
 			m.mu.Lock()
 			m.dropOfferLocked(key, p.ID)
-			var ops []Op
+			var (
+				ops     []Op
+				changes []Change
+			)
 			if res == nil {
-				now = m.now()
-				l := &Lease{IP: ip, ScopeID: p.ID, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
+				now, upd := m.stamps()
+				l := &Lease{IP: ip, ScopeID: p.ID, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: upd, Origin: m.cfg.NodeID}
 				m.putLocked(l)
 				ops = append(ops, Upsert(*l))
 				ops = m.event(ctx, ops, "conflict", l, map[string]any{"requested_by": c.MAC})
+				changes = append(changes, Change{Lease: *l})
 			}
 			m.mu.Unlock()
 			if len(ops) > 0 {
 				if err := m.db.Apply(ctx, ops...); err != nil {
 					m.log.Error("persisting conflict record", "ip", ip4.String(ip), "err", err)
+				} else {
+					m.replicate(ctx, false, changes...)
 				}
 			}
 			if res != nil {
@@ -410,7 +471,7 @@ func (m *Manager) Offer(ctx context.Context, c Client, cands []Candidate, reques
 			}
 			continue
 		}
-		return &Offer{IP: ip, Pool: p, Reservation: res, LeaseTime: cand.LeaseTime}
+		return &Offer{IP: ip, Pool: p, Reservation: res, LeaseTime: limitLease(cand.LeaseTime, m.leaseLimit())}
 	}
 	return nil
 }
@@ -507,7 +568,7 @@ func (m *Manager) findFreeLocked(cand *Candidate, key ClientKey, skip map[uint32
 		}
 		size := r.Size()
 		for i := uint64(0); i < size; i++ {
-			if !skip[ip] && m.leases[ip] == nil && p.Dynamic(ip) {
+			if !skip[ip] && m.leases[ip] == nil && p.Dynamic(ip) && m.canAllocate(ip) {
 				if o := m.validOfferLocked(ip, now); o == nil || o.key == key {
 					next := ip + 1
 					if next > r.End || next == 0 {
@@ -528,7 +589,7 @@ func (m *Manager) findFreeLocked(cand *Candidate, key ClientKey, skip map[uint32
 	// other clients (oldest first).
 	var released, expired *Lease
 	for ip, l := range m.byScope[p.ID] {
-		if skip[ip] || !p.Dynamic(ip) || !cand.allowed(ip) || l.State == StateDeclined || l.Key() == key {
+		if skip[ip] || !p.Dynamic(ip) || !cand.allowed(ip) || l.State == StateDeclined || l.Key() == key || !m.canAllocate(ip) {
 			continue
 		}
 		if o := m.validOfferLocked(ip, now); o != nil && o.key != key {
@@ -578,11 +639,16 @@ type Result struct {
 // Request binds ip in the candidate's pool to the client if allowed and
 // persists the lease before returning. An error means the lease could not be
 // stored; the caller must not acknowledge.
+//
+// With an HA partner the binding is replicated before it is stored; if the
+// partner cannot confirm it (synchronous mode), the lease is shortened to the
+// limit allowed without the partner's knowledge (MCLT).
 func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint32) (Result, error) {
 	key := c.Key()
 	p := cand.Pool
+	leaseTime := limitLease(cand.LeaseTime, m.leaseLimit())
 	m.mu.Lock()
-	now := m.now().Truncate(time.Second)
+	now, upd := m.stamps()
 	o := m.validOfferLocked(ip, now)
 	offered := o != nil && o.key == key
 	if ok, reason := m.checkAddressLocked(&cand, c, ip, offered, now); !ok {
@@ -598,25 +664,19 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 		hostname = res.Hostname
 	}
 	expires := Infinite
-	if cand.LeaseTime > 0 {
-		expires = now.Add(cand.LeaseTime)
+	if leaseTime > 0 {
+		expires = now.Add(leaseTime)
 	}
 	l := &Lease{
 		IP: ip, ScopeID: p.ID, MAC: c.MAC, ClientID: c.ClientID, Hostname: hostname,
-		State: StateActive, Start: now, Expires: expires, Updated: now,
-	}
-	ops := []Op{Upsert(*l)}
-	if renewal {
-		ops = m.event(ctx, ops, "renew", l, nil)
-	} else {
-		ops = m.event(ctx, ops, "assign", l, nil)
+		State: StateActive, Start: now, Expires: expires, Updated: upd, Origin: m.cfg.NodeID,
 	}
 	// One binding per client and scope: release older ones.
+	var superseded []Lease
 	for oip, ol := range m.byClient[key] {
 		if oip != ip && ol.ScopeID == p.ID && ol.State == StateActive {
-			ol.State, ol.Expires, ol.Updated = StateReleased, now, now
-			ops = append(ops, Upsert(*ol))
-			ops = m.event(ctx, ops, "release", ol, map[string]any{"reason": "superseded by " + ip4.String(ip)})
+			ol.State, ol.Expires, ol.Updated, ol.Origin = StateReleased, now, upd, m.cfg.NodeID
+			superseded = append(superseded, *ol)
 		}
 	}
 	m.putLocked(l)
@@ -624,10 +684,39 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 	out := *l
 	m.mu.Unlock()
 
+	if m.coord != nil {
+		changes := make([]Change, 0, 1+len(superseded))
+		changes = append(changes, Change{Lease: out})
+		for _, sl := range superseded {
+			changes = append(changes, Change{Lease: sl})
+		}
+		if !m.coord.Replicate(ctx, changes, true) {
+			if short := limitLease(leaseTime, m.coord.LeaseLimit()); short != leaseTime {
+				leaseTime = short
+				m.mu.Lock()
+				out.Expires = now.Add(short)
+				if m.leases[ip] == l {
+					l.Expires = out.Expires
+				}
+				m.mu.Unlock()
+			}
+		}
+	}
+
+	ops := []Op{Upsert(out)}
+	if renewal {
+		ops = m.event(ctx, ops, "renew", &out, nil)
+	} else {
+		ops = m.event(ctx, ops, "assign", &out, nil)
+	}
+	for i := range superseded {
+		ops = append(ops, Upsert(superseded[i]))
+		ops = m.event(ctx, ops, "release", &superseded[i], map[string]any{"reason": "superseded by " + ip4.String(ip)})
+	}
 	if err := m.db.Apply(ctx, ops...); err != nil {
 		return Result{}, err
 	}
-	return Result{Ack: true, Lease: out, LeaseTime: cand.LeaseTime}, nil
+	return Result{Ack: true, Lease: out, LeaseTime: leaseTime}, nil
 }
 
 // ---- RELEASE / DECLINE ---------------------------------------------------------
@@ -636,16 +725,21 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 // client does not hold that lease.
 func (m *Manager) Release(ctx context.Context, c Client, ip uint32) (bool, error) {
 	m.mu.Lock()
-	now := m.now().Truncate(time.Second)
+	now, upd := m.stamps()
 	l := m.leases[ip]
 	if l == nil || l.State == StateDeclined || l.Key() != c.Key() || effectiveState(l, now) != StateActive {
 		m.mu.Unlock()
 		return false, nil
 	}
-	l.State, l.Expires, l.Updated = StateReleased, now, now
-	ops := m.event(ctx, []Op{Upsert(*l)}, "release", l, nil)
+	l.State, l.Expires, l.Updated, l.Origin = StateReleased, now, upd, m.cfg.NodeID
+	out := *l
+	ops := m.event(ctx, []Op{Upsert(out)}, "release", &out, nil)
 	m.mu.Unlock()
-	return true, m.db.Apply(ctx, ops...)
+	if err := m.db.Apply(ctx, ops...); err != nil {
+		return true, err
+	}
+	m.replicate(ctx, false, Change{Lease: out})
+	return true, nil
 }
 
 // Decline blocks ip after the client reported it in use. It returns false if
@@ -653,7 +747,7 @@ func (m *Manager) Release(ctx context.Context, c Client, ip uint32) (bool, error
 func (m *Manager) Decline(ctx context.Context, c Client, p *scope.Pool, ip uint32) (bool, error) {
 	key := c.Key()
 	m.mu.Lock()
-	now := m.now().Truncate(time.Second)
+	now, upd := m.stamps()
 	l := m.leases[ip]
 	owned := l != nil && l.State != StateDeclined && l.Key() == key
 	o := m.validOfferLocked(ip, now)
@@ -662,11 +756,99 @@ func (m *Manager) Decline(ctx context.Context, c Client, p *scope.Pool, ip uint3
 		return false, nil
 	}
 	m.dropOfferLocked(key, p.ID)
-	d := &Lease{IP: ip, ScopeID: p.ID, MAC: c.MAC, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: now}
+	d := &Lease{IP: ip, ScopeID: p.ID, MAC: c.MAC, State: StateDeclined, Start: now, Expires: now.Add(m.cfg.DeclineTime), Updated: upd, Origin: m.cfg.NodeID}
 	m.putLocked(d)
-	ops := m.event(ctx, []Op{Upsert(*d)}, "decline", d, nil)
+	out := *d
+	ops := m.event(ctx, []Op{Upsert(out)}, "decline", &out, nil)
 	m.mu.Unlock()
-	return true, m.db.Apply(ctx, ops...)
+	if err := m.db.Apply(ctx, ops...); err != nil {
+		return true, err
+	}
+	m.replicate(ctx, false, Change{Lease: out})
+	return true, nil
+}
+
+// ---- HA ------------------------------------------------------------------------
+
+// ApplyRemote merges lease changes received from the HA partner (see Wins).
+// The scope of a record is determined from its address, records outside all
+// local scopes are skipped. Changes are persisted but neither audited
+// individually nor replicated back. It returns the number of records that
+// changed the local table and the number of conflicts that were resolved.
+func (m *Manager) ApplyRemote(ctx context.Context, snap *scope.Snapshot, changes []Change) (applied, conflicts int, err error) {
+	changed, conflicts, err := m.merge(ctx, snap, changes)
+	return len(changed), conflicts, err
+}
+
+// Import merges records from a lease export with the same rules and
+// forwards the records that changed the local table to the HA partner.
+func (m *Manager) Import(ctx context.Context, snap *scope.Snapshot, leases []Lease) (applied, conflicts int, err error) {
+	changes := make([]Change, len(leases))
+	for i := range leases {
+		changes[i] = Change{Lease: leases[i]}
+	}
+	changed, conflicts, err := m.merge(ctx, snap, changes)
+	if err != nil {
+		return len(changed), conflicts, err
+	}
+	if len(changed) > 0 {
+		m.replicate(ctx, false, changed...)
+	}
+	return len(changed), conflicts, nil
+}
+
+func (m *Manager) merge(ctx context.Context, snap *scope.Snapshot, changes []Change) (changed []Change, conflicts int, err error) {
+	m.mu.Lock()
+	now := m.now()
+	var ops []Op
+	for i := range changes {
+		ch := changes[i]
+		r := ch.Lease
+		local := m.leases[r.IP]
+		if ch.Deleted {
+			if local != nil && !local.Updated.After(r.Updated) {
+				m.removeLocked(r.IP)
+				ops = append(ops, Delete(r.IP))
+				changed = append(changed, ch)
+			}
+			continue
+		}
+		p := snap.ForAddr(r.IP)
+		if p == nil {
+			continue
+		}
+		r.ScopeID = p.ID
+		if local != nil {
+			conflict := Conflict(&r, local, now)
+			wins := Wins(&r, local, now)
+			if conflict {
+				conflicts++
+				kept, lost := local, &r
+				if wins {
+					kept, lost = &r, local
+				}
+				m.log.Warn("HA lease conflict resolved", "ip", ip4.String(r.IP),
+					"kept_mac", kept.MAC, "kept_origin", kept.Origin, "dropped_mac", lost.MAC, "dropped_origin", lost.Origin)
+				if m.cfg.AuditEvents {
+					d := leaseDetails(kept)
+					d["dropped"] = leaseDetails(lost)
+					ops = append(ops, AuditOp(audit.New(ctx, "lease.ha_conflict", "lease", ip4.String(r.IP), d)))
+				}
+			}
+			if !wins {
+				continue
+			}
+		}
+		rec := r
+		m.putLocked(&rec)
+		ops = append(ops, Upsert(rec))
+		changed = append(changed, Change{Lease: rec})
+	}
+	m.mu.Unlock()
+	if len(ops) == 0 {
+		return changed, conflicts, nil
+	}
+	return changed, conflicts, m.db.Apply(ctx, ops...)
 }
 
 // ---- expiry --------------------------------------------------------------------
@@ -675,14 +857,14 @@ func (m *Manager) Decline(ctx context.Context, c Client, p *scope.Pool, ip uint3
 // period / decline time and drops stale offers.
 func (m *Manager) Expire(ctx context.Context) {
 	m.mu.Lock()
-	now := m.now().Truncate(time.Second)
+	now, upd := m.stamps()
 	var ops []Op
 	var expired, purged int
 	for ip, l := range m.leases {
 		switch l.State {
 		case StateActive:
 			if !l.Expires.After(now) {
-				l.State, l.Updated = StateExpired, now
+				l.State, l.Updated, l.Origin = StateExpired, upd, m.cfg.NodeID
 				ops = append(ops, Upsert(*l))
 				ops = m.event(ctx, ops, "expire", l, nil)
 				expired++
@@ -720,17 +902,21 @@ func (m *Manager) Expire(ctx context.Context) {
 	m.log.Debug("lease expiry run", "expired", expired, "purged", purged)
 }
 
-// ScopesChanged drops in-memory state of scopes that no longer exist (the
-// database removes their leases via ON DELETE CASCADE).
+// ScopesChanged drops in-memory state of scopes that no longer exist and
+// of leases outside their scope's subnet (the database removes them via ON
+// DELETE CASCADE, or the HA configuration sync removes them).
 func (m *Manager) ScopesChanged(snap *scope.Snapshot) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, ls := range m.byScope {
-		if snap.ByID(id) != nil {
-			continue
-		}
+		p := snap.ByID(id)
 		for ip := range ls {
-			m.removeLocked(ip)
+			if p == nil || !p.InSubnet(ip) {
+				m.removeLocked(ip)
+			}
+		}
+		if p != nil {
+			continue
 		}
 		for k := range m.cursor {
 			if k.scopeID == id {
@@ -792,6 +978,7 @@ func (m *Manager) Delete(ctx context.Context, ip uint32) (bool, error) {
 		m.mu.Unlock()
 		return false, nil
 	}
+	_, upd := m.stamps()
 	old := *l
 	m.removeLocked(ip)
 	if o := m.offers[ip]; o != nil {
@@ -806,5 +993,9 @@ func (m *Manager) Delete(ctx context.Context, ip uint32) (bool, error) {
 		ops = append(ops, AuditOp(audit.New(ctx, "lease.delete", "lease", ip4.String(ip), leaseDetails(&old))))
 	}
 	m.mu.Unlock()
-	return true, m.db.Apply(ctx, ops...)
+	if err := m.db.Apply(ctx, ops...); err != nil {
+		return true, err
+	}
+	m.replicate(ctx, false, Change{Deleted: true, Lease: Lease{IP: ip, Updated: upd, Origin: m.cfg.NodeID}})
+	return true, nil
 }

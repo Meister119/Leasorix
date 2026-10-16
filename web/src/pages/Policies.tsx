@@ -384,7 +384,8 @@ function Classes() {
 }
 
 function Filters() {
-  const { canWrite, isAdmin } = useAuth();
+  const { canWrite, isAdmin: admin, configReadOnly } = useAuth();
+  const isAdmin = admin && !configReadOnly;
   const qc = useQueryClient();
   const { toast } = useFeedback();
   const list = useQuery({ queryKey: ["filters"], queryFn: () => unwrap(api.GET("/filters")) });

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 // Started by test/e2e/run.sh, which provides a fresh server and a client
@@ -105,6 +106,38 @@ test("complete workflow: scope via wizard, real client gets a lease, visible in 
   await page.getByLabel("Aktion (Präfix)").fill("lease.assign");
   await page.getByRole("button", { name: "Filtern" }).click();
   await expect(page.getByRole("cell", { name: "dhcp", exact: true })).toBeVisible();
+});
+
+test("split scope wizard, HA page and emergency export", async ({ page }) => {
+  test.skip(!clientNS, "E2E_CLIENT_NS not set");
+  await login(page, "admin", adminPassword);
+  await page.getByRole("link", { name: "Scopes" }).click();
+  await page.getByRole("link", { name: "E2E-LAN" }).click();
+
+  // Split 80/20: preview, apply, download the partner's scope.
+  await page.getByRole("button", { name: "Split-Scope…" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("10.77.0.100 – 10.77.0.179 (80 Adressen)")).toBeVisible();
+  await expect(dialog.getByText("10.77.0.180 – 10.77.0.200 (21 Adressen)")).toBeVisible();
+  await dialog.getByRole("button", { name: "Aufteilen" }).click();
+  await expect(dialog.getByRole("status")).toContainText("10.77.0.180");
+  const [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: /herunterladen/ }).click()]);
+  const bundle = JSON.parse(readFileSync(await download.path(), "utf8"));
+  expect(bundle.format).toBe("leasorix-scope/v1");
+  expect(bundle.exclusions).toContainEqual({ start: "10.77.0.100", end: "10.77.0.179" });
+  await dialog.getByRole("button", { name: "Fertig" }).click();
+  await page.getByRole("tab", { name: "Ausschlüsse" }).click();
+  await expect(page.getByRole("cell", { name: "10.77.0.180" })).toBeVisible();
+
+  // HA page without partner: certificate generator and lease export.
+  await page.getByRole("link", { name: "Hochverfügbarkeit" }).click();
+  await expect(page.getByText("Keine Partnerschaft konfiguriert")).toBeVisible();
+  await page.getByRole("button", { name: "Erzeugen" }).click();
+  await expect(page.getByRole("button", { name: "dhcp-b-key.pem" })).toBeVisible();
+  const [exp] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Exportieren" }).click()]);
+  const leases = JSON.parse(readFileSync(await exp.path(), "utf8"));
+  expect(leases.format).toBe("leasorix-leases/v1");
+  expect(leases.leases.length).toBeGreaterThan(0);
 });
 
 test("roles: a read-only user cannot change anything", async ({ page }) => {

@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { api, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { Badge, Button, Input, PageHeader, Select, Spinner, Table, Td, useFeedback } from "../components/ui";
+import { downloadFile, fileStamp } from "../lib/download";
 import { formatDateTime, relativeTime, stateLabel } from "../lib/format";
 import { useScopes } from "./Scopes";
 
@@ -11,7 +12,7 @@ export function LeasesPage() {
   const [scopeId, setScopeId] = useState(0);
   return (
     <>
-      <PageHeader title="Leases" subtitle="Vergebene und zuletzt genutzte Adressen" />
+      <PageHeader title="Leases" subtitle="Vergebene und zuletzt genutzte Adressen" actions={<LeaseExportButton />} />
       <div className="mb-4 max-w-xs">
         <Select label="Scope" value={String(scopeId)} onChange={(e) => setScopeId(Number(e.target.value))}>
           <option value="0">Alle Scopes</option>
@@ -27,11 +28,35 @@ export function LeasesPage() {
   );
 }
 
+export function LeaseExportButton() {
+  const { toast } = useFeedback();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const data = await unwrap(api.GET("/leases/export"));
+          downloadFile(`leasorix-leases-${fileStamp()}.json`, JSON.stringify(data, null, 2));
+          toast(`${data.leases.length} Leases exportiert`);
+        } catch (e) {
+          toast(errorMessage(e), "error");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Exportieren
+    </Button>
+  );
+}
+
 const stateColor: Record<string, "green" | "slate" | "amber" | "red"> = { active: "green", expired: "slate", released: "amber", declined: "red" };
 const pageSize = 50;
 
 export function LeasesTable({ scopeId }: { scopeId: number }) {
-  const { canWrite } = useAuth();
+  const { canWrite, canOperate } = useAuth();
   const qc = useQueryClient();
   const { toast, confirm } = useFeedback();
   const [q, setQ] = useState("");
@@ -117,9 +142,9 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
                   <span title={formatDateTime(l.expires_at)}>{relativeTime(l.expires_at)}</span>
                 </Td>
                 <Td className="text-right">
-                  {canWrite && (
+                  {canOperate && (
                     <div className="flex justify-end gap-1">
-                      {!l.reserved && l.state !== "declined" && (
+                      {canWrite && !l.reserved && l.state !== "declined" && (
                         <Button size="sm" variant="ghost" onClick={() => convert.mutate(l.ip)}>
                           In Reservierung umwandeln
                         </Button>

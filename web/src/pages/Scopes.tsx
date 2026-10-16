@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
-import { api, ApiError, errorMessage, unwrap } from "../api/client";
+import { api, ApiError, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { Alert, Badge, Button, Input, Modal, PageHeader, Progress, Select, Spinner, Table, Td, TextArea, useFeedback } from "../components/ui";
+import { readJSONFile } from "../lib/download";
 import { formatDuration } from "../lib/format";
 import { broadcastOf, formatIPv4, hasErrors, networkOf, parsePrefix, validateRange, validateScope, type Errors } from "../lib/validate";
 
@@ -25,7 +26,18 @@ export function ScopesPage() {
   const stats = useQuery({ queryKey: ["stats"], queryFn: () => unwrap(api.GET("/stats")) });
   const [wizard, setWizard] = useState(false);
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { toast, confirm } = useFeedback();
+  const imp = useMutation({
+    mutationFn: async (f: File) => unwrap(api.POST("/scopes/import", { body: await readJSONFile<S["ScopeBundle"]>(f) })),
+    onSuccess: (sc) => {
+      qc.invalidateQueries({ queryKey: ["scopes"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+      toast(`Scope „${sc.name}“ importiert`);
+      navigate(`/scopes/${sc.id}`);
+    },
+    onError: (e) => toast(errorMessage(e), "error"),
+  });
   const del = useMutation({
     mutationFn: (id: number) => unwrap(api.DELETE("/scopes/{id}", { params: { path: { id } } })),
     onSuccess: () => {
@@ -44,9 +56,25 @@ export function ScopesPage() {
         subtitle="IPv4-Bereiche, die dynamisch vergeben werden"
         actions={
           canWrite && (
-            <Button variant="primary" onClick={() => setWizard(true)}>
-              Neuer Scope
-            </Button>
+            <div className="flex gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
+                Importieren…
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="sr-only"
+                  data-testid="scope-import"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) imp.mutate(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <Button variant="primary" onClick={() => setWizard(true)}>
+                Neuer Scope
+              </Button>
+            </div>
           )
         }
       />

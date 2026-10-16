@@ -154,6 +154,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scopes/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Creates a scope from a bundle (export of another server or the
+         *     partner part of a split scope). Either everything is created or
+         *     nothing.
+         */
+        post: operations["importScope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scopes/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["exportScope"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scopes/{id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Classic split scope for two independent servers without
+         *     replication: this server keeps the first `local_percent` of the
+         *     dynamic range and excludes the rest. The response contains the
+         *     bundle to import on the second server (local part excluded there).
+         */
+        post: operations["splitScope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scopes/{id}/stats": {
         parameters: {
             query?: never;
@@ -458,6 +521,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leases/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Emergency export of the complete lease table. */
+        get: operations["exportLeases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leases/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Merges a lease export into the lease table (newer changes win,
+         *     conflicting bindings are resolved like in HA resynchronisation).
+         *     Records outside all scopes are skipped.
+         */
+        post: operations["importLeases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/leases/{ip}": {
         parameters: {
             query?: never;
@@ -603,6 +704,49 @@ export interface paths {
         get: operations["getHAStatus"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ha/partner-down": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Operator confirmation that the partner is down. Only possible while
+         *     communication is interrupted. After MCLT this server allocates from
+         *     the whole pool. Never declare this while the partner is still
+         *     serving clients.
+         */
+        post: operations["declarePartnerDown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ha/certificates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Generates a new CA and one certificate per node for mutual TLS
+         *     between HA partners. Nothing is stored on the server; the CA key is
+         *     discarded.
+         */
+        post: operations["generateHACertificates"];
         delete?: never;
         options?: never;
         head?: never;
@@ -973,17 +1117,157 @@ export interface components {
             dhcp4_interfaces: string[];
             tls: boolean;
             conflict_detection: boolean;
+            ha_enabled: boolean;
+            /** @description Configuration changes must be made on the HA config leader. */
+            config_read_only: boolean;
+            /** @description Node id of the configuration leader (HA only). */
+            config_leader?: string;
         };
         HAStatus: {
             enabled: boolean;
-            mode?: string;
-            state?: string;
-            role?: string;
-            peer?: string;
+            node_id?: string;
+            peer_id?: string;
+            peer_address?: string;
+            /** @enum {string} */
+            mode?: "load-balance" | "hot-standby";
+            /** @enum {string} */
+            role?: "primary" | "secondary";
+            /** @enum {string} */
+            replication?: "sync" | "async";
+            /** @enum {string} */
+            tls_mode?: "mtls" | "secret";
+            state?: components["schemas"]["HAState"];
+            /** Format: date-time */
+            state_since?: string | null;
+            /** @description False while recovering (no DHCP answers). */
+            serving?: boolean;
+            connected?: boolean;
+            /** @description Last state reported by the partner. */
             peer_state?: string;
-            config_leader?: boolean;
+            peer_version?: string;
             /** Format: date-time */
             last_contact?: string | null;
+            /** Format: date-time */
+            partner_down_since?: string | null;
+            /**
+             * Format: date-time
+             * @description In PARTNER_DOWN, from this time on the whole pool is used.
+             */
+            takeover_at?: string | null;
+            config_leader?: boolean;
+            config_read_only?: boolean;
+            /** Format: int64 */
+            config_version?: number;
+            config_in_sync?: boolean;
+            load_balance_percent?: number;
+            standby_reserve_percent?: number;
+            /** @description Seconds. */
+            mclt?: number;
+            /** @description Seconds */
+            auto_partner_down?: number;
+            /** Format: date-time */
+            last_resync?: string | null;
+            error?: string;
+            resync_error?: string;
+            config_error?: string;
+            /** Format: date-time */
+            cert_expires?: string | null;
+        };
+        /** @enum {string} */
+        HAState: "NORMAL" | "COMMUNICATION_INTERRUPTED" | "PARTNER_DOWN" | "RECOVER" | "RECOVER_DONE";
+        HACertificates: {
+            ca_cert: string;
+            /** Format: date-time */
+            not_after: string;
+            nodes: {
+                node_id: string;
+                cert: string;
+                key: string;
+            }[];
+        };
+        BundleRange: {
+            start: string;
+            end: string;
+        };
+        BundleOption: {
+            code: number;
+            value: string;
+        };
+        ScopeBundle: {
+            /** @enum {string} */
+            format: "leasorix-scope/v1";
+            scope: {
+                name: string;
+                description?: string;
+                subnet: string;
+                start: string;
+                end: string;
+                /** Format: int64 */
+                lease_time: number;
+                enabled: boolean;
+            };
+            exclusions: components["schemas"]["BundleRange"][];
+            reservations: {
+                ip: string;
+                mac?: string;
+                client_id?: string;
+                hostname?: string;
+                description?: string;
+                options?: components["schemas"]["BundleOption"][];
+            }[];
+            options: components["schemas"]["BundleOption"][];
+            policies: {
+                name: string;
+                description?: string;
+                order: number;
+                enabled: boolean;
+                /** @enum {string} */
+                operator: "and" | "or";
+                /** Format: int64 */
+                lease_time?: number;
+                conditions: {
+                    field: string;
+                    operator: string;
+                    value: string;
+                }[];
+                ranges?: components["schemas"]["BundleRange"][];
+                options?: components["schemas"]["BundleOption"][];
+            }[];
+        };
+        SplitScopeInput: {
+            local_percent: number;
+        };
+        SplitScopeResult: {
+            local_range: components["schemas"]["BundleRange"];
+            partner_range: components["schemas"]["BundleRange"];
+            exclusions_added: components["schemas"]["Exclusion"][];
+            partner: components["schemas"]["ScopeBundle"];
+        };
+        LeaseExport: {
+            /** @enum {string} */
+            format: "leasorix-leases/v1";
+            /** Format: date-time */
+            exported_at: string;
+            node?: string;
+            leases: {
+                ip: string;
+                mac: string;
+                client_id?: string;
+                hostname?: string;
+                state: components["schemas"]["LeaseState"];
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                expires: string;
+                /** Format: date-time */
+                updated: string;
+                origin?: string;
+            }[];
+        };
+        LeaseImportResult: {
+            records: number;
+            changed: number;
+            conflicts: number;
         };
     };
     responses: {
@@ -1375,6 +1659,84 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    importScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScopeBundle"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    exportScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The scope with exclusions, reservations, options and policies. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopeBundle"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    splitScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitScopeInput"];
+            };
+        };
+        responses: {
+            /** @description Split done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitScopeResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     getScopeStats: {
@@ -2084,6 +2446,51 @@ export interface operations {
             };
         };
     };
+    exportLeases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lease export. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaseExport"];
+                };
+            };
+        };
+    };
+    importLeases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaseExport"];
+            };
+        };
+        responses: {
+            /** @description Import result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaseImportResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
     getLease: {
         parameters: {
             query?: never;
@@ -2389,6 +2796,54 @@ export interface operations {
                     "application/json": components["schemas"]["HAStatus"];
                 };
             };
+        };
+    };
+    declarePartnerDown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PARTNER_DOWN is active. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HAStatus"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    generateHACertificates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    nodes: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description PEM encoded certificates and keys. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HACertificates"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
 }

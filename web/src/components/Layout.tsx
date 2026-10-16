@@ -31,7 +31,7 @@ function useTheme(): [boolean, () => void] {
 }
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, configReadOnly, configLeader } = useAuth();
   const [open, setOpen] = useState(false);
   const [dark, toggleTheme] = useTheme();
 
@@ -101,6 +101,12 @@ export function Layout() {
             Abmelden
           </Button>
         </header>
+        {configReadOnly && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200" role="status" data-testid="readonly-banner">
+            HA-Partner: Die Konfiguration ist auf dieser Instanz schreibgeschützt und wird vom Config-Leader{" "}
+            <strong className="font-mono">{configLeader}</strong> übernommen. Änderungen bitte dort vornehmen. Leases lassen sich hier weiterhin verwalten.
+          </div>
+        )}
         <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">
           <Outlet />
         </main>

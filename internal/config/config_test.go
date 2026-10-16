@@ -200,3 +200,75 @@ func TestTLSAndAuthConfig(t *testing.T) {
 		t.Fatalf("files mode: %v", err)
 	}
 }
+
+func TestHAConfig(t *testing.T) {
+	base := map[string]string{
+		"LEASORIX_HA_MODE":                 "load-balance",
+		"LEASORIX_HA_NODE_ID":              "dhcp-a",
+		"LEASORIX_HA_ROLE":                 "primary",
+		"LEASORIX_HA_PEER_ID":              "dhcp-b",
+		"LEASORIX_HA_PEER_ADDRESS":         "10.0.0.2:8068",
+		"LEASORIX_HA_TLS_MODE":             "secret",
+		"LEASORIX_HA_TLS_SHARED_SECRET":    "0123456789abcdef0123",
+		"LEASORIX_HA_LOAD_BALANCE_PERCENT": "60",
+	}
+	cfg, err := load("", envMap(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HA.Enabled() || cfg.HA.MCLT != time.Hour || cfg.HA.Replication != HAReplSync || cfg.HA.LoadBalancePercent != 60 {
+		t.Fatalf("ha config %+v", cfg.HA)
+	}
+	if d, _ := load("", envMap(nil)); d.HA.Enabled() {
+		t.Fatal("HA must be off by default")
+	}
+	for k, v := range map[string]string{
+		"LEASORIX_HA_MODE":                    "active-active",
+		"LEASORIX_HA_ROLE":                    "leader",
+		"LEASORIX_HA_PEER_ID":                 "dhcp-a",
+		"LEASORIX_HA_NODE_ID":                 "bad id",
+		"LEASORIX_HA_PEER_ADDRESS":            "nohost",
+		"LEASORIX_HA_LOAD_BALANCE_PERCENT":    "101",
+		"LEASORIX_HA_STANDBY_RESERVE_PERCENT": "60",
+		"LEASORIX_HA_REPLICATION":             "eventual",
+		"LEASORIX_HA_MCLT":                    "10s",
+		"LEASORIX_HA_COMMUNICATION_TIMEOUT":   "3s",
+		"LEASORIX_HA_CONFIG_LEADER":           "both",
+		"LEASORIX_HA_TLS_SHARED_SECRET":       "short",
+		"LEASORIX_HA_TLS_MODE":                "mtls",
+	} {
+		env := map[string]string{}
+		for bk, bv := range base {
+			env[bk] = bv
+		}
+		env[k] = v
+		if _, err := load("", envMap(env)); err == nil {
+			t.Errorf("%s=%s accepted", k, v)
+		}
+	}
+	// Secret from a file.
+	path := writeFile(t, "  file-secret-0123456789\n")
+	env := map[string]string{}
+	for bk, bv := range base {
+		env[bk] = bv
+	}
+	delete(env, "LEASORIX_HA_TLS_SHARED_SECRET")
+	env["LEASORIX_HA_TLS_SHARED_SECRET_FILE"] = path
+	cfg, err = load("", envMap(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := cfg.HA.Secret(); s != "file-secret-0123456789" {
+		t.Fatalf("secret %q", s)
+	}
+}
+
+func TestExampleConfigIsValid(t *testing.T) {
+	cfg, err := load("../../deploy/examples/leasorix.yml", envMap(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.DHCP4.Interfaces) == 0 {
+		t.Fatal("example config without interfaces")
+	}
+}

@@ -37,7 +37,75 @@ type Lease struct {
 	State    State
 	Start    time.Time
 	Expires  time.Time
-	Updated  time.Time
+	// Updated is the time of the last change (millisecond precision); it
+	// orders changes of the same lease made on different HA servers.
+	Updated time.Time
+	// Origin is the HA node id of the server that made the last change
+	// (empty without HA).
+	Origin string
+}
+
+// Change is a lease change exchanged with an HA partner.
+type Change struct {
+	Lease Lease
+	// Deleted: the record was removed by an administrator (only IP,
+	// Updated and Origin are meaningful).
+	Deleted bool
+}
+
+// binding reports whether the record blocks its address at time now.
+func (l *Lease) binding(now time.Time) bool {
+	return (l.State == StateActive || l.State == StateDeclined) && l.Expires.After(now)
+}
+
+func (l *Lease) newerThan(o *Lease) bool {
+	if !l.Updated.Equal(o.Updated) {
+		return l.Updated.After(o.Updated)
+	}
+	if !l.Expires.Equal(o.Expires) {
+		return l.Expires.After(o.Expires)
+	}
+	return l.Origin > o.Origin
+}
+
+// Wins decides deterministically which of two records for the same address
+// is kept when the lease tables of two HA servers are merged; it reports
+// whether a replaces b. Both servers reach the same decision.
+//
+//   - Records of the same client: the newer change wins.
+//   - Different clients, exactly one record binds the address: that one.
+//   - Both bind the address (a real conflict, e.g. after a split brain):
+//     the later lease end wins, then the higher node id.
+//   - Neither binds the address: the newer change wins.
+func Wins(a, b *Lease, now time.Time) bool {
+	if a.State != StateDeclined && b.State != StateDeclined && a.Key() == b.Key() {
+		return a.newerThan(b)
+	}
+	ab, bb := a.binding(now), b.binding(now)
+	if ab != bb {
+		return ab
+	}
+	if ab {
+		if !a.Expires.Equal(b.Expires) {
+			return a.Expires.After(b.Expires)
+		}
+		if a.Origin != b.Origin {
+			return a.Origin > b.Origin
+		}
+	}
+	return a.newerThan(b)
+}
+
+// Conflict reports whether a and b both bind the address for different
+// clients (or one of them is a decline record).
+func Conflict(a, b *Lease, now time.Time) bool {
+	if !a.binding(now) || !b.binding(now) {
+		return false
+	}
+	if a.State == StateDeclined || b.State == StateDeclined {
+		return a.State != b.State
+	}
+	return a.Key() != b.Key()
 }
 
 // Key returns the identity of the client owning the lease.

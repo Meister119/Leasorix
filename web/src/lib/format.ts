@@ -46,3 +46,11 @@ export const roleLabel: Record<string, string> = {
   operator: "Operator",
   readonly: "Nur lesen",
 };
+
+export const haStateLabel: Record<string, string> = {
+  NORMAL: "Normal",
+  COMMUNICATION_INTERRUPTED: "Verbindung unterbrochen",
+  PARTNER_DOWN: "Partner ausgefallen",
+  RECOVER: "Abgleich",
+  RECOVER_DONE: "Abgleich fertig",
+};

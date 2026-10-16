@@ -42,9 +42,11 @@ ui:
 ui-test:
 	cd web && $(NPM) run typecheck && $(NPM) test
 
-## generate: regenerate API code from internal/api/openapi.yaml
+## generate: regenerate API code (openapi.yaml) and the HA peer protocol (protoc 3.21 required)
 generate:
-	$(GO) generate ./internal/api/...
+	$(GO) build -o bin/protoc-gen-go google.golang.org/protobuf/cmd/protoc-gen-go
+	$(GO) build -o bin/protoc-gen-go-grpc google.golang.org/grpc/cmd/protoc-gen-go-grpc
+	$(GO) generate ./internal/api/... ./internal/ha/pb/...
 	cd web && $(NPM) run gen
 
 ## test: run unit tests with the race detector
@@ -54,7 +56,12 @@ test:
 ## test-integration: netns based end-to-end tests (requires root, iproute2,
 ## dhclient, udhcpc, dnsmasq)
 test-integration:
-	$(GO) test -tags integration -count=1 -v ./test/integration/...
+	$(GO) test -tags integration -count=1 -v -timeout 20m ./test/integration/...
+
+## test-ha: two-node HA tests: load balance with 5000 clients, failover,
+## partition and configuration sync (requires root, iproute2)
+test-ha:
+	$(GO) test -tags integration -count=1 -v -timeout 15m -run 'TestHA' ./test/integration/...
 
 ## test-e2e: Playwright end-to-end tests against a real server in network
 ## namespaces (requires root, a built binary and the web UI)

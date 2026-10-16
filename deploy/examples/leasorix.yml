@@ -69,3 +69,28 @@ audit:
   lease_events: true
   # Also record every renewal - high volume, off by default.
   lease_renewals: false
+
+# High availability with one partner server (see docs/HA.md). Disabled when
+# mode is empty. mode, percentages, mclt and config_leader must be the same
+# on both servers.
+# ha:
+#   mode: load-balance          # or hot-standby
+#   node_id: dhcp-a             # this server (= name in its certificate)
+#   role: primary               # partner: secondary
+#   listen: ":8068"             # peer (gRPC) listener
+#   peer: { id: dhcp-b, address: "10.0.0.2:8068" }
+#   load_balance_percent: 50    # share of the primary (load-balance)
+#   standby_reserve_percent: 5  # reserve of the standby (hot-standby)
+#   replication: sync           # sync: partner confirms before the ACK; async
+#   mclt: 1h                    # max. client lead time
+#   heartbeat_interval: 2s
+#   communication_timeout: 10s
+#   replication_timeout: 2s
+#   auto_partner_down: 0        # 0 = only by operator confirmation
+#   config_leader: primary      # the other server's configuration is read-only
+#   tls:
+#     mode: mtls                # or secret
+#     ca_file: /etc/leasorix/ha/ca.pem
+#     cert_file: /etc/leasorix/ha/dhcp-a.pem
+#     key_file: /etc/leasorix/ha/dhcp-a-key.pem
+#     # shared_secret_file: /etc/leasorix/ha/secret   # mode secret

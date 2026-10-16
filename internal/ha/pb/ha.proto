@@ -1,0 +1,94 @@
+// Peer protocol between the two servers of a Leasorix HA relationship.
+//
+// Both servers run the Peer service and call the partner's service: every
+// server pushes its own lease changes and heartbeats; the configuration
+// leader additionally pushes configuration snapshots. The transport is gRPC
+// over TLS, authenticated either by mutual TLS or by a shared secret bound
+// to the TLS channel (see internal/ha/transport.go).
+syntax = "proto3";
+
+package leasorix.ha.v1;
+
+option go_package = "github.com/meister119/leasorix/internal/ha/pb";
+
+service Peer {
+  // Heartbeat exchanges the status of both servers. It is called
+  // periodically by both sides and also serves as connection check.
+  rpc Heartbeat(Status) returns (Status);
+  // PushLeases delivers lease changes made by the caller.
+  rpc PushLeases(LeaseBatch) returns (PushReply);
+  // DumpLeases streams the complete lease table of the callee (resync).
+  rpc DumpLeases(DumpRequest) returns (stream LeaseBatch);
+  // PushConfig delivers a configuration snapshot from the config leader.
+  rpc PushConfig(ConfigSnapshot) returns (ConfigReply);
+}
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  NORMAL = 1;
+  COMMUNICATION_INTERRUPTED = 2;
+  PARTNER_DOWN = 3;
+  RECOVER = 4;
+  RECOVER_DONE = 5;
+}
+
+// Status describes the sender. Settings that must be identical on both
+// servers are included so that mismatches are detected.
+message Status {
+  string node_id = 1;
+  // The partner id the sender is configured for.
+  string peer_id = 2;
+  State state = 3;
+  string mode = 4;
+  string role = 5;
+  string config_leader = 6;
+  uint32 load_balance_percent = 7;
+  uint32 standby_reserve_percent = 8;
+  int64 mclt_seconds = 9;
+  // Random id of the sender process; changes on every restart.
+  uint64 session = 10;
+  // Incremented by the sender whenever it loses contact to the partner.
+  uint64 epoch = 11;
+  // Session and epoch of the receiver that the sender last completed a
+  // lease resync against (pulled and merged the receiver's lease table).
+  uint64 synced_session = 12;
+  uint64 synced_epoch = 13;
+  // Configuration: the leader reports its current version and hash, the
+  // partner the ones it has applied.
+  uint64 config_version = 14;
+  bytes config_hash = 15;
+  int64 time_unix_ms = 16;
+  string version = 17;
+}
+
+message Lease {
+  uint32 ip = 1;
+  int64 scope_id = 2;
+  string mac = 3;
+  string client_id = 4;
+  string hostname = 5;
+  string state = 6;
+  int64 starts_unix = 7;
+  int64 expires_unix = 8;
+  int64 updated_unix_ms = 9;
+  string origin = 10;
+  // The record was deleted by an administrator.
+  bool deleted = 11;
+}
+
+message LeaseBatch {
+  repeated Lease leases = 1;
+}
+
+message PushReply {}
+
+message DumpRequest {}
+
+message ConfigSnapshot {
+  uint64 version = 1;
+  bytes hash = 2;
+  // JSON encoded table dump (internal/ha/configsync.go).
+  bytes data = 3;
+}
+
+message ConfigReply {}

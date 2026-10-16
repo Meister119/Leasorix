@@ -9,9 +9,15 @@ interface AuthValue {
   login: (username: string, password: string) => Promise<void>;
   setup: (token: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  /** True if the user may change DHCP configuration. */
+  /** True if the user may change DHCP configuration (and the server is not a read-only HA partner). */
   canWrite: boolean;
+  /** True if the user may operate on leases (operator or admin). */
+  canOperate: boolean;
   isAdmin: boolean;
+  /** Configuration is read-only here (HA partner); changes go to the config leader. */
+  configReadOnly: boolean;
+  configLeader?: string;
+  haEnabled: boolean;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -19,6 +25,18 @@ const AuthContext = createContext<AuthValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>("loading");
   const [user, setUser] = useState<S["User"]>();
+  const [system, setSystem] = useState<S["SystemInfo"]>();
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    api.GET("/system").then((r) => {
+      if (!cancelled && r.data) setSystem(r.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   const apply = useCallback((s: S["Session"]) => {
     setCsrfToken(s.csrf_token);
@@ -61,10 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await api.POST("/auth/logout");
         reset();
       },
-      canWrite: user?.role === "admin" || user?.role === "operator",
+      canOperate: user?.role === "admin" || user?.role === "operator",
+      canWrite: (user?.role === "admin" || user?.role === "operator") && !system?.config_read_only,
       isAdmin: user?.role === "admin",
+      configReadOnly: !!system?.config_read_only,
+      configLeader: system?.config_leader,
+      haEnabled: !!system?.ha_enabled,
     }),
-    [status, user, apply, reset],
+    [status, user, system, apply, reset],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
