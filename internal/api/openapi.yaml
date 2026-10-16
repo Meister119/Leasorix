@@ -1,0 +1,1336 @@
+openapi: 3.0.3
+info:
+  title: Leasorix API
+  version: 1.0.0
+  description: |
+    REST API of the Leasorix DHCP server.
+
+    Authentication: session cookie (web UI, after `POST /auth/login`) or an
+    API token (`Authorization: Bearer lxt_...`). Requests authenticated by
+    session cookie must send the CSRF token from the login/`/auth/me`
+    response in the `X-CSRF-Token` header on every non-GET request.
+
+    Roles: `readonly` may read everything except users; `operator` may
+    additionally change the DHCP configuration and leases; `admin` may also
+    manage users and settings.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+  - token: []
+
+tags:
+  - name: auth
+  - name: scopes
+  - name: reservations
+  - name: options
+  - name: policies
+  - name: filters
+  - name: leases
+  - name: stats
+  - name: audit
+  - name: users
+  - name: system
+
+paths:
+  /setup:
+    get:
+      tags: [auth]
+      operationId: getSetupStatus
+      security: []
+      responses:
+        "200":
+          description: Whether the initial admin still has to be created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupStatus" }
+    post:
+      tags: [auth]
+      operationId: completeSetup
+      security: []
+      description: Creates the first admin user. Requires the one-time setup token printed in the server log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupRequest" }
+      responses:
+        "201":
+          description: Admin created and logged in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Logged in; sets the session cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        "204": { description: Logged out. }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user and session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/password:
+    post:
+      tags: [auth]
+      operationId: changeOwnPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordChange" }
+      responses:
+        "204": { description: Password changed; other sessions are terminated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /tokens:
+    get:
+      tags: [auth]
+      operationId: listTokens
+      description: API tokens of the current user.
+      responses:
+        "200":
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiToken" }
+    post:
+      tags: [auth]
+      operationId: createToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiTokenCreate" }
+      responses:
+        "201":
+          description: Token created. The secret is only shown once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiTokenCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [auth]
+      operationId: deleteToken
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /scopes:
+    get:
+      tags: [scopes]
+      operationId: listScopes
+      responses:
+        "200":
+          description: All scopes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope" }
+    post:
+      tags: [scopes]
+      operationId: createScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: getScope
+      responses:
+        "200":
+          description: The scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [scopes]
+      operationId: updateScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [scopes]
+      operationId: deleteScope
+      responses:
+        "204": { description: Deleted together with exclusions, reservations, policies, options and leases. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/{id}/stats:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes, stats]
+      operationId: getScopeStats
+      responses:
+        "200":
+          description: Address usage of the scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopeStats" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/{id}/exclusions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: listExclusions
+      responses:
+        "200":
+          description: Exclusion ranges.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Exclusion" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [scopes]
+      operationId: createExclusion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddrRange" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Exclusion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}/exclusions/{exclusionId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: exclusionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [scopes]
+      operationId: deleteExclusion
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /reservations:
+    get:
+      tags: [reservations]
+      operationId: listReservations
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Reservations (of one scope or all).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [reservations]
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /reservations/import:
+    post:
+      tags: [reservations]
+      operationId: importReservations
+      description: |
+        CSV import (all or nothing). Header line required; columns
+        `scope` (name or id), `ip`, `mac`, `client_id`, `hostname`,
+        `description` (only `scope`, `ip` and `mac` or `client_id` are
+        mandatory). Separator `,` or `;`.
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Import result. If `errors` is not empty nothing was imported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /reservations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [reservations]
+      operationId: getReservation
+      responses:
+        "200":
+          description: The reservation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [reservations]
+      operationId: updateReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [reservations]
+      operationId: deleteReservation
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /option-definitions:
+    get:
+      tags: [options]
+      operationId: listOptionDefinitions
+      responses:
+        "200":
+          description: Built-in and custom option definitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OptionDefinition" }
+    post:
+      tags: [options]
+      operationId: createOptionDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OptionDefinitionInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OptionDefinition" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /option-definitions/{code}:
+    parameters:
+      - $ref: "#/components/parameters/Code"
+    delete:
+      tags: [options]
+      operationId: deleteOptionDefinition
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /options/{owner}/{ownerId}:
+    parameters:
+      - $ref: "#/components/parameters/Owner"
+      - $ref: "#/components/parameters/OwnerId"
+    get:
+      tags: [options]
+      operationId: listOptions
+      responses:
+        "200":
+          description: Option values of the owner.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OptionValue" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /options/{owner}/{ownerId}/{code}:
+    parameters:
+      - $ref: "#/components/parameters/Owner"
+      - $ref: "#/components/parameters/OwnerId"
+      - $ref: "#/components/parameters/Code"
+    put:
+      tags: [options]
+      operationId: setOption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OptionValueInput" }
+      responses:
+        "200":
+          description: Stored (canonical value returned).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OptionValue" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [options]
+      operationId: deleteOption
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /classes:
+    get:
+      tags: [policies]
+      operationId: listClasses
+      responses:
+        "200":
+          description: Vendor and user classes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Class" }
+    post:
+      tags: [policies]
+      operationId: createClass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClassInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Class" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /classes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [policies]
+      operationId: updateClass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClassInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Class" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [policies]
+      operationId: deleteClass
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /policies:
+    get:
+      tags: [policies]
+      operationId: listPolicies
+      parameters:
+        - name: scope_id
+          in: query
+          description: 0 = server level policies; omitted = all.
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Policy" }
+    post:
+      tags: [policies]
+      operationId: createPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /policies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [policies]
+      operationId: getPolicy
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [policies]
+      operationId: updatePolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [policies]
+      operationId: deletePolicy
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /filters:
+    get:
+      tags: [filters]
+      operationId: listFilters
+      responses:
+        "200":
+          description: MAC allow/deny list entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MacFilter" }
+    post:
+      tags: [filters]
+      operationId: createFilter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MacFilterInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MacFilter" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /filters/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [filters]
+      operationId: deleteFilter
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leases:
+    get:
+      tags: [leases]
+      operationId: listLeases
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/LeaseState" }
+        - name: q
+          in: query
+          description: Substring match on IP, MAC, client id and hostname.
+          schema: { type: string }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: Lease records sorted by IP.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseList" }
+  /leases/{ip}:
+    parameters:
+      - $ref: "#/components/parameters/IP"
+    get:
+      tags: [leases]
+      operationId: getLease
+      responses:
+        "200":
+          description: The lease record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [leases]
+      operationId: deleteLease
+      description: Removes the lease record; the address becomes free.
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /leases/{ip}/reservation:
+    parameters:
+      - $ref: "#/components/parameters/IP"
+    post:
+      tags: [leases]
+      operationId: convertLeaseToReservation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        "201":
+          description: Reservation created from the lease.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /stats:
+    get:
+      tags: [stats]
+      operationId: getStats
+      responses:
+        "200":
+          description: Server wide statistics.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+
+  /audit:
+    get:
+      tags: [audit]
+      operationId: listAudit
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actor
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          description: Prefix match, e.g. `lease.` or `scope.create`.
+          schema: { type: string }
+        - name: object_type
+          in: query
+          schema: { type: string }
+        - name: object_id
+          in: query
+          schema: { type: string }
+        - name: before_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: Entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditList" }
+
+  /users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      responses:
+        "200":
+          description: All users (admin only).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [users]
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [users]
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [users]
+      operationId: deleteUser
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /settings:
+    get:
+      tags: [system]
+      operationId: getSettings
+      responses:
+        "200":
+          description: Runtime settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    put:
+      tags: [system]
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Settings" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /system:
+    get:
+      tags: [system]
+      operationId: getSystemInfo
+      responses:
+        "200":
+          description: Version and runtime information.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemInfo" }
+
+  /ha/status:
+    get:
+      tags: [system]
+      operationId: getHAStatus
+      responses:
+        "200":
+          description: High availability status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HAStatus" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: leasorix_session
+    token:
+      type: http
+      scheme: bearer
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    Code:
+      name: code
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1, maximum: 254 }
+    Owner:
+      name: owner
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/OptionOwner" }
+    OwnerId:
+      name: ownerId
+      in: path
+      required: true
+      description: 0 for the server level.
+      schema: { type: integer, format: int64 }
+    IP:
+      name: ip
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid input.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Not authenticated.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not allowed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicts with existing data.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Too many attempts.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        fields:
+          type: array
+          items: { $ref: "#/components/schemas/FieldError" }
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    Role:
+      type: string
+      enum: [admin, operator, readonly]
+
+    SetupStatus:
+      type: object
+      required: [setup_required]
+      properties:
+        setup_required: { type: boolean }
+    SetupRequest:
+      type: object
+      required: [setup_token, username, password]
+      properties:
+        setup_token: { type: string }
+        username: { type: string }
+        password: { type: string }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    Session:
+      type: object
+      required: [user, csrf_token, expires_at]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        csrf_token:
+          type: string
+          description: Send as X-CSRF-Token header on non-GET requests.
+        expires_at: { type: string, format: date-time }
+    PasswordChange:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string }
+
+    User:
+      type: object
+      required: [id, username, role, disabled, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UserCreate:
+      type: object
+      required: [username, password, role]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+    UserUpdate:
+      type: object
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        password: { type: string }
+
+    ApiToken:
+      type: object
+      required: [id, name, prefix, role, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        prefix: { type: string, description: First characters of the token for recognition. }
+        role: { $ref: "#/components/schemas/Role" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+    ApiTokenCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        role:
+          $ref: "#/components/schemas/Role"
+        expires_in_days: { type: integer, minimum: 1, maximum: 3650 }
+    ApiTokenCreated:
+      type: object
+      required: [token, info]
+      properties:
+        token: { type: string }
+        info: { $ref: "#/components/schemas/ApiToken" }
+
+    Scope:
+      type: object
+      required: [id, name, description, subnet, start, end, lease_time, enabled, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        subnet: { type: string, example: 192.168.1.0/24 }
+        start: { type: string, example: 192.168.1.100 }
+        end: { type: string, example: 192.168.1.200 }
+        lease_time: { type: integer, description: Seconds, 0 = unlimited. }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ScopeInput:
+      type: object
+      required: [name, subnet, start, end, lease_time, enabled]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        subnet: { type: string }
+        start: { type: string }
+        end: { type: string }
+        lease_time: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+    AddrRange:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    Exclusion:
+      type: object
+      required: [id, scope_id, start, end]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        start: { type: string }
+        end: { type: string }
+    ScopeStats:
+      type: object
+      required: [scope_id, name, subnet, total, excluded, usable, in_use, reserved, declined, available, utilization_percent, active_leases, by_state]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        name: { type: string }
+        subnet: { type: string }
+        total: { type: integer, format: int64 }
+        excluded: { type: integer, format: int64 }
+        usable: { type: integer, format: int64 }
+        in_use: { type: integer, format: int64 }
+        reserved: { type: integer, format: int64 }
+        declined: { type: integer, format: int64 }
+        available: { type: integer, format: int64 }
+        utilization_percent: { type: number, format: double }
+        active_leases: { type: integer, format: int64 }
+        by_state:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+
+    Reservation:
+      type: object
+      required: [id, scope_id, ip, mac, client_id, hostname, description, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        ip: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReservationInput:
+      type: object
+      required: [scope_id, ip]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        ip: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    ImportResult:
+      type: object
+      required: [created, errors]
+      properties:
+        created: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [line, message]
+            properties:
+              line: { type: integer }
+              message: { type: string }
+
+    OptionOwner:
+      type: string
+      enum: [server, scope, policy, reservation]
+    OptionType:
+      type: string
+      enum: [ip, ip-list, string, uint8, uint16, uint32, int32, bool, hex, domain-list, routes]
+    OptionDefinition:
+      type: object
+      required: [code, name, type, description, builtin]
+      properties:
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        description: { type: string }
+        builtin: { type: boolean }
+    OptionDefinitionInput:
+      type: object
+      required: [code, name, type]
+      properties:
+        code: { type: integer, minimum: 1, maximum: 254 }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        description: { type: string }
+    OptionValue:
+      type: object
+      required: [owner, owner_id, code, name, type, value]
+      properties:
+        owner: { $ref: "#/components/schemas/OptionOwner" }
+        owner_id: { type: integer, format: int64 }
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        value: { type: string }
+    OptionValueInput:
+      type: object
+      required: [value]
+      properties:
+        type: { $ref: "#/components/schemas/OptionType" }
+        value: { type: string }
+
+    Class:
+      type: object
+      required: [id, name, type, data, description]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [vendor, user] }
+        data: { type: string }
+        description: { type: string }
+    ClassInput:
+      type: object
+      required: [name, type, data]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [vendor, user] }
+        data: { type: string }
+        description: { type: string }
+
+    ConditionField:
+      type: string
+      enum: [mac, client_id, hostname, vendor_class, user_class, class, relay_circuit_id, relay_remote_id, relay_subscriber_id]
+    Condition:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field: { $ref: "#/components/schemas/ConditionField" }
+        operator: { type: string, enum: [eq, ne] }
+        value: { type: string }
+    Policy:
+      type: object
+      required: [id, scope_id, name, description, order, enabled, operator, conditions, ranges, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64, description: 0 = server level. }
+        name: { type: string }
+        description: { type: string }
+        order: { type: integer }
+        enabled: { type: boolean }
+        operator: { type: string, enum: [and, or] }
+        lease_time: { type: integer, nullable: true, description: Seconds; null = inherit. }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/Condition" }
+        ranges:
+          type: array
+          items: { $ref: "#/components/schemas/AddrRange" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PolicyInput:
+      type: object
+      required: [name, enabled, operator, conditions]
+      properties:
+        scope_id: { type: integer, format: int64, description: Only used on create; 0 = server level. }
+        name: { type: string }
+        description: { type: string }
+        order: { type: integer, description: 0 on create = append. }
+        enabled: { type: boolean }
+        operator: { type: string, enum: [and, or] }
+        lease_time: { type: integer, nullable: true }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/Condition" }
+        ranges:
+          type: array
+          items: { $ref: "#/components/schemas/AddrRange" }
+
+    MacFilter:
+      type: object
+      required: [id, list, pattern, description, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        list: { type: string, enum: [allow, deny] }
+        pattern: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+    MacFilterInput:
+      type: object
+      required: [list, pattern]
+      properties:
+        list: { type: string, enum: [allow, deny] }
+        pattern: { type: string }
+        description: { type: string }
+
+    LeaseState:
+      type: string
+      enum: [active, expired, released, declined]
+    Lease:
+      type: object
+      required: [ip, scope_id, scope_name, mac, client_id, hostname, state, starts_at, expires_at, updated_at, reserved]
+      properties:
+        ip: { type: string }
+        scope_id: { type: integer, format: int64 }
+        scope_name: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        state: { $ref: "#/components/schemas/LeaseState" }
+        starts_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: 9999-12-31 for unlimited leases. }
+        updated_at: { type: string, format: date-time }
+        reserved: { type: boolean, description: The address has a reservation. }
+    LeaseList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Lease" }
+        total: { type: integer }
+
+    Stats:
+      type: object
+      required: [scopes, packets_received, packets_sent, packets_dropped, active_leases, uptime_seconds]
+      properties:
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/ScopeStats" }
+        packets_received:
+          type: object
+          additionalProperties: { type: number, format: double }
+        packets_sent:
+          type: object
+          additionalProperties: { type: number, format: double }
+        packets_dropped:
+          type: object
+          additionalProperties: { type: number, format: double }
+        active_leases: { type: integer, format: int64 }
+        uptime_seconds: { type: integer, format: int64 }
+
+    AuditEntry:
+      type: object
+      required: [id, time, actor, action, object_type, object_id]
+      properties:
+        id: { type: integer, format: int64 }
+        time: { type: string, format: date-time }
+        actor: { type: string }
+        source: { type: string }
+        action: { type: string }
+        object_type: { type: string }
+        object_id: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+    AuditList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+        next_before_id:
+          type: integer
+          format: int64
+          nullable: true
+
+    Settings:
+      type: object
+      required: [mac_filter_allow_enabled, mac_filter_deny_enabled]
+      properties:
+        mac_filter_allow_enabled: { type: boolean }
+        mac_filter_deny_enabled: { type: boolean }
+    SystemInfo:
+      type: object
+      required: [version, commit, go_version, started_at, dhcp4_interfaces, tls, conflict_detection]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        go_version: { type: string }
+        started_at: { type: string, format: date-time }
+        dhcp4_interfaces:
+          type: array
+          items: { type: string }
+        tls: { type: boolean }
+        conflict_detection: { type: boolean }
+    HAStatus:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        mode: { type: string }
+        state: { type: string }
+        role: { type: string }
+        peer: { type: string }
+        peer_state: { type: string }
+        config_leader: { type: boolean }
+        last_contact: { type: string, format: date-time, nullable: true }

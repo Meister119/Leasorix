@@ -35,6 +35,22 @@ type Config struct {
 	HTTP    HTTPConfig  `yaml:"http"`
 	DHCP4   DHCP4Config `yaml:"dhcp4"`
 	Audit   AuditConfig `yaml:"audit"`
+	Auth    AuthConfig  `yaml:"auth"`
+}
+
+// AuthConfig configures web sessions and the login rate limit.
+type AuthConfig struct {
+	// SessionTTL is the absolute lifetime of a web session.
+	SessionTTL time.Duration `yaml:"session_ttl"`
+	// IdleTimeout ends sessions without activity.
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	// SetupToken pre-defines the one-time token for creating the first
+	// admin (default: random, printed to the log).
+	SetupToken string `yaml:"setup_token"`
+	// LoginMaxFailures failed logins per client IP and per username within
+	// LoginWindow block further attempts.
+	LoginMaxFailures int           `yaml:"login_max_failures"`
+	LoginWindow      time.Duration `yaml:"login_window"`
 }
 
 // AuditConfig configures the audit log.
@@ -68,6 +84,22 @@ type HTTPConfig struct {
 	Listen string `yaml:"listen"`
 	// ShutdownTimeout bounds graceful shutdown of in-flight requests.
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+	TLS             TLSConfig     `yaml:"tls"`
+}
+
+// TLS modes.
+const (
+	TLSOff        = "off"
+	TLSSelfSigned = "self-signed"
+	TLSFiles      = "files"
+)
+
+// TLSConfig configures HTTPS for the management listener.
+type TLSConfig struct {
+	// Mode is off, self-signed (generated into <data_dir>/tls) or files.
+	Mode     string `yaml:"mode"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 // DHCP4Config configures the DHCPv4 service.
@@ -114,6 +146,13 @@ func Default() Config {
 		HTTP: HTTPConfig{
 			Listen:          "127.0.0.1:8067",
 			ShutdownTimeout: 10 * time.Second,
+			TLS:             TLSConfig{Mode: TLSSelfSigned},
+		},
+		Auth: AuthConfig{
+			SessionTTL:       12 * time.Hour,
+			IdleTimeout:      time.Hour,
+			LoginMaxFailures: 10,
+			LoginWindow:      15 * time.Minute,
 		},
 		DHCP4: DHCP4Config{
 			Workers:        256,
@@ -192,6 +231,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Log.MaxBackups < 0 {
 		errs = append(errs, errors.New("log.max_backups must not be negative"))
+	}
+	switch c.HTTP.TLS.Mode {
+	case TLSOff, TLSSelfSigned:
+	case TLSFiles:
+		if c.HTTP.TLS.CertFile == "" || c.HTTP.TLS.KeyFile == "" {
+			errs = append(errs, errors.New("http.tls: cert_file and key_file are required for mode files"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("http.tls.mode %q: must be off, self-signed or files", c.HTTP.TLS.Mode))
+	}
+	if c.Auth.SessionTTL <= 0 || c.Auth.IdleTimeout <= 0 || c.Auth.LoginWindow <= 0 || c.Auth.LoginMaxFailures < 1 {
+		errs = append(errs, errors.New("auth: session_ttl, idle_timeout, login_window must be positive and login_max_failures at least 1"))
 	}
 	if c.Audit.Retention < 0 {
 		errs = append(errs, errors.New("audit.retention must not be negative (0 = keep forever)"))

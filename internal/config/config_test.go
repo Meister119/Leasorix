@@ -179,3 +179,24 @@ func TestAuditAndLogConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSAndAuthConfig(t *testing.T) {
+	cfg, err := load("", envMap(nil))
+	if err != nil || cfg.HTTP.TLS.Mode != TLSSelfSigned || cfg.Auth.LoginMaxFailures != 10 {
+		t.Fatalf("defaults: %+v %v", cfg, err)
+	}
+	for _, env := range []map[string]string{
+		{"LEASORIX_HTTP_TLS_MODE": "maybe"},
+		{"LEASORIX_HTTP_TLS_MODE": "files"},
+		{"LEASORIX_AUTH_SESSION_TTL": "0s"},
+		{"LEASORIX_AUTH_LOGIN_MAX_FAILURES": "0"},
+	} {
+		if _, err := load("", envMap(env)); err == nil {
+			t.Errorf("%v accepted", env)
+		}
+	}
+	cfg, err = load("", envMap(map[string]string{"LEASORIX_HTTP_TLS_MODE": "files", "LEASORIX_HTTP_TLS_CERT_FILE": "/c", "LEASORIX_HTTP_TLS_KEY_FILE": "/k"}))
+	if err != nil || cfg.HTTP.TLS.CertFile != "/c" {
+		t.Fatalf("files mode: %v", err)
+	}
+}

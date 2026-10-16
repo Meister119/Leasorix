@@ -9,7 +9,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 2 – DHCPv4-Kern | ✅ abgeschlossen |
 | 3 – Optionen, Klassen, Policies, Filter | ✅ abgeschlossen |
 | 4 – Audit, Statistiken, Metriken | ✅ abgeschlossen |
-| 5 – REST-API, Auth, Web-UI | offen |
+| 5 – REST-API, Auth, Web-UI | ✅ abgeschlossen |
 | 6 – Hochverfügbarkeit | offen |
 | 7 – Komfort & Kompatibilität | offen |
 | 8 – Docker & Compose | offen |
@@ -163,3 +163,45 @@ in [DECISIONS.md](DECISIONS.md).
 **Hinweise**
 - Der HA-Status als Metrik kommt mit Phase 6 (HA existiert noch nicht).
 - Audit-Abfrage per API/UI folgt in Phase 5.
+
+## Phase 5 – REST-API, Auth, Web-UI
+
+**Umgesetzt**
+- OpenAPI-Spec (`internal/api/openapi.yaml`, ~50 Operationen) → generierte
+  Go-Typen + chi-Server-Interface und TS-Typen; CI prüft Aktualität.
+- `internal/auth`: Benutzer (argon2id), serverseitige Sessions mit
+  Idle-/Absolut-Timeout, CSRF-Token, API-Tokens mit Rollen-Deckelung,
+  Setup-Token für den Erststart, Login-Rate-Limit, Schutz des letzten Admins,
+  Audit aller Auth-Ereignisse. Migration 00003 (`sessions`, `api_tokens`).
+- REST-API `/api/v1` für Setup/Login/Logout/Me/Passwort, Tokens, Scopes
+  (+Statistik, Exclusions), Reservierungen (+CSV-Import), Optionen
+  (Server/Scope/Policy/Reservierung) und Definitionen, Klassen, Policies,
+  MAC-Filter, Leases (Suche/Filter/Paging, löschen, in Reservierung
+  umwandeln), Statistik, Audit (Filter, Keyset-Paging), Benutzer,
+  Einstellungen, System-Info, HA-Status (Platzhalter bis Phase 6).
+- Middleware: Authentifizierung (Cookie/Bearer), zentrale RBAC-Tabelle,
+  CSRF, Origin- und Content-Type-Prüfung, Body-Limits, Security-Header/CSP.
+- HTTPS: selbstsigniert (Default), eigene Dateien oder aus.
+- Web-UI (Deutsch, hell/dunkel, responsive): Login & Ersteinrichtung,
+  Dashboard (Auslastung, Pakete/s, HA, letzte Ereignisse), Scopes (Liste,
+  Assistent, Detail mit Übersicht/Ausschlüssen/Optionen/Reservierungen/
+  Policies/Leases), Reservierungen (inline anlegen, Bearbeiten mit
+  Optionen, CSV-Import), Leases (Suche/Filter/Paging, umwandeln, löschen),
+  Policies/Klassen/Filter (Policy-Editor mit Bedingungen, Bereichen,
+  Lease-Dauer, Optionen), Hochverfügbarkeit, Audit-Log, Benutzer &
+  Einstellungen (Konto, API-Tokens, Benutzer, Server-Optionen,
+  Optionsdefinitionen, System).
+- Einbettung ins Binary (`make build`, Tag `ui`); `make build-noui` ohne
+  Node.js.
+
+**Akzeptanz**
+- Kompletter Workflow nur über die UI (Playwright, `make test-e2e`):
+  Ersteinrichtung → Scope per Assistent (inkl. Frontend-Validierung) →
+  echter `udhcpc` im Client-Namespace bekommt eine Lease → Lease in der UI
+  sichtbar → in Reservierung umgewandelt → im Audit-Log (admin / dhcp) ✅
+- Weitere E2E-Tests: falsches Passwort, Read-only-Benutzer sieht keine
+  Änderungsaktionen, Dark-Mode bleibt erhalten — 5/5 grün ✅
+- Go-API-Tests: Setup, Login + Rate-Limit, Logout, CSRF/Origin/Content-Type,
+  Rollen + API-Tokens, Validierungsfehler mit Feldern, CRUD aller Objekte,
+  Leases, CSV-Import, Statistik, Header, RBAC-Tabelle ✅
+- Frontend-Unit-Tests (Vitest) für die Validierung, Typecheck ✅

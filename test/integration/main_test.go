@@ -139,7 +139,7 @@ func (tp *topo) startServer(extra string) {
 	tp.t.Helper()
 	cfg := fmt.Sprintf(`data_dir: %s
 log: {level: debug, format: text}
-http: {listen: "10.77.0.1:8067"}
+http: {listen: "10.77.0.1:8067", tls: {mode: "off"}}
 dhcp4:
   interfaces: [%s]
   expiry_interval: 1s

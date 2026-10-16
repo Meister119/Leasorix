@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/meister119/leasorix/internal/api"
 	"github.com/meister119/leasorix/internal/audit"
+	"github.com/meister119/leasorix/internal/auth"
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/dhcp4"
@@ -37,10 +39,19 @@ type App struct {
 	prober *lease.ICMPProber
 	dhcp4  *dhcp4.Server
 	audit  *audit.Log
+	auth   *auth.Service
+	// UI is the embedded web UI handler (set by main when built with it).
+	ui http.Handler
 }
 
+// Option customises the App.
+type Option func(*App)
+
+// WithUI serves the given handler as web UI.
+func WithUI(h http.Handler) Option { return func(a *App) { a.ui = h } }
+
 // New opens the database, applies migrations and constructs all components.
-func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error) {
+func New(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Option) (*App, error) {
 	log.Info("starting leasorixd", "version", buildinfo.Version, "commit", buildinfo.Commit, "go", buildinfo.GoVersion())
 
 	db, err := store.Open(ctx, filepath.Join(cfg.DataDir, store.FileName))
@@ -53,6 +64,9 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, error
 		db:      db,
 		health:  health.NewChecker(),
 		metrics: metrics.New(),
+	}
+	for _, o := range opts {
+		o(a)
 	}
 	if err := a.init(ctx); err != nil {
 		_ = db.Close()
@@ -112,13 +126,44 @@ func (a *App) init(ctx context.Context) error {
 		a.log.Warn("no dhcp4.interfaces configured; DHCPv4 service is disabled")
 	}
 
+	a.auth = auth.NewService(a.db, auth.Config{
+		SessionTTL:  a.cfg.Auth.SessionTTL,
+		IdleTimeout: a.cfg.Auth.IdleTimeout,
+		SetupToken:  a.cfg.Auth.SetupToken,
+	})
+	if required, err := a.auth.SetupRequired(ctx); err != nil {
+		return err
+	} else if required {
+		a.log.Warn("no users exist yet: open the web UI and create the first admin with this one-time setup token",
+			"setup_token", a.auth.SetupToken())
+	}
+	tlsCfg, err := api.TLSConfig(a.cfg.HTTP.TLS, a.cfg.DataDir, a.cfg.HTTP.Listen)
+	if err != nil {
+		return err
+	}
 	a.http = api.NewServer(a.cfg.HTTP.Listen, a.cfg.HTTP.ShutdownTimeout, api.Deps{
 		Log:     a.log.With("component", "http"),
 		Health:  a.health,
 		Metrics: a.metrics,
+		Auth:    a.auth,
+		Scopes:  a.scopes,
+		Leases:  a.leases,
+		Audit:   a.audit,
+		Info: api.SystemInfo{
+			StartedAt:         time.Now(),
+			Interfaces:        d.Interfaces,
+			ConflictDetection: a.prober != nil,
+		},
+		UI:               a.ui,
+		TLS:              tlsCfg,
+		LoginMaxFailures: a.cfg.Auth.LoginMaxFailures,
+		LoginWindow:      a.cfg.Auth.LoginWindow,
 	})
 	return nil
 }
+
+// Auth exposes the auth service.
+func (a *App) Auth() *auth.Service { return a.auth }
 
 func (a *App) scopeSamples() []metrics.ScopeSample {
 	stats := a.leases.Stats(a.scopes.Snapshot())

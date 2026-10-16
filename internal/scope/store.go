@@ -597,3 +597,61 @@ func (s *Store) DeleteReservation(ctx context.Context, id int64) error {
 func (s Scope) String() string {
 	return fmt.Sprintf("%s (%s)", s.Name, s.Subnet)
 }
+
+// ImportError reports a problem with one row of a bulk import.
+type ImportError struct {
+	Row     int
+	Message string
+}
+
+// ImportReservations validates and inserts many reservations in one
+// transaction: either all rows are imported or none. Row numbers in the
+// returned errors are the indexes in rs.
+func (s *Store) ImportReservations(ctx context.Context, rs []Reservation) (int, []ImportError, error) {
+	var rowErrs []ImportError
+	for i := range rs {
+		rs[i].ID = 0
+		if err := rs[i].normalize(); err != nil {
+			rowErrs = append(rowErrs, ImportError{Row: i, Message: err.Error()})
+		}
+	}
+	if len(rowErrs) > 0 {
+		return 0, rowErrs, nil
+	}
+	now := s.now().UTC().Truncate(time.Second)
+	errFailed := errors.New("import failed")
+	err := s.mutate(ctx, func(tx *sql.Tx) error {
+		for i := range rs {
+			r := &rs[i]
+			r.CreatedAt, r.UpdatedAt = now, now
+			if err := s.checkReservation(ctx, tx, r); err != nil {
+				rowErrs = append(rowErrs, ImportError{Row: i, Message: err.Error()})
+				continue
+			}
+			res, err := tx.ExecContext(ctx, `
+				INSERT INTO reservations (scope_id, ip, mac, client_id, hostname, description, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				r.ScopeID, ip4.MustFromAddr(r.IP), r.MAC, r.ClientID, r.Hostname, r.Description, now.Unix(), now.Unix())
+			if err != nil {
+				return err
+			}
+			if r.ID, err = res.LastInsertId(); err != nil {
+				return err
+			}
+			if err := s.rec(ctx, tx, "reservation.create", "reservation", r.ID, change(nil, reservationDetails(*r))); err != nil {
+				return err
+			}
+		}
+		if len(rowErrs) > 0 {
+			return errFailed // roll back everything
+		}
+		return nil
+	})
+	if errors.Is(err, errFailed) {
+		return 0, rowErrs, nil
+	}
+	if err != nil {
+		return 0, nil, err
+	}
+	return len(rs), nil, nil
+}

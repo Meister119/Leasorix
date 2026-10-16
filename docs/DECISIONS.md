@@ -343,3 +343,125 @@ Default stderr (Container-Standard, Rotation übernimmt Docker/journald).
 Optional `log.file` mit eingebauter Größenrotation (`max_size_mb`,
 `max_backups`) ohne externe Abhängigkeit; jeder Log-Datensatz landet
 vollständig in einer Datei.
+
+---
+
+## D-032 – OpenAPI zuerst, Code generiert
+
+- Spezifikation `internal/api/openapi.yaml` (OpenAPI **3.0.3**, weil
+  `oapi-codegen` 3.1 nur teilweise unterstützt).
+- Go: `oapi-codegen` v2.8 (als `go tool` in `go.mod` gepinnt) erzeugt Modelle
+  und das chi-`ServerInterface` (`internal/api/gen`). Die Handler
+  implementieren das Interface; der Compiler erzwingt damit, dass jeder
+  Endpunkt der Spec existiert.
+- TypeScript: `openapi-typescript` erzeugt `web/src/api/schema.d.ts`, der
+  Client ist `openapi-fetch` – Pfade, Parameter und Bodies sind typisiert.
+- Generierter Code wird eingecheckt; die CI prüft per `git diff`, dass er zur
+  Spec passt (`make generate`).
+
+## D-033 – Authentifizierung und Sessions
+
+- Passwörter: argon2id mit RFC-9106-Parametern (t=3, m=64 MiB, p=4) im
+  PHC-Format; Parameter stehen im Hash und können später erhöht werden.
+  Mindestlänge 10 Zeichen. Unbekannte Benutzer werden gegen einen
+  Dummy-Hash geprüft (kein Timing-Orakel).
+- Sessions serverseitig: Cookie `leasorix_session` (32 Byte Zufall), in der
+  DB nur als SHA-256. Cookie `HttpOnly`, `SameSite=Strict`, `Secure` sobald
+  TLS aktiv ist. Absolute Laufzeit 12 h, Inaktivität 1 h (konfigurierbar).
+  Passwortwechsel, Deaktivierung und Rollenwechsel beenden Sessions.
+- CSRF: Synchronizer-Token pro Session, Pflicht-Header `X-CSRF-Token` bei
+  allen nicht-GET-Requests mit Cookie-Auth; zusätzlich Origin-Prüfung und
+  Pflicht-`Content-Type: application/json` (Formulare können keine
+  JSON-Requests ohne Preflight senden).
+- API-Tokens `lxt_…` (nur SHA-256 gespeichert, einmalig angezeigt), optional
+  mit Ablauf; Rolle ≤ Rolle des Benutzers, effektive Rolle = Minimum aus
+  Token- und aktueller Benutzerrolle. Kein CSRF für Bearer-Tokens.
+- Der letzte aktive Admin kann nicht gelöscht, deaktiviert oder herabgestuft
+  werden; das eigene Konto kann man nicht löschen.
+- OIDC ist im Plan "optional später" und noch nicht umgesetzt.
+
+## D-034 – Erststart nur mit Setup-Token
+
+Solange kein Benutzer existiert, kann der erste Admin nur mit einem
+einmaligen Setup-Token angelegt werden, das beim Start im Log steht
+(`setup_token=…`) oder per `auth.setup_token` vorgegeben wird. Ohne diesen
+Schutz könnte jeder, der die UI vor dem Betreiber erreicht, die Instanz
+übernehmen. Fehlversuche zählen ins Rate-Limit.
+
+## D-035 – Rollenmodell
+
+| Rolle | darf |
+|---|---|
+| `readonly` | alles lesen außer Benutzerverwaltung; eigenes Passwort, eigene (read-only) Tokens |
+| `operator` | zusätzlich DHCP-Konfiguration ändern (Scopes, Reservierungen, Optionen, Policies, Klassen, Filter-Einträge) und Leases löschen/umwandeln |
+| `admin` | zusätzlich Benutzer und `PUT /settings` (u. a. Aktivierung der MAC-Filterlisten) |
+
+Die Prüfung erfolgt zentral in einer Middleware anhand Methode + Pfad (eine
+Tabelle, getestet), nicht verstreut in den Handlern.
+
+## D-036 – Login-Rate-Limit
+
+Max. 10 Fehlversuche je 15 min pro Client-IP **und** pro Benutzername
+(gleitendes Fenster, im Speicher), danach `429` mit `Retry-After`.
+Fehlversuche landen im Audit-Log (`auth.login_failed`). Die Sperre pro
+Benutzername ermöglicht theoretisch ein kurzzeitiges Aussperren eines
+Kontos – bewusst in Kauf genommen (Management-UI im internen Netz, kurzes
+Fenster, Admin kann per API-Token weiterarbeiten).
+
+## D-037 – TLS standardmäßig an (selbstsigniert)
+
+`http.tls.mode: self-signed` ist Default: beim ersten Start wird ein
+ECDSA-P-256-Zertifikat (825 Tage, SANs localhost/Hostname/Listen-IP) nach
+`<data_dir>/tls` geschrieben (Key 0600). Alternativ `files` (eigenes
+Zertifikat) oder `off` (z. B. hinter einem Reverse Proxy). HSTS nur mit TLS.
+TLS-Handshake-Fehler (Browser vor dem Akzeptieren des Zertifikats, Scanner)
+werden nur auf Debug geloggt.
+
+## D-038 – Strikte Security-Header
+
+CSP ohne `unsafe-inline` (`script-src 'self'; style-src 'self'`), deshalb
+kein Inline-Skript: die Theme-Erkennung liegt in `/theme.js`. Dazu
+`X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`,
+`Referrer-Policy: no-referrer`, COOP/CORP, `Cache-Control: no-store` für die
+API. `X-Forwarded-For` wird nicht ausgewertet (D-008). `/metrics` ist ohne
+Login erreichbar (Prometheus-Scrape) – Schutz über die Bind-Adresse.
+
+## D-039 – Web-UI
+
+- Vite 8 + React 19 + TypeScript + Tailwind 4, TanStack Query, React Router 7.
+  **TypeScript 5.9** statt 7.0: die native 7er-Linie ist neu, 5.9 ist mit dem
+  gesamten Tooling erprobt (konservative Wahl).
+- Sprache der Oberfläche: Deutsch (wie PLAN und Nutzer); i18n kann später
+  ergänzt werden.
+- Dark/Light: Class-Strategie, Default aus `prefers-color-scheme`, Auswahl
+  wird in `localStorage` gemerkt.
+- Einbettung über `go:embed` hinter Build-Tag `ui` (`make build`). Ohne Tag
+  baut `go build ./...` ohne Node.js und liefert eine Hinweisseite – so muss
+  kein Build-Artefakt eingecheckt werden.
+- Validierung doppelt: `web/src/lib/validate.ts` spiegelt die Backend-Regeln
+  (Präfix /8–/30, Host-Bits, Bereich im Subnetz, Überlappung, MAC-Muster)
+  für sofortiges Feedback; das Backend prüft verbindlich.
+- Der Scope-Assistent schlägt Bereich/Router nur als Platzhalter vor und
+  übernimmt sie erst bei „Weiter“ in leere Felder (kein Überschreiben beim
+  Tippen).
+
+## D-040 – Reservierungs-Import (CSV)
+
+Alles-oder-nichts in einer Transaktion; Fehler werden mit Zeilennummer
+gemeldet. Pflichtspalten `scope` (Name oder ID) und `ip`, dazu `mac`
+und/oder `client_id`; Trennzeichen `,` oder `;` (automatisch erkannt), BOM
+wird toleriert. Jede importierte Zeile erzeugt einen Audit-Eintrag.
+
+## D-041 – Lease-Aktionen per API/UI
+
+„Lease löschen“ entfernt den Datensatz sofort (Adresse wieder frei, Audit
+`lease.delete` mit dem Benutzer). „In Reservierung umwandeln“ übernimmt IP,
+MAC und Hostname (Client-ID nur, wenn keine MAC bekannt ist).
+
+## D-042 – End-to-End-Tests
+
+Playwright gegen den echten Server in einem Network Namespace (Management-
+veth zum Root-Namespace, DHCP-veth zum Client-Namespace), der Test startet
+`udhcpc` im Client-Namespace (`test/e2e/run.sh`, `make test-e2e`). Lokal
+wird das vorinstallierte Chromium verwendet, in der CI per
+`playwright install`.
