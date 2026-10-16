@@ -25,9 +25,7 @@ import (
 // TestDhclientLifecycle: obtain, renew (unicast RENEWING), INIT-REBOOT and
 // release with ISC dhclient.
 func TestDhclientLifecycle(t *testing.T) {
-	if _, err := exec.LookPath("dhclient"); err != nil {
-		t.Skip("dhclient not installed")
-	}
+	dhclient := dhclientBin(t)
 	tp := newTopo(t)
 	tp.seed(func(ctx context.Context, s *scope.Store) {
 		mustScope(t, s, "lan", "10.77.0.0/16", "10.77.0.100", "10.77.0.200", 20*time.Second)
@@ -46,7 +44,7 @@ exit 0
 	lf, pf := filepath.Join(tp.dir, "dhclient.leases"), filepath.Join(tp.dir, "dhclient.pid")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := tp.cli.Command(ctx, "dhclient", "-4", "-d", "-sf", script, "-lf", lf, "-pf", pf, "c0")
+	cmd := tp.cli.Command(ctx, dhclient, "-4", "-d", "-sf", script, "-lf", lf, "-pf", pf, "c0")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +84,7 @@ exit 0
 	_ = cmd.Wait()
 
 	// Restart: dhclient reuses its lease file -> INIT-REBOOT.
-	out, err := tp.cli.Output("dhclient", "-4", "-1", "-v", "-sf", script, "-lf", lf, "-pf", pf, "c0")
+	out, err := tp.cli.Output(dhclient, "-4", "-1", "-v", "-sf", script, "-lf", lf, "-pf", pf, "c0")
 	if err != nil {
 		t.Fatalf("dhclient restart: %v\n%s", err, out)
 	}
@@ -94,7 +92,7 @@ exit 0
 		t.Fatalf("INIT-REBOOT did not get the same address:\n%s", out)
 	}
 	// Release.
-	out, err = tp.cli.Output("dhclient", "-4", "-r", "-v", "-sf", script, "-lf", lf, "-pf", pf, "c0")
+	out, err = tp.cli.Output(dhclient, "-4", "-r", "-v", "-sf", script, "-lf", lf, "-pf", pf, "c0")
 	if err != nil {
 		t.Fatalf("dhclient -r: %v\n%s", err, out)
 	}
