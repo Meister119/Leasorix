@@ -20,6 +20,7 @@ import (
 	"github.com/meister119/leasorix/internal/api/gen"
 	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/auth"
+	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/metrics"
@@ -31,6 +32,13 @@ type SystemInfo struct {
 	StartedAt         time.Time
 	Interfaces        []string
 	ConflictDetection bool
+}
+
+// HA is the part of the high availability node used by the API.
+type HA interface {
+	Status() ha.Status
+	PartnerDown(ctx context.Context) error
+	ConfigReadOnly() bool
 }
 
 // Deps are the collaborators of the HTTP server. Only Log, Health and
@@ -45,8 +53,8 @@ type Deps struct {
 	Leases *lease.Manager
 	Audit  *audit.Log
 	Info   SystemInfo
-	// HA reports the high availability status (nil = not configured).
-	HA func(ctx context.Context) gen.HAStatus
+	// HA is the high availability node (nil = not configured).
+	HA HA
 	// UI serves the embedded web interface (nil = placeholder page).
 	UI http.Handler
 	// TLS enables HTTPS when set.
@@ -103,6 +111,7 @@ func (s *Server) routes() chi.Router {
 			api.Use(s.limitBody)
 			api.Use(s.authenticate)
 			api.Use(s.authorize)
+			api.Use(s.configWritable)
 			api.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 				writeError(w, http.StatusNotFound, "no such endpoint", nil)
 			})

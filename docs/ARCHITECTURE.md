@@ -13,7 +13,7 @@
   HTTP   ----> |  api (chi): UI, REST,         v               |
   (mgmt)        |  /healthz /readyz /metrics  store (SQLite)   |
                 |                              ^               |
-  gRPC   <---> |  ha (Phase 6)  ---------------+               |
+  gRPC   <---> |  ha: Failover, Replikation ---+               |
   (peer)        +---------------------------------------------+
 ```
 
@@ -41,7 +41,7 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 | `internal/dhcpopt` | Options-Katalog und typisierte Werte |
 | `internal/api/gen` | aus OpenAPI generierter Code |
 | `web` | React-UI, per `go:embed` eingebettet |
-| `internal/ha` | Peer-Replikation und Failover (Phase 6) |
+| `internal/ha` | HA-Partnerschaft: Zustandsautomat, Pool-Aufteilung, gRPC-Peer-Protokoll (`pb`), Lease-/Config-Replikation, Zertifikate |
 | `internal/dnsupdate` | RFC-2136-Updates (Phase 9) |
 | `internal/dhcp6` | DHCPv6 (Phase 10) |
 
@@ -108,3 +108,42 @@ SQLite im WAL-Modus unter `<data_dir>/leasorix.db`. Schreibzugriffe laufen
 über einen Pool mit genau einer Verbindung (`BEGIN IMMEDIATE`), Lesezugriffe
 über einen separaten Read-only-Pool. Das Schema wird über eingebettete
 goose-Migrationen (`internal/store/migrations`) beim Start aktualisiert.
+
+Migrationen: 00001 Grundschema, 00002 Policies/Optionen/Filter, 00003
+Sessions/API-Tokens, 00004 HA (Lease-Zeitstempel in ms + `origin`,
+`ha_state`, Trigger-gepflegter `config_version`-Zähler). Ein `flock` auf
+`<data_dir>/leasorixd.lock` verhindert parallele Prozesse auf derselben
+Datenbank.
+
+## Hochverfügbarkeit
+
+Details und Bedienung: [HA.md](HA.md); Entscheidungen D-043 bis D-052.
+
+```
+  Server A (primary, Config-Leader)            Server B (secondary)
+  +--------------------------------+   gRPC   +--------------------------------+
+  | dhcp4 --Accept()--> ha.Node     |  mTLS /  | ha.Node <--Accept()-- dhcp4     |
+  |   |                  |  ^       |  Secret  |  ^   |                  |      |
+  |   v                  |  |       | <------> |  |   |                  v      |
+  | lease.Manager <------+  |       | Heartbeat|  |   +--> lease.Manager        |
+  |   CanAllocate/LeaseLimit|       | PushLeases  |       ApplyRemote          |
+  |   Replicate ----------->+       | DumpLeases  |                            |
+  | scope.Store  --config_version-->| PushConfig -+-> applyConfig -> scope.Store|
+  +--------------------------------+          +--------------------------------+
+```
+
+- **Hot Path ohne Sperren:** `ha.Node` veröffentlicht Zustand und
+  Übernahmezeit atomar; `Accept` (wer antwortet), `CanAllocate` (eigener
+  Pool-Anteil) und `LeaseLimit` (MCLT) lesen nur diesen Schnappschuss.
+- **Lease-Replikation:** der Lease-Manager trägt Änderungen in eine Outbox
+  ein; ein Sender bündelt sie zu `PushLeases`. Bei `sync` wartet der Request
+  auf die Bestätigung, bevor er lokal speichert und das ACK rausgeht.
+  Empfangene Änderungen laufen durch `lease.Wins` (deterministisches
+  Zusammenführen), ebenso der Abgleich per `DumpLeases`.
+- **Zustandsautomat** (`internal/ha/machine.go`) ist rein ereignisgetrieben
+  und mit simulierter Zeit getestet; `node.go` verbindet ihn mit gRPC,
+  Persistenz (`ha_state`), Audit und Metriken.
+- **Konfiguration:** Trigger erhöhen `config_version`; der Leader schickt
+  bei Änderung einen Snapshot aller Konfigurationstabellen, der Partner
+  ersetzt seine Tabellen in einer Transaktion und lädt den Scope-Snapshot
+  neu. Die API des Partners lehnt Konfigurationsänderungen ab.

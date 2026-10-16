@@ -60,7 +60,7 @@ func NewDBStore(db *store.DB) *DBStore {
 // LoadAll reads every lease record.
 func (s *DBStore) LoadAll(ctx context.Context) ([]Lease, error) {
 	rows, err := s.db.R.QueryContext(ctx, `
-		SELECT ip, scope_id, mac, client_id, hostname, state, starts_at, expires_at, updated_at FROM leases`)
+		SELECT ip, scope_id, mac, client_id, hostname, state, starts_at, expires_at, updated_at, origin FROM leases`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +73,14 @@ func (s *DBStore) LoadAll(ctx context.Context) ([]Lease, error) {
 			state                    string
 			starts, expires, updated int64
 		)
-		if err := rows.Scan(&ip, &l.ScopeID, &l.MAC, &l.ClientID, &l.Hostname, &state, &starts, &expires, &updated); err != nil {
+		if err := rows.Scan(&ip, &l.ScopeID, &l.MAC, &l.ClientID, &l.Hostname, &state, &starts, &expires, &updated, &l.Origin); err != nil {
 			return nil, err
 		}
 		l.IP = uint32(ip)
 		l.State = State(state)
 		l.Start = time.Unix(starts, 0).UTC()
 		l.Expires = time.Unix(expires, 0).UTC()
-		l.Updated = time.Unix(updated, 0).UTC()
+		l.Updated = time.UnixMilli(updated).UTC()
 		out = append(out, l)
 	}
 	return out, rows.Err()
@@ -147,12 +147,12 @@ func (s *DBStore) flush(batch []*writeReq) (err error) {
 	defer cancel()
 	return s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		up, err := tx.PrepareContext(ctx, `
-			INSERT INTO leases (ip, scope_id, mac, client_id, hostname, state, starts_at, expires_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO leases (ip, scope_id, mac, client_id, hostname, state, starts_at, expires_at, updated_at, origin)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (ip) DO UPDATE SET
 				scope_id = excluded.scope_id, mac = excluded.mac, client_id = excluded.client_id,
 				hostname = excluded.hostname, state = excluded.state, starts_at = excluded.starts_at,
-				expires_at = excluded.expires_at, updated_at = excluded.updated_at`)
+				expires_at = excluded.expires_at, updated_at = excluded.updated_at, origin = excluded.origin`)
 		if err != nil {
 			return err
 		}
@@ -178,7 +178,7 @@ func (s *DBStore) flush(batch []*writeReq) (err error) {
 					continue
 				}
 				if _, err := up.ExecContext(ctx, int64(l.IP), l.ScopeID, l.MAC, l.ClientID, l.Hostname, string(l.State),
-					l.Start.Unix(), l.Expires.Unix(), l.Updated.Unix()); err != nil {
+					l.Start.Unix(), l.Expires.Unix(), l.Updated.UnixMilli(), l.Origin); err != nil {
 					return err
 				}
 			}

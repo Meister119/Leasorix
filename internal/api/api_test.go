@@ -37,7 +37,9 @@ type stack struct {
 	auth   *auth.Service
 }
 
-func newStack(t *testing.T) *stack {
+func newStack(t *testing.T) *stack { return newStackWith(t, nil) }
+
+func newStackWith(t *testing.T, mod func(*Deps)) *stack {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	db, err := store.Open(ctx, filepath.Join(t.TempDir(), store.FileName))
@@ -57,11 +59,15 @@ func newStack(t *testing.T) *stack {
 	done := make(chan struct{})
 	go func() { _ = leases.Run(ctx); close(done) }()
 	authSvc := auth.NewService(db, auth.Config{SetupToken: setupToken})
-	s := NewServer("127.0.0.1:0", time.Second, Deps{
+	deps := Deps{
 		Log: log, Health: health.NewChecker(), Metrics: metrics.New(),
 		Auth: authSvc, Scopes: scopes, Leases: leases, Audit: audit.NewLog(db),
 		Info: SystemInfo{StartedAt: time.Now(), Interfaces: []string{"eth0"}}, LoginMaxFailures: 5, LoginWindow: time.Minute,
-	})
+	}
+	if mod != nil {
+		mod(&deps)
+	}
+	s := NewServer("127.0.0.1:0", time.Second, deps)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(func() { srv.Close(); cancel(); <-done; _ = db.Close() })
 	return &stack{t: t, srv: srv, scopes: scopes, leases: leases, auth: authSvc}
@@ -493,8 +499,6 @@ func TestReservationsAndImport(t *testing.T) {
 	}
 	a.must(204, "DELETE", fmt.Sprintf("/reservations/%d", res.Id), nil)
 }
-
-func strPtr(s string) *string { return &s }
 
 func TestLeasesEndpoints(t *testing.T) {
 	st := newStack(t)

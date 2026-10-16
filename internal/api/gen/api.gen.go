@@ -113,6 +113,120 @@ func (e ConditionField) Valid() bool {
 	}
 }
 
+// Defines values for HAState.
+const (
+	COMMUNICATIONINTERRUPTED HAState = "COMMUNICATION_INTERRUPTED"
+	NORMAL                   HAState = "NORMAL"
+	PARTNERDOWN              HAState = "PARTNER_DOWN"
+	RECOVER                  HAState = "RECOVER"
+	RECOVERDONE              HAState = "RECOVER_DONE"
+)
+
+// Valid indicates whether the value is a known member of the HAState enum.
+func (e HAState) Valid() bool {
+	switch e {
+	case COMMUNICATIONINTERRUPTED:
+		return true
+	case NORMAL:
+		return true
+	case PARTNERDOWN:
+		return true
+	case RECOVER:
+		return true
+	case RECOVERDONE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HAStatusMode.
+const (
+	HotStandby  HAStatusMode = "hot-standby"
+	LoadBalance HAStatusMode = "load-balance"
+)
+
+// Valid indicates whether the value is a known member of the HAStatusMode enum.
+func (e HAStatusMode) Valid() bool {
+	switch e {
+	case HotStandby:
+		return true
+	case LoadBalance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HAStatusReplication.
+const (
+	Async HAStatusReplication = "async"
+	Sync  HAStatusReplication = "sync"
+)
+
+// Valid indicates whether the value is a known member of the HAStatusReplication enum.
+func (e HAStatusReplication) Valid() bool {
+	switch e {
+	case Async:
+		return true
+	case Sync:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HAStatusRole.
+const (
+	Primary   HAStatusRole = "primary"
+	Secondary HAStatusRole = "secondary"
+)
+
+// Valid indicates whether the value is a known member of the HAStatusRole enum.
+func (e HAStatusRole) Valid() bool {
+	switch e {
+	case Primary:
+		return true
+	case Secondary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HAStatusTlsMode.
+const (
+	Mtls   HAStatusTlsMode = "mtls"
+	Secret HAStatusTlsMode = "secret"
+)
+
+// Valid indicates whether the value is a known member of the HAStatusTlsMode enum.
+func (e HAStatusTlsMode) Valid() bool {
+	switch e {
+	case Mtls:
+		return true
+	case Secret:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LeaseExportFormat.
+const (
+	LeasorixLeasesv1 LeaseExportFormat = "leasorix-leases/v1"
+)
+
+// Valid indicates whether the value is a known member of the LeaseExportFormat enum.
+func (e LeaseExportFormat) Valid() bool {
+	switch e {
+	case LeasorixLeasesv1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LeaseState.
 const (
 	Active   LeaseState = "active"
@@ -299,6 +413,39 @@ func (e Role) Valid() bool {
 	}
 }
 
+// Defines values for ScopeBundleFormat.
+const (
+	LeasorixScopev1 ScopeBundleFormat = "leasorix-scope/v1"
+)
+
+// Valid indicates whether the value is a known member of the ScopeBundleFormat enum.
+func (e ScopeBundleFormat) Valid() bool {
+	switch e {
+	case LeasorixScopev1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScopeBundlePoliciesOperator.
+const (
+	ScopeBundlePoliciesOperatorAnd ScopeBundlePoliciesOperator = "and"
+	ScopeBundlePoliciesOperatorOr  ScopeBundlePoliciesOperator = "or"
+)
+
+// Valid indicates whether the value is a known member of the ScopeBundlePoliciesOperator enum.
+func (e ScopeBundlePoliciesOperator) Valid() bool {
+	switch e {
+	case ScopeBundlePoliciesOperatorAnd:
+		return true
+	case ScopeBundlePoliciesOperatorOr:
+		return true
+	default:
+		return false
+	}
+}
+
 // AddrRange defines model for AddrRange.
 type AddrRange struct {
 	End   string `json:"end"`
@@ -347,6 +494,18 @@ type AuditEntry struct {
 type AuditList struct {
 	Items        []AuditEntry `json:"items"`
 	NextBeforeId *int64       `json:"next_before_id,omitempty"`
+}
+
+// BundleOption defines model for BundleOption.
+type BundleOption struct {
+	Code  int    `json:"code"`
+	Value string `json:"value"`
+}
+
+// BundleRange defines model for BundleRange.
+type BundleRange struct {
+	End   string `json:"end"`
+	Start string `json:"start"`
 }
 
 // Class defines model for Class.
@@ -405,17 +564,74 @@ type FieldError struct {
 	Message string `json:"message"`
 }
 
+// HACertificates defines model for HACertificates.
+type HACertificates struct {
+	CaCert string `json:"ca_cert"`
+	Nodes  []struct {
+		Cert   string `json:"cert"`
+		Key    string `json:"key"`
+		NodeId string `json:"node_id"`
+	} `json:"nodes"`
+	NotAfter time.Time `json:"not_after"`
+}
+
+// HAState defines model for HAState.
+type HAState string
+
 // HAStatus defines model for HAStatus.
 type HAStatus struct {
-	ConfigLeader *bool      `json:"config_leader,omitempty"`
-	Enabled      bool       `json:"enabled"`
-	LastContact  *time.Time `json:"last_contact,omitempty"`
-	Mode         *string    `json:"mode,omitempty"`
-	Peer         *string    `json:"peer,omitempty"`
-	PeerState    *string    `json:"peer_state,omitempty"`
-	Role         *string    `json:"role,omitempty"`
-	State        *string    `json:"state,omitempty"`
+	// AutoPartnerDown Seconds
+	AutoPartnerDown    *int       `json:"auto_partner_down,omitempty"`
+	CertExpires        *time.Time `json:"cert_expires,omitempty"`
+	ConfigError        *string    `json:"config_error,omitempty"`
+	ConfigInSync       *bool      `json:"config_in_sync,omitempty"`
+	ConfigLeader       *bool      `json:"config_leader,omitempty"`
+	ConfigReadOnly     *bool      `json:"config_read_only,omitempty"`
+	ConfigVersion      *int64     `json:"config_version,omitempty"`
+	Connected          *bool      `json:"connected,omitempty"`
+	Enabled            bool       `json:"enabled"`
+	Error              *string    `json:"error,omitempty"`
+	LastContact        *time.Time `json:"last_contact,omitempty"`
+	LastResync         *time.Time `json:"last_resync,omitempty"`
+	LoadBalancePercent *int       `json:"load_balance_percent,omitempty"`
+
+	// Mclt Seconds.
+	Mclt             *int          `json:"mclt,omitempty"`
+	Mode             *HAStatusMode `json:"mode,omitempty"`
+	NodeId           *string       `json:"node_id,omitempty"`
+	PartnerDownSince *time.Time    `json:"partner_down_since,omitempty"`
+	PeerAddress      *string       `json:"peer_address,omitempty"`
+	PeerId           *string       `json:"peer_id,omitempty"`
+
+	// PeerState Last state reported by the partner.
+	PeerState   *string              `json:"peer_state,omitempty"`
+	PeerVersion *string              `json:"peer_version,omitempty"`
+	Replication *HAStatusReplication `json:"replication,omitempty"`
+	ResyncError *string              `json:"resync_error,omitempty"`
+	Role        *HAStatusRole        `json:"role,omitempty"`
+
+	// Serving False while recovering (no DHCP answers).
+	Serving               *bool      `json:"serving,omitempty"`
+	StandbyReservePercent *int       `json:"standby_reserve_percent,omitempty"`
+	State                 *HAState   `json:"state,omitempty"`
+	StateSince            *time.Time `json:"state_since,omitempty"`
+
+	// TakeoverAt In PARTNER_DOWN, from this time on the whole pool is used.
+	TakeoverAt *time.Time       `json:"takeover_at,omitempty"`
+	TlsMode    *HAStatusTlsMode `json:"tls_mode,omitempty"`
 }
+
+// HAStatusMode defines model for HAStatus.Mode.
+type HAStatusMode string
+
+// HAStatusReplication defines model for HAStatus.Replication.
+type HAStatusReplication string
+
+// HAStatusRole defines model for HAStatus.Role.
+type HAStatusRole string
+
+// HAStatusTlsMode defines model for HAStatus.TlsMode.
+type HAStatusTlsMode string
 
 // ImportResult defines model for ImportResult.
 type ImportResult struct {
@@ -443,6 +659,34 @@ type Lease struct {
 	StartsAt  time.Time  `json:"starts_at"`
 	State     LeaseState `json:"state"`
 	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// LeaseExport defines model for LeaseExport.
+type LeaseExport struct {
+	ExportedAt time.Time         `json:"exported_at"`
+	Format     LeaseExportFormat `json:"format"`
+	Leases     []struct {
+		ClientId *string    `json:"client_id,omitempty"`
+		Expires  time.Time  `json:"expires"`
+		Hostname *string    `json:"hostname,omitempty"`
+		Ip       string     `json:"ip"`
+		Mac      string     `json:"mac"`
+		Origin   *string    `json:"origin,omitempty"`
+		Start    time.Time  `json:"start"`
+		State    LeaseState `json:"state"`
+		Updated  time.Time  `json:"updated"`
+	} `json:"leases"`
+	Node *string `json:"node,omitempty"`
+}
+
+// LeaseExportFormat defines model for LeaseExport.Format.
+type LeaseExportFormat string
+
+// LeaseImportResult defines model for LeaseImportResult.
+type LeaseImportResult struct {
+	Changed   int `json:"changed"`
+	Conflicts int `json:"conflicts"`
+	Records   int `json:"records"`
 }
 
 // LeaseList defines model for LeaseList.
@@ -618,6 +862,51 @@ type Scope struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ScopeBundle defines model for ScopeBundle.
+type ScopeBundle struct {
+	Exclusions []BundleRange     `json:"exclusions"`
+	Format     ScopeBundleFormat `json:"format"`
+	Options    []BundleOption    `json:"options"`
+	Policies   []struct {
+		Conditions []struct {
+			Field    string `json:"field"`
+			Operator string `json:"operator"`
+			Value    string `json:"value"`
+		} `json:"conditions"`
+		Description *string                     `json:"description,omitempty"`
+		Enabled     bool                        `json:"enabled"`
+		LeaseTime   *int64                      `json:"lease_time,omitempty"`
+		Name        string                      `json:"name"`
+		Operator    ScopeBundlePoliciesOperator `json:"operator"`
+		Options     *[]BundleOption             `json:"options,omitempty"`
+		Order       int                         `json:"order"`
+		Ranges      *[]BundleRange              `json:"ranges,omitempty"`
+	} `json:"policies"`
+	Reservations []struct {
+		ClientId    *string         `json:"client_id,omitempty"`
+		Description *string         `json:"description,omitempty"`
+		Hostname    *string         `json:"hostname,omitempty"`
+		Ip          string          `json:"ip"`
+		Mac         *string         `json:"mac,omitempty"`
+		Options     *[]BundleOption `json:"options,omitempty"`
+	} `json:"reservations"`
+	Scope struct {
+		Description *string `json:"description,omitempty"`
+		Enabled     bool    `json:"enabled"`
+		End         string  `json:"end"`
+		LeaseTime   int64   `json:"lease_time"`
+		Name        string  `json:"name"`
+		Start       string  `json:"start"`
+		Subnet      string  `json:"subnet"`
+	} `json:"scope"`
+}
+
+// ScopeBundleFormat defines model for ScopeBundle.Format.
+type ScopeBundleFormat string
+
+// ScopeBundlePoliciesOperator defines model for ScopeBundle.Policies.Operator.
+type ScopeBundlePoliciesOperator string
+
 // ScopeInput defines model for ScopeInput.
 type ScopeInput struct {
 	Description *string `json:"description,omitempty"`
@@ -672,6 +961,19 @@ type SetupStatus struct {
 	SetupRequired bool `json:"setup_required"`
 }
 
+// SplitScopeInput defines model for SplitScopeInput.
+type SplitScopeInput struct {
+	LocalPercent int `json:"local_percent"`
+}
+
+// SplitScopeResult defines model for SplitScopeResult.
+type SplitScopeResult struct {
+	ExclusionsAdded []Exclusion `json:"exclusions_added"`
+	LocalRange      BundleRange `json:"local_range"`
+	Partner         ScopeBundle `json:"partner"`
+	PartnerRange    BundleRange `json:"partner_range"`
+}
+
 // Stats defines model for Stats.
 type Stats struct {
 	ActiveLeases    int64              `json:"active_leases"`
@@ -684,10 +986,17 @@ type Stats struct {
 
 // SystemInfo defines model for SystemInfo.
 type SystemInfo struct {
-	Commit            string    `json:"commit"`
+	Commit string `json:"commit"`
+
+	// ConfigLeader Node id of the configuration leader (HA only).
+	ConfigLeader *string `json:"config_leader,omitempty"`
+
+	// ConfigReadOnly Configuration changes must be made on the HA config leader.
+	ConfigReadOnly    bool      `json:"config_read_only"`
 	ConflictDetection bool      `json:"conflict_detection"`
 	Dhcp4Interfaces   []string  `json:"dhcp4_interfaces"`
 	GoVersion         string    `json:"go_version"`
+	HaEnabled         bool      `json:"ha_enabled"`
 	StartedAt         time.Time `json:"started_at"`
 	Tls               bool      `json:"tls"`
 	Version           string    `json:"version"`
@@ -764,6 +1073,11 @@ type ListAuditParams struct {
 	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GenerateHACertificatesJSONBody defines parameters for GenerateHACertificates.
+type GenerateHACertificatesJSONBody struct {
+	Nodes []string `json:"nodes"`
+}
+
 // ListLeasesParams defines parameters for ListLeases.
 type ListLeasesParams struct {
 	ScopeId *int64      `form:"scope_id,omitempty" json:"scope_id,omitempty"`
@@ -806,6 +1120,12 @@ type UpdateClassJSONRequestBody = ClassInput
 // CreateFilterJSONRequestBody defines body for CreateFilter for application/json ContentType.
 type CreateFilterJSONRequestBody = MacFilterInput
 
+// GenerateHACertificatesJSONRequestBody defines body for GenerateHACertificates for application/json ContentType.
+type GenerateHACertificatesJSONRequestBody GenerateHACertificatesJSONBody
+
+// ImportLeasesJSONRequestBody defines body for ImportLeases for application/json ContentType.
+type ImportLeasesJSONRequestBody = LeaseExport
+
 // ConvertLeaseToReservationJSONRequestBody defines body for ConvertLeaseToReservation for application/json ContentType.
 type ConvertLeaseToReservationJSONRequestBody ConvertLeaseToReservationJSONBody
 
@@ -830,11 +1150,17 @@ type UpdateReservationJSONRequestBody = ReservationInput
 // CreateScopeJSONRequestBody defines body for CreateScope for application/json ContentType.
 type CreateScopeJSONRequestBody = ScopeInput
 
+// ImportScopeJSONRequestBody defines body for ImportScope for application/json ContentType.
+type ImportScopeJSONRequestBody = ScopeBundle
+
 // UpdateScopeJSONRequestBody defines body for UpdateScope for application/json ContentType.
 type UpdateScopeJSONRequestBody = ScopeInput
 
 // CreateExclusionJSONRequestBody defines body for CreateExclusion for application/json ContentType.
 type CreateExclusionJSONRequestBody = AddrRange
+
+// SplitScopeJSONRequestBody defines body for SplitScope for application/json ContentType.
+type SplitScopeJSONRequestBody = SplitScopeInput
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = Settings
@@ -890,11 +1216,23 @@ type ServerInterface interface {
 	// (DELETE /filters/{id})
 	DeleteFilter(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (POST /ha/certificates)
+	GenerateHACertificates(w http.ResponseWriter, r *http.Request)
+
+	// (POST /ha/partner-down)
+	DeclarePartnerDown(w http.ResponseWriter, r *http.Request)
+
 	// (GET /ha/status)
 	GetHAStatus(w http.ResponseWriter, r *http.Request)
 
 	// (GET /leases)
 	ListLeases(w http.ResponseWriter, r *http.Request, params ListLeasesParams)
+
+	// (GET /leases/export)
+	ExportLeases(w http.ResponseWriter, r *http.Request)
+
+	// (POST /leases/import)
+	ImportLeases(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /leases/{ip})
 	DeleteLease(w http.ResponseWriter, r *http.Request, ip IP)
@@ -962,6 +1300,9 @@ type ServerInterface interface {
 	// (POST /scopes)
 	CreateScope(w http.ResponseWriter, r *http.Request)
 
+	// (POST /scopes/import)
+	ImportScope(w http.ResponseWriter, r *http.Request)
+
 	// (DELETE /scopes/{id})
 	DeleteScope(w http.ResponseWriter, r *http.Request, id Id)
 
@@ -979,6 +1320,12 @@ type ServerInterface interface {
 
 	// (DELETE /scopes/{id}/exclusions/{exclusionId})
 	DeleteExclusion(w http.ResponseWriter, r *http.Request, id Id, exclusionId int64)
+
+	// (GET /scopes/{id}/export)
+	ExportScope(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /scopes/{id}/split)
+	SplitScope(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /scopes/{id}/stats)
 	GetScopeStats(w http.ResponseWriter, r *http.Request, id Id)
@@ -1087,6 +1434,16 @@ func (_ Unimplemented) DeleteFilter(w http.ResponseWriter, r *http.Request, id I
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /ha/certificates)
+func (_ Unimplemented) GenerateHACertificates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /ha/partner-down)
+func (_ Unimplemented) DeclarePartnerDown(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /ha/status)
 func (_ Unimplemented) GetHAStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1094,6 +1451,16 @@ func (_ Unimplemented) GetHAStatus(w http.ResponseWriter, r *http.Request) {
 
 // (GET /leases)
 func (_ Unimplemented) ListLeases(w http.ResponseWriter, r *http.Request, params ListLeasesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /leases/export)
+func (_ Unimplemented) ExportLeases(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /leases/import)
+func (_ Unimplemented) ImportLeases(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1207,6 +1574,11 @@ func (_ Unimplemented) CreateScope(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /scopes/import)
+func (_ Unimplemented) ImportScope(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (DELETE /scopes/{id})
 func (_ Unimplemented) DeleteScope(w http.ResponseWriter, r *http.Request, id Id) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1234,6 +1606,16 @@ func (_ Unimplemented) CreateExclusion(w http.ResponseWriter, r *http.Request, i
 
 // (DELETE /scopes/{id}/exclusions/{exclusionId})
 func (_ Unimplemented) DeleteExclusion(w http.ResponseWriter, r *http.Request, id Id, exclusionId int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /scopes/{id}/export)
+func (_ Unimplemented) ExportScope(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /scopes/{id}/split)
+func (_ Unimplemented) SplitScope(w http.ResponseWriter, r *http.Request, id Id) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1630,6 +2012,34 @@ func (siw *ServerInterfaceWrapper) DeleteFilter(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GenerateHACertificates operation middleware
+func (siw *ServerInterfaceWrapper) GenerateHACertificates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GenerateHACertificates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeclarePartnerDown operation middleware
+func (siw *ServerInterfaceWrapper) DeclarePartnerDown(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeclarePartnerDown(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHAStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetHAStatus(w http.ResponseWriter, r *http.Request) {
 
@@ -1720,6 +2130,34 @@ func (siw *ServerInterfaceWrapper) ListLeases(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListLeases(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportLeases operation middleware
+func (siw *ServerInterfaceWrapper) ExportLeases(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportLeases(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportLeases operation middleware
+func (siw *ServerInterfaceWrapper) ImportLeases(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportLeases(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2276,6 +2714,20 @@ func (siw *ServerInterfaceWrapper) CreateScope(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ImportScope operation middleware
+func (siw *ServerInterfaceWrapper) ImportScope(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportScope(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteScope operation middleware
 func (siw *ServerInterfaceWrapper) DeleteScope(w http.ResponseWriter, r *http.Request) {
 
@@ -2432,6 +2884,58 @@ func (siw *ServerInterfaceWrapper) DeleteExclusion(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteExclusion(w, r, id, exclusionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportScope operation middleware
+func (siw *ServerInterfaceWrapper) ExportScope(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportScope(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SplitScope operation middleware
+func (siw *ServerInterfaceWrapper) SplitScope(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SplitScope(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2841,6 +3345,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/scopes/{id}", wrapper.UpdateScope)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/scopes/import", wrapper.ImportScope)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/scopes/{id}/export", wrapper.ExportScope)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/scopes/{id}/split", wrapper.SplitScope)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/scopes/{id}/stats", wrapper.GetScopeStats)
 	})
 	r.Group(func(r chi.Router) {
@@ -2928,6 +3441,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/leases", wrapper.ListLeases)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/leases/export", wrapper.ExportLeases)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/leases/import", wrapper.ImportLeases)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/leases/{ip}", wrapper.DeleteLease)
 	})
 	r.Group(func(r chi.Router) {
@@ -2966,6 +3485,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/ha/status", wrapper.GetHAStatus)
 	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/ha/partner-down", wrapper.DeclarePartnerDown)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/ha/certificates", wrapper.GenerateHACertificates)
+	})
 
 	return r
 }
@@ -2975,90 +3500,117 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

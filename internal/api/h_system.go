@@ -257,6 +257,18 @@ func (h *handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, in)
 }
 
+func (h *handlers) configLeader() *string {
+	if h.s.deps.HA == nil {
+		return nil
+	}
+	st := h.s.deps.HA.Status()
+	id := st.NodeID
+	if st.ConfigReadOnly {
+		id = st.PeerID
+	}
+	return &id
+}
+
 func (h *handlers) GetSystemInfo(w http.ResponseWriter, _ *http.Request) {
 	ifaces := append([]string{}, h.s.deps.Info.Interfaces...)
 	sort.Strings(ifaces)
@@ -264,13 +276,8 @@ func (h *handlers) GetSystemInfo(w http.ResponseWriter, _ *http.Request) {
 		Version: buildinfo.Version, Commit: buildinfo.Commit, GoVersion: buildinfo.GoVersion(),
 		StartedAt: h.s.deps.Info.StartedAt, Dhcp4Interfaces: ifaces, Tls: h.s.deps.TLS != nil,
 		ConflictDetection: h.s.deps.Info.ConflictDetection,
+		HaEnabled:         h.s.deps.HA != nil,
+		ConfigReadOnly:    h.s.deps.HA != nil && h.s.deps.HA.ConfigReadOnly(),
+		ConfigLeader:      h.configLeader(),
 	})
-}
-
-func (h *handlers) GetHAStatus(w http.ResponseWriter, r *http.Request) {
-	if h.s.deps.HA == nil {
-		writeJSON(w, http.StatusOK, gen.HAStatus{Enabled: false})
-		return
-	}
-	writeJSON(w, http.StatusOK, h.s.deps.HA(r.Context()))
 }

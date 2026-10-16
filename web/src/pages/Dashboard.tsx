@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api, unwrap } from "../api/client";
 import { Badge, Card, PageHeader, Progress, Spinner, Table, Td } from "../components/ui";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, haStateLabel } from "../lib/format";
 
 function sum(m: Record<string, number> | undefined) {
   return Object.values(m ?? {}).reduce((a, b) => a + b, 0);
@@ -55,8 +55,8 @@ export function DashboardPage() {
         <Stat label="Pakete/s" value={pps === null ? "–" : pps.toFixed(1)} hint={`${sum(s?.packets_received)} empfangen gesamt`} />
         <Stat
           label="Hochverfügbarkeit"
-          value={ha.data?.enabled ? (ha.data.state ?? "aktiv") : "aus"}
-          hint={ha.data?.enabled ? `Partner: ${ha.data.peer ?? "–"}` : "Einzelinstanz"}
+          value={ha.data?.enabled ? (haStateLabel[ha.data.state ?? ""] ?? ha.data.state ?? "aktiv") : "aus"}
+          hint={ha.data?.enabled ? `Partner ${ha.data.peer_id ?? "–"}: ${ha.data.connected ? "verbunden" : "nicht erreichbar"}` : "Einzelinstanz"}
         />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">

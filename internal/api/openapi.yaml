@@ -12,7 +12,11 @@ info:
 
     Roles: `readonly` may read everything except users; `operator` may
     additionally change the DHCP configuration and leases; `admin` may also
-    manage users and settings.
+    manage users, settings and high availability.
+
+    High availability: on the partner that is not the configuration leader
+    every configuration change is rejected with 409 (`config_read_only` in
+    `GET /system`); lease operations remain possible on both servers.
 servers:
   - url: /api/v1
 security:
@@ -218,6 +222,65 @@ paths:
       responses:
         "204": { description: Deleted together with exclusions, reservations, policies, options and leases. }
         "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/import:
+    post:
+      tags: [scopes]
+      operationId: importScope
+      description: |
+        Creates a scope from a bundle (export of another server or the
+        partner part of a split scope). Either everything is created or
+        nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeBundle" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: exportScope
+      responses:
+        "200":
+          description: The scope with exclusions, reservations, options and policies.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopeBundle" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/{id}/split:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [scopes]
+      operationId: splitScope
+      description: |
+        Classic split scope for two independent servers without
+        replication: this server keeps the first `local_percent` of the
+        dynamic range and excludes the rest. The response contains the
+        bundle to import on the second server (local part excluded there).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SplitScopeInput" }
+      responses:
+        "200":
+          description: Split done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SplitScopeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /scopes/{id}/stats:
     parameters:
       - $ref: "#/components/parameters/Id"
@@ -643,6 +706,37 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LeaseList" }
+  /leases/export:
+    get:
+      tags: [leases]
+      operationId: exportLeases
+      description: Emergency export of the complete lease table.
+      responses:
+        "200":
+          description: Lease export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseExport" }
+  /leases/import:
+    post:
+      tags: [leases]
+      operationId: importLeases
+      description: |
+        Merges a lease export into the lease table (newer changes win,
+        conflicting bindings are resolved like in HA resynchronisation).
+        Records outside all scopes are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseExport" }
+      responses:
+        "200":
+          description: Import result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /leases/{ip}:
     parameters:
       - $ref: "#/components/parameters/IP"
@@ -837,6 +931,50 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HAStatus" }
+  /ha/partner-down:
+    post:
+      tags: [system]
+      operationId: declarePartnerDown
+      description: |
+        Operator confirmation that the partner is down. Only possible while
+        communication is interrupted. After MCLT this server allocates from
+        the whole pool. Never declare this while the partner is still
+        serving clients.
+      responses:
+        "200":
+          description: PARTNER_DOWN is active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HAStatus" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /ha/certificates:
+    post:
+      tags: [system]
+      operationId: generateHACertificates
+      description: |
+        Generates a new CA and one certificate per node for mutual TLS
+        between HA partners. Nothing is stored on the server; the CA key is
+        discarded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodes]
+              properties:
+                nodes:
+                  type: array
+                  minItems: 2
+                  maxItems: 8
+                  items: { type: string }
+      responses:
+        "200":
+          description: PEM encoded certificates and keys.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HACertificates" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
 components:
   securitySchemes:
@@ -1311,7 +1449,7 @@ components:
         mac_filter_deny_enabled: { type: boolean }
     SystemInfo:
       type: object
-      required: [version, commit, go_version, started_at, dhcp4_interfaces, tls, conflict_detection]
+      required: [version, commit, go_version, started_at, dhcp4_interfaces, tls, conflict_detection, ha_enabled, config_read_only]
       properties:
         version: { type: string }
         commit: { type: string }
@@ -1322,15 +1460,187 @@ components:
           items: { type: string }
         tls: { type: boolean }
         conflict_detection: { type: boolean }
+        ha_enabled: { type: boolean }
+        config_read_only:
+          type: boolean
+          description: Configuration changes must be made on the HA config leader.
+        config_leader:
+          type: string
+          description: Node id of the configuration leader (HA only).
     HAStatus:
       type: object
       required: [enabled]
       properties:
         enabled: { type: boolean }
-        mode: { type: string }
-        state: { type: string }
-        role: { type: string }
-        peer: { type: string }
-        peer_state: { type: string }
-        config_leader: { type: boolean }
+        node_id: { type: string }
+        peer_id: { type: string }
+        peer_address: { type: string }
+        mode: { type: string, enum: [load-balance, hot-standby] }
+        role: { type: string, enum: [primary, secondary] }
+        replication: { type: string, enum: [sync, async] }
+        tls_mode: { type: string, enum: [mtls, secret] }
+        state: { $ref: "#/components/schemas/HAState" }
+        state_since: { type: string, format: date-time, nullable: true }
+        serving:
+          type: boolean
+          description: False while recovering (no DHCP answers).
+        connected: { type: boolean }
+        peer_state: { type: string, description: Last state reported by the partner. }
+        peer_version: { type: string }
         last_contact: { type: string, format: date-time, nullable: true }
+        partner_down_since: { type: string, format: date-time, nullable: true }
+        takeover_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: In PARTNER_DOWN, from this time on the whole pool is used.
+        config_leader: { type: boolean }
+        config_read_only: { type: boolean }
+        config_version: { type: integer, format: int64 }
+        config_in_sync: { type: boolean }
+        load_balance_percent: { type: integer }
+        standby_reserve_percent: { type: integer }
+        mclt: { type: integer, description: Seconds. }
+        auto_partner_down: { type: integer, description: Seconds, 0 = manual only. }
+        last_resync: { type: string, format: date-time, nullable: true }
+        error: { type: string }
+        resync_error: { type: string }
+        config_error: { type: string }
+        cert_expires: { type: string, format: date-time, nullable: true }
+    HAState:
+      type: string
+      enum: [NORMAL, COMMUNICATION_INTERRUPTED, PARTNER_DOWN, RECOVER, RECOVER_DONE]
+    HACertificates:
+      type: object
+      required: [ca_cert, not_after, nodes]
+      properties:
+        ca_cert: { type: string }
+        not_after: { type: string, format: date-time }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [node_id, cert, key]
+            properties:
+              node_id: { type: string }
+              cert: { type: string }
+              key: { type: string }
+    BundleRange:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    BundleOption:
+      type: object
+      required: [code, value]
+      properties:
+        code: { type: integer, minimum: 1, maximum: 254 }
+        value: { type: string }
+    ScopeBundle:
+      type: object
+      required: [format, scope, exclusions, reservations, options, policies]
+      properties:
+        format: { type: string, enum: [leasorix-scope/v1] }
+        scope:
+          type: object
+          required: [name, subnet, start, end, lease_time, enabled]
+          properties:
+            name: { type: string }
+            description: { type: string }
+            subnet: { type: string }
+            start: { type: string }
+            end: { type: string }
+            lease_time: { type: integer, format: int64 }
+            enabled: { type: boolean }
+        exclusions:
+          type: array
+          items: { $ref: "#/components/schemas/BundleRange" }
+        reservations:
+          type: array
+          items:
+            type: object
+            required: [ip]
+            properties:
+              ip: { type: string }
+              mac: { type: string }
+              client_id: { type: string }
+              hostname: { type: string }
+              description: { type: string }
+              options:
+                type: array
+                items: { $ref: "#/components/schemas/BundleOption" }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/BundleOption" }
+        policies:
+          type: array
+          items:
+            type: object
+            required: [name, order, enabled, operator, conditions]
+            properties:
+              name: { type: string }
+              description: { type: string }
+              order: { type: integer }
+              enabled: { type: boolean }
+              operator: { type: string, enum: [and, or] }
+              lease_time: { type: integer, format: int64 }
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required: [field, operator, value]
+                  properties:
+                    field: { type: string }
+                    operator: { type: string }
+                    value: { type: string }
+              ranges:
+                type: array
+                items: { $ref: "#/components/schemas/BundleRange" }
+              options:
+                type: array
+                items: { $ref: "#/components/schemas/BundleOption" }
+    SplitScopeInput:
+      type: object
+      required: [local_percent]
+      properties:
+        local_percent: { type: integer, minimum: 1, maximum: 99 }
+    SplitScopeResult:
+      type: object
+      required: [local_range, partner_range, exclusions_added, partner]
+      properties:
+        local_range: { $ref: "#/components/schemas/BundleRange" }
+        partner_range: { $ref: "#/components/schemas/BundleRange" }
+        exclusions_added:
+          type: array
+          items: { $ref: "#/components/schemas/Exclusion" }
+        partner: { $ref: "#/components/schemas/ScopeBundle" }
+    LeaseExport:
+      type: object
+      required: [format, exported_at, leases]
+      properties:
+        format: { type: string, enum: [leasorix-leases/v1] }
+        exported_at: { type: string, format: date-time }
+        node: { type: string }
+        leases:
+          type: array
+          items:
+            type: object
+            required: [ip, mac, state, start, expires, updated]
+            properties:
+              ip: { type: string }
+              mac: { type: string }
+              client_id: { type: string }
+              hostname: { type: string }
+              state: { $ref: "#/components/schemas/LeaseState" }
+              start: { type: string, format: date-time }
+              expires: { type: string, format: date-time }
+              updated: { type: string, format: date-time }
+              origin: { type: string }
+    LeaseImportResult:
+      type: object
+      required: [records, changed, conflicts]
+      properties:
+        records: { type: integer }
+        changed: { type: integer }
+        conflicts: { type: integer }

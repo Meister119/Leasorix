@@ -55,6 +55,15 @@ type ScopeSource interface {
 	Snapshot() *scope.Snapshot
 }
 
+// Partner decides whether this server answers a client when it runs in a
+// high availability relationship.
+type Partner interface {
+	// Accept reports whether to answer the client; directed is true for
+	// messages explicitly addressed to this server. Otherwise it returns a
+	// drop reason.
+	Accept(mac string, directed bool) (bool, string)
+}
+
 // Handler implements the DHCPv4 server state machine (RFC 2131). It is
 // independent of sockets and can be driven directly in tests.
 type Handler struct {
@@ -62,10 +71,33 @@ type Handler struct {
 	scopes  ScopeSource
 	leases  *lease.Manager
 	metrics *metrics.DHCP4
+	partner Partner
 }
 
 // SetMetrics enables packet metrics.
 func (h *Handler) SetMetrics(m *metrics.DHCP4) { h.metrics = m }
+
+// SetPartner enables HA client distribution.
+func (h *Handler) SetPartner(p Partner) { h.partner = p }
+
+// directed reports whether the message is explicitly addressed to this
+// server: it carries one of our server identifiers, or it is a renewal
+// unicast directly (not relayed) to one of our addresses.
+func (h *Handler) directed(req *Request) bool {
+	m := req.Msg
+	if sid := m.ServerIdentifier(); !isZero(sid) {
+		return h.isOurID(req, sid)
+	}
+	if !isZero(m.GatewayIPAddr) || isZero(m.ClientIPAddr) || !req.Dst.IsValid() || req.Dst == bcastAddr {
+		return false
+	}
+	for _, a := range req.IfAddrs {
+		if a.Addr() == req.Dst {
+			return true
+		}
+	}
+	return false
+}
 
 // NewHandler creates a handler.
 func NewHandler(log *slog.Logger, scopes ScopeSource, leases *lease.Manager) *Handler {
@@ -109,6 +141,13 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 		log.Info("client filtered, ignoring", "reason", why)
 		h.metrics.Dropped("filtered")
 		return nil
+	}
+	if h.partner != nil {
+		if ok, why := h.partner.Accept(c.MAC, h.directed(req)); !ok {
+			log.Debug("not answering, client is served by the HA partner", "reason", why)
+			h.metrics.Dropped(why)
+			return nil
+		}
 	}
 	tx := &txn{log: log, req: req, snap: snap, client: c, info: clientInfoOf(m, c), metrics: h.metrics}
 
@@ -367,7 +406,7 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 		}
 	case ciaddr != 0:
 		state = "renewing"
-		if req.Dst == bcastAddr {
+		if req.Dst == bcastAddr || !isZero(m.GatewayIPAddr) {
 			state = "rebinding"
 		}
 		ip = ciaddr

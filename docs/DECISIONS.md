@@ -465,3 +465,187 @@ veth zum Root-Namespace, DHCP-veth zum Client-Namespace), der Test startet
 `udhcpc` im Client-Namespace (`test/e2e/run.sh`, `make test-e2e`). Lokal
 wird das vorinstallierte Chromium verwendet, in der CI per
 `playwright install`.
+
+## D-043 – HA-Peer-Protokoll: gRPC mit Protobuf
+
+Eigenes Protokoll (`internal/ha/pb/ha.proto`) über gRPC, wie im Plan
+vorgesehen. Vier RPCs: `Heartbeat` (Status beider Seiten, auch
+Verbindungsprüfung), `PushLeases` (Lease-Änderungen), `DumpLeases`
+(Stream der ganzen Lease-Tabelle für den Abgleich), `PushConfig`
+(Konfigurations-Snapshot). Jeder Server ist zugleich Server und Client;
+Verbindung über eine feste Peer-Adresse (`ha.peer.address`). Generierter
+Code wird eingecheckt (`make generate`; protoc 3.21 wie in Ubuntu 24.04,
+`protoc-gen-go`/`protoc-gen-go-grpc` als `go tool` mit fester Version), die
+CI prüft die Aktualität. Nachrichten bis 64 MiB, Backoff max. ein
+Heartbeat-Intervall, damit die Verbindung nach einer Partition schnell
+wiederkommt.
+
+## D-044 – Absicherung der Peer-Verbindung
+
+- **mtls** (Default): gemeinsame CA, das Knotenzertifikat trägt die Node-ID
+  als DNS-Name. Der Client prüft den Server gegen `peer.id`, der Server den
+  Client per `VerifyConnection` ebenso – ein gültiges Zertifikat derselben
+  CA für einen anderen Knoten wird abgewiesen. TLS ≥ 1.3. Zertifikate per
+  UI (`POST /ha/certificates`) oder CLI (`leasorixd ha certs`): ECDSA P-256,
+  CA 10 Jahre, Knoten 5 Jahre; der CA-Schlüssel wird nicht gespeichert
+  (neue Knoten = neues Bündel). Ablauf als Metrik, im UI und als Log-Warnung
+  30 Tage vorher.
+- **secret**: TLS 1.3 mit Wegwerf-Zertifikaten, danach – noch vor dem
+  ersten gRPC-Byte – ein gegenseitiger Nachweis
+  `HMAC-SHA256(secret, Label|Rolle|Node-ID|TLS-Exporter)`. Der Exporter-Wert
+  ist an die TLS-Sitzung gebunden; ein Man-in-the-Middle hat zwei Sitzungen
+  und kann den Nachweis weder fälschen noch weiterreichen. Secret ≥ 16
+  Zeichen, bevorzugt aus `shared_secret_file`.
+
+## D-045 – Aufteilung von Clients und Adressen
+
+- Load Balance: zuständig für einen Client ist der Primary, wenn
+  `SHA-256(MAC) mod 100 < load_balance_percent`, sonst der Secondary
+  (Hash(MAC) laut Plan; deterministisch, kein Offer-Rennen).
+- Jede freie Adresse gehört genau einem Server: Anteil per
+  Weyl-Folge `frac(ip · φ⁻¹)` statt Hash – zusammenhängende Bereiche werden
+  dadurch fast exakt im gewünschten Verhältnis geteilt, und die Zuordnung
+  hängt nicht von der Konfiguration ab (Ausschlüsse/Reservierungen ändern
+  nichts, kein Umverteilen bei Config-Änderungen).
+- Load Balance: Adressanteil = Client-Anteil. Hot Standby: der Standby
+  besitzt `standby_reserve_percent` (Default 5 %) der Adressen als Reserve,
+  der Primary den Rest.
+- Neue Adressen werden nur aus dem eigenen Anteil vergeben (auch bei
+  Option 50 / INIT-REBOOT). Bestehende aktive Bindungen eines Clients
+  dürfen immer verlängert werden, egal wem die Adresse gehört.
+- Konservativ: statische Reserve statt dynamischem Pool-Rebalancing wie bei
+  ISC-Failover. Folge: im Hot Standby kann der Primary die Reserve nicht
+  nutzen.
+
+## D-046 – Zustandsautomat
+
+Zustände laut Plan: NORMAL, COMMUNICATION_INTERRUPTED (CI), PARTNER_DOWN
+(PD), RECOVER, RECOVER_DONE. „Verbunden“ heißt: eigene Heartbeats werden
+beantwortet **und** Heartbeats des Partners kommen an (beides innerhalb
+`communication_timeout`) und die Einstellungen passen zusammen.
+
+- Start immer in RECOVER (kein DHCP-Dienst), außer der Server war in PD.
+  War die Lease-Tabelle vor dem Neustart aktuell (NORMAL/CI/RECOVER_DONE)
+  und ist der Partner nach `communication_timeout` nicht erreichbar, geht er
+  nach CI – nur wenn die Ausfallzeit kürzer als `auto_partner_down` war
+  (sonst könnte der Partner inzwischen den ganzen Pool übernommen haben).
+  Ein Server ohne vollständige Tabelle wartet auf den Partner oder eine
+  manuelle Partner-Down-Bestätigung.
+- RECOVER und RECOVER_DONE beantworten keine DHCP-Anfragen („erst Abgleich,
+  dann Vergabe“). Der Abgleich dauert typisch unter einer Sekunde.
+- Abgleich: jeder Server zieht die komplette Tabelle des Partners
+  (`DumpLeases`) und merged sie (D-048). Damit er gilt, merkt sich der
+  Partner Session-ID und Epoche: die Epoche steigt bei jedem
+  Verbindungsverlust, die Session bei jedem Neustart. NORMAL erst, wenn
+  beide Seiten gegen den jeweils aktuellen Stand abgeglichen haben.
+- CI → PD nur per Operator (`POST /ha/partner-down`, nur ohne Verbindung)
+  oder nach `auto_partner_down` (Default 0 = aus, konservativ: eine
+  Netztrennung darf nicht automatisch zu doppelter Pool-Nutzung führen).
+- PD bleibt bei Rückkehr des Partners aktiv, bis dieser RECOVER_DONE meldet.
+  Sind beide in PD (Partition + Auto-Partner-Down), weicht der Secondary
+  nach RECOVER aus. NORMAL bei Partner in PD → RECOVER.
+- Nach einem fehlgeschlagenen synchronen Lease-Update geht der Server sofort
+  nach CI (neue Epoche) und gleicht nach dem nächsten Heartbeat neu ab.
+- Persistiert (`ha_state`, lokal): Zustand, PD-Zeitpunkt, „zuletzt lebendig“
+  (alle 10 s).
+- `/readyz` hängt nicht vom HA-Zustand ab (ein wartender Partner soll nicht
+  von einem Orchestrator neu gestartet werden); der Zustand steht in
+  `leasorix_ha_state` und in der UI.
+
+## D-047 – Lease-Zeiten, MCLT und Replikation
+
+- NORMAL + `replication: sync` (Default): eine neue/verlängerte Bindung wird
+  erst zum Partner repliziert, dann lokal durabel gespeichert, dann ACK.
+  Bestätigt der Partner nicht innerhalb `replication_timeout`, wird die
+  Lease auf MCLT gekürzt gespeichert und vergeben (und der Server geht nach
+  CI). Replikation läuft gebündelt (wie der Group-Commit).
+- CI: neue und verlängerte Leases höchstens MCLT (Default 1 h).
+- PD: volle Lease-Zeit; Adressen aus dem Partner-Anteil erst ab
+  PD-Zeitpunkt + MCLT. Der zurückkehrende Partner gleicht vor jeder Vergabe
+  ab (D-046), deshalb ist keine Begrenzung nötig.
+- `async`: volle Lease-Zeit, Replikation im Hintergrund. Schwächere
+  Garantie (bei einem Absturz können die letzten Änderungen fehlen; die
+  ICMP-Konflikterkennung bleibt als Netz) – nur für Performance gedacht.
+- Release, Decline, Konfliktsperren und Admin-Löschungen werden ohne Warten
+  repliziert (sie wirken in die sichere Richtung). Ablauf/Purge macht jeder
+  Server selbst, sie werden nicht repliziert.
+
+## D-048 – Zusammenführen von Lease-Tabellen
+
+`leases.updated_at` ist jetzt in Millisekunden, `leases.origin` nennt den
+Knoten der letzten Änderung (Migration 00004). Für eine Adresse gewinnt
+(`lease.Wins`, auf beiden Seiten identisch):
+
+1. Datensätze desselben Clients: die neuere Änderung (dann späteres Ende,
+   dann höhere Node-ID).
+2. Verschiedene Clients, nur einer bindet die Adresse (aktiv oder
+   abgelehnt und nicht abgelaufen): der bindende.
+3. Beide binden (echter Konflikt, z. B. nach Split Brain): späteres
+   Lease-Ende, dann höhere Node-ID (Plan). Konflikte werden geloggt, als
+   `lease.ha_conflict` auditiert und gezählt.
+4. Keiner bindet: die neuere Änderung.
+
+Einschränkung: Admin-Löschungen werden repliziert, aber nicht als
+Grabstein gespeichert; eine während einer Partition gelöschte Lease kann
+beim Abgleich vom Partner zurückkommen (harmlos: sie läuft regulär aus).
+Der Scope eines empfangenen Datensatzes wird über die Adresse bestimmt.
+
+## D-049 – Konfigurations-Replikation (Single Writer)
+
+- Leader ist fest konfiguriert (`ha.config_leader`, Default `primary`) und
+  muss auf beiden Servern gleich sein; zwei Leader = Mismatch, keine
+  Verbindung (beide arbeiten dann sicher in CI weiter).
+- Ein Versionszähler (`config_version`) wird per SQLite-Trigger bei jeder
+  Änderung einer Konfigurationstabelle erhöht – so entgeht kein Schreibpfad.
+  Der Leader prüft ihn bei jedem Heartbeat (und sofort nach
+  Scope-Änderungen), erzeugt bei Änderung einen Snapshot (JSON aller
+  Konfigurationstabellen aus einer Lesetransaktion, SHA-256) und schickt
+  ihn, solange der Partner einen anderen Hash meldet.
+- Repliziert werden Scopes, Ausschlüsse, Reservierungen, Optionen,
+  Definitionen, Klassen, Policies, MAC-Filter, Einstellungen sowie Benutzer
+  und API-Tokens (Anmeldung an beiden Servern möglich). Lokal bleiben
+  Leases, Audit-Log, Sessions und HA-Zustand. Token-Nutzung zählt nicht als
+  Änderung.
+- Übernahme auf dem Partner in einer Transaktion mit abgeschalteten
+  Foreign Keys (sonst würde das Ersetzen der Scopes die Leases kaskadierend
+  löschen), danach `foreign_key_check`; Leases außerhalb der neuen Scopes
+  und Sessions geänderter/gelöschter Benutzer werden entfernt. Danach zieht
+  der Partner die Leases neu (Scope-IDs können sich geändert haben). Der
+  Lease-Abgleich des Partners startet erst, wenn seine Konfiguration dem
+  Stand des Leaders entspricht.
+- Partner read-only: die API lehnt Konfigurationsänderungen mit 409 und
+  Hinweis auf den Leader ab (auch Passwort/Tokens, da repliziert); erlaubt
+  bleiben Lease-Aktionen, Login/Logout, HA-Aktionen. Die UI zeigt ein Banner
+  und blendet Bearbeiten-Aktionen aus. Fällt der Leader länger aus, wird
+  der Partner per Konfigurationsdatei zum Leader gemacht.
+
+## D-050 – Split Scope und Scope-Bundle
+
+Fallback ohne Replikation („Split Scope 80/20“) wie bei Windows über
+Ausschlüsse: dieser Server behält die ersten n % des dynamischen Bereichs
+und schließt den Rest aus; für den zweiten Server entsteht ein
+Scope-Bundle mit dem lokalen Teil als Ausschluss. Bereits vorhandene
+Ausschlüsse werden berücksichtigt (nur Lücken werden ergänzt). Das
+Bundle-Format `leasorix-scope/v1` (Scope, Ausschlüsse, Reservierungen mit
+Optionen, Scope-Optionen, Scope-Policies; Bezüge über Inhalte statt IDs)
+dient auch als Baustein für den Konfigurations-Export in Phase 7. Import
+ist alles-oder-nichts (bei Fehlern wird der angelegte Scope wieder
+entfernt). Bei aktiver HA-Partnerschaft wird der Wizard nicht angeboten.
+
+## D-051 – Notfall-Export/-Import der Lease-Datenbank
+
+Format `leasorix-leases/v1` (JSON). Import = Merge nach D-048 (idempotent),
+über die API werden geänderte Datensätze zum Partner repliziert. CLI:
+`leasorixd leases export` liest direkt aus der Datenbank (auch im
+laufenden Betrieb), `leasorixd leases import` nur bei gestopptem Dienst –
+dafür hält `leasorixd` jetzt einen exklusiven Lock (`flock`) auf
+`<data_dir>/leasorixd.lock`; das verhindert auch zwei Daemons auf
+demselben Datenverzeichnis.
+
+## D-052 – Kein Raft / keine Cluster mit mehr als zwei Knoten
+
+Der Plan nennt einen Raft-Cluster-Modus als optionale spätere Alternative,
+erst nach dem Paar-Modus. Er ist nicht umgesetzt: der Paar-Modus deckt die
+Windows-Failover-Parität ab, ein Raft-Log für Leases würde jede Vergabe an
+ein Quorum binden (mehr Latenz, ein dritter Knoten nötig). Bei Bedarf als
+eigenes Vorhaben nach Phase 9.

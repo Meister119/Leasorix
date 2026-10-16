@@ -10,7 +10,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 3 – Optionen, Klassen, Policies, Filter | ✅ abgeschlossen |
 | 4 – Audit, Statistiken, Metriken | ✅ abgeschlossen |
 | 5 – REST-API, Auth, Web-UI | ✅ abgeschlossen |
-| 6 – Hochverfügbarkeit | offen |
+| 6 – Hochverfügbarkeit | ✅ abgeschlossen |
 | 7 – Komfort & Kompatibilität | offen |
 | 8 – Docker & Compose | offen |
 | 9 – DNS-Integration | offen |
@@ -178,7 +178,7 @@ in [DECISIONS.md](DECISIONS.md).
   (Server/Scope/Policy/Reservierung) und Definitionen, Klassen, Policies,
   MAC-Filter, Leases (Suche/Filter/Paging, löschen, in Reservierung
   umwandeln), Statistik, Audit (Filter, Keyset-Paging), Benutzer,
-  Einstellungen, System-Info, HA-Status (Platzhalter bis Phase 6).
+  Einstellungen, System-Info, HA-Status (ab Phase 6 vollständig).
 - Middleware: Authentifizierung (Cookie/Bearer), zentrale RBAC-Tabelle,
   CSRF, Origin- und Content-Type-Prüfung, Body-Limits, Security-Header/CSP.
 - HTTPS: selbstsigniert (Default), eigene Dateien oder aus.
@@ -205,3 +205,62 @@ in [DECISIONS.md](DECISIONS.md).
   Rollen + API-Tokens, Validierungsfehler mit Feldern, CRUD aller Objekte,
   Leases, CSV-Import, Statistik, Header, RBAC-Tabelle ✅
 - Frontend-Unit-Tests (Vitest) für die Validierung, Typecheck ✅
+
+## Phase 6 – Hochverfügbarkeit
+
+**Umgesetzt**
+- `internal/ha`: Partnerschaft zweier Server in den Modi Load Balance
+  (Hash(MAC), Prozent einstellbar, Default 50/50) und Hot Standby (Reserve
+  Default 5 %); feste Aufteilung der freien Adressen; Zustandsautomat
+  NORMAL / COMMUNICATION_INTERRUPTED / PARTNER_DOWN / RECOVER / RECOVER_DONE
+  mit Heartbeats, Timeouts, MCLT (Default 1 h), Auto-Partner-Down
+  (optional), manueller Partner-Down-Bestätigung und Split-Brain-Schutz
+  (erst Abgleich, dann Vergabe).
+- Peer-Protokoll über gRPC/Protobuf, abgesichert per mTLS (Zertifikate per
+  UI oder `leasorixd ha certs`) oder TLS + kanalgebundenem Shared Secret.
+- Lease-Replikation: synchron vor dem ACK (Default) oder asynchron,
+  gebündelt; Abgleich der kompletten Tabelle nach Wiederverbindung mit
+  deterministischer Konfliktauflösung (neuere Änderung; bei echten
+  Konflikten späteres Ende, dann Node-ID). Migration 00004.
+- Konfigurations-Replikation nach dem Single-Writer-Prinzip:
+  Trigger-gepflegte Versionsnummer, Snapshot vom Config-Leader, Partner
+  read-only (API 409, Banner in der UI); Benutzer/API-Tokens werden
+  mitrepliziert.
+- DHCP-Handler: Zuständigkeit je Zustand (gerichtete Renewals werden immer
+  beantwortet), Lease-Manager: eigener Pool-Anteil, MCLT-Begrenzung,
+  Kürzung bei fehlender Partner-Bestätigung.
+- API/UI: HA-Status (Zustand, Partner, Modus, Konfiguration, Fehler,
+  Zertifikatsablauf), Partner-Ausfall bestätigen, Zertifikats-Generator,
+  Notfall-Export/-Import der Lease-DB (auch per CLI), Split-Scope-Wizard
+  (80/20) mit Scope-Export/-Import (`leasorix-scope/v1`).
+- Metriken `leasorix_ha_*`, Audit-Einträge für Zustandswechsel,
+  Partner-Down, Config-Übernahme und Konflikte.
+- `flock` auf das Datenverzeichnis (kein Doppelstart, sicherer Offline-Import).
+- Doku: [HA.md](HA.md) (HA-Handbuch), DECISIONS D-043…D-052, ARCHITECTURE.
+
+**Akzeptanz** (`make test-ha`, zwei echte `leasorixd` in Network Namespaces,
+mTLS mit per CLI erzeugten Zertifikaten)
+- Normalbetrieb: 5000 Clients, beide Server liefern (≈ 2500/2500), keine
+  doppelte Adresse, beide Datenbanken identisch; ≈ 300 Leases/s inkl.
+  ICMP-Konfliktprüfung und synchroner Replikation ✅
+- Primary per SIGKILL beendet: der Standby hat alle Leases schon beim ACK
+  (synchron), verlängert alle 40 Clients ohne Unterbrechung (Lease ≤ MCLT),
+  bedient neue Clients aus der Reserve, geht nach Auto-Timeout in
+  PARTNER_DOWN; der zurückkehrende Primary gleicht ab, beide NORMAL,
+  Tabellen identisch ✅
+- Netzwerk-Partition zwischen den Servern: beide vergeben nur aus ihrem
+  Anteil (Lease ≤ MCLT), nach der Heilung konsistente Datenbanken ohne
+  doppelte Adressen ✅
+- Konfigurationsänderung am Leader nach ≈ 0,2 s am Partner sichtbar; der
+  Partner lehnt Änderungen ab; der replizierte Admin kann sich am Partner
+  anmelden ✅
+- Unit-Tests: Zustandsautomat mit simulierter Zeit (9 Szenarien),
+  Aufteilung, zwei Nodes im Prozess (Replikation, Partition, Takeover nach
+  MCLT, falsches Secret, mTLS inkl. fremdem Knotenzertifikat),
+  Config-Snapshot-Roundtrip, Merge-Regeln, API (Read-only, Partner-Down,
+  Zertifikate, Export/Import, Split); Playwright-E2E 6/6 ✅
+
+**Offene Punkte / Hinweise**
+- Kein Raft-/Cluster-Modus für mehr als zwei Knoten (optional laut Plan,
+  D-052).
+- Die HA-Compose-Variante folgt in Phase 8.

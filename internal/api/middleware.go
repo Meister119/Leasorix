@@ -68,8 +68,11 @@ func noStore(next http.Handler) http.Handler {
 func (s *Server) limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(1 << 20)
-		if r.URL.Path == apiPrefix+"/reservations/import" {
+		switch r.URL.Path {
+		case apiPrefix + "/reservations/import", apiPrefix + "/scopes/import":
 			limit = 8 << 20
+		case apiPrefix + "/leases/import":
+			limit = 64 << 20
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
@@ -120,6 +123,8 @@ func requiredRole(method, path string) (role auth.Role, public bool) {
 		return auth.RoleAdmin, false
 	case p == "/settings" && !read:
 		return auth.RoleAdmin, false
+	case strings.HasPrefix(p, "/ha/") && !read, p == "/leases/import":
+		return auth.RoleAdmin, false
 	case p == "/auth/logout" || p == "/auth/me" || p == "/auth/password" || strings.HasPrefix(p, "/tokens"):
 		return auth.RoleReadonly, false
 	case read:
@@ -158,6 +163,36 @@ func (s *Server) authorize(next http.Handler) http.Handler {
 		}
 		if !p.Role.AtLeast(need) {
 			writeError(w, http.StatusForbidden, "your role ("+string(p.Role)+") does not allow this action", nil)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isConfigWrite reports whether a request changes replicated
+// configuration. Lease operations, login/logout and HA actions are local.
+func isConfigWrite(method, path string) bool {
+	if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
+		return false
+	}
+	p := strings.TrimPrefix(path, apiPrefix)
+	switch {
+	case p == "/setup", p == "/auth/login", p == "/auth/logout", strings.HasPrefix(p, "/ha/"):
+		return false
+	case strings.HasPrefix(p, "/leases"):
+		// Converting a lease creates a reservation (configuration).
+		return strings.HasSuffix(p, "/reservation")
+	}
+	return true
+}
+
+// configWritable rejects configuration changes on the HA partner that is
+// not the configuration leader.
+func (s *Server) configWritable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.deps.HA != nil && s.deps.HA.ConfigReadOnly() && isConfigWrite(r.Method, r.URL.Path) {
+			st := s.deps.HA.Status()
+			writeError(w, http.StatusConflict, "configuration is read-only on this server: make changes on the HA config leader "+st.PeerID+" ("+st.PeerAddress+")", nil)
 			return
 		}
 		next.ServeHTTP(w, r)

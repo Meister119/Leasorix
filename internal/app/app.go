@@ -18,6 +18,7 @@ import (
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/dhcp4"
+	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/metrics"
@@ -40,6 +41,8 @@ type App struct {
 	dhcp4  *dhcp4.Server
 	audit  *audit.Log
 	auth   *auth.Service
+	ha     *ha.Node
+	lock   *store.Lock
 	// UI is the embedded web UI handler (set by main when built with it).
 	ui http.Handler
 }
@@ -54,14 +57,20 @@ func WithUI(h http.Handler) Option { return func(a *App) { a.ui = h } }
 func New(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Option) (*App, error) {
 	log.Info("starting leasorixd", "version", buildinfo.Version, "commit", buildinfo.Commit, "go", buildinfo.GoVersion())
 
+	lock, err := store.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
 	db, err := store.Open(ctx, filepath.Join(cfg.DataDir, store.FileName))
 	if err != nil {
+		_ = lock.Release()
 		return nil, err
 	}
 	a := &App{
 		cfg:     cfg,
 		log:     log,
 		db:      db,
+		lock:    lock,
 		health:  health.NewChecker(),
 		metrics: metrics.New(),
 	}
@@ -70,6 +79,7 @@ func New(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Opti
 	}
 	if err := a.init(ctx); err != nil {
 		_ = db.Close()
+		_ = lock.Release()
 		return nil, err
 	}
 	return a, nil
@@ -106,6 +116,7 @@ func (a *App) init(ctx context.Context) error {
 		ExpiryInterval: d.ExpiryInterval,
 		AuditEvents:    a.cfg.Audit.LeaseEvents,
 		AuditRenewals:  a.cfg.Audit.LeaseRenewals,
+		NodeID:         a.cfg.HA.NodeID,
 	}, a.log.With("component", "lease"), lease.NewDBStore(a.db), prober)
 	a.leases.SetMetrics(a.metrics.NewLeases())
 	if err := a.leases.Load(ctx); err != nil {
@@ -115,10 +126,26 @@ func (a *App) init(ctx context.Context) error {
 	a.metrics.RegisterScopeCollector(a.scopeSamples)
 	a.audit = audit.NewLog(a.db)
 
+	if a.cfg.HA.Enabled() {
+		n, err := ha.NewNode(ctx, ha.Options{
+			Config: a.cfg.HA, Log: a.log.With("component", "ha"), DB: a.db, Leases: a.leases, Scopes: a.scopes,
+			Metrics: a.metrics.NewHA(), Version: buildinfo.Version,
+		})
+		if err != nil {
+			return fmt.Errorf("high availability: %w", err)
+		}
+		a.ha = n
+		a.leases.SetCoordinator(n)
+		a.scopes.OnChange(func(*scope.Snapshot) { n.Kick() })
+	}
+
 	if len(d.Interfaces) > 0 {
 		dm := a.metrics.NewDHCP4()
 		h := dhcp4.NewHandler(a.log.With("component", "dhcp4"), a.scopes, a.leases)
 		h.SetMetrics(dm)
+		if a.ha != nil {
+			h.SetPartner(a.ha)
+		}
 		a.dhcp4 = dhcp4.NewServer(a.log.With("component", "dhcp4"), h, d.Interfaces, d.Workers)
 		a.dhcp4.SetMetrics(dm)
 		a.health.Add("dhcp4", a.dhcp4.Ready)
@@ -141,6 +168,10 @@ func (a *App) init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var haDep api.HA
+	if a.ha != nil {
+		haDep = a.ha
+	}
 	a.http = api.NewServer(a.cfg.HTTP.Listen, a.cfg.HTTP.ShutdownTimeout, api.Deps{
 		Log:     a.log.With("component", "http"),
 		Health:  a.health,
@@ -154,6 +185,7 @@ func (a *App) init(ctx context.Context) error {
 			Interfaces:        d.Interfaces,
 			ConflictDetection: a.prober != nil,
 		},
+		HA:               haDep,
 		UI:               a.ui,
 		TLS:              tlsCfg,
 		LoginMaxFailures: a.cfg.Auth.LoginMaxFailures,
@@ -211,6 +243,9 @@ func (a *App) Audit() *audit.Log { return a.audit }
 // HTTP exposes the management server (used by tests to discover the port).
 func (a *App) HTTP() *api.Server { return a.http }
 
+// HA exposes the high availability node (nil without HA).
+func (a *App) HA() *ha.Node { return a.ha }
+
 // Scopes exposes the scope store.
 func (a *App) Scopes() *scope.Store { return a.scopes }
 
@@ -230,10 +265,16 @@ func (a *App) Run(ctx context.Context) error {
 	if a.dhcp4 != nil {
 		g.Go(func() error { return a.dhcp4.Run(gctx) })
 	}
+	if a.ha != nil {
+		g.Go(func() error { return a.ha.Run(gctx) })
+	}
 
 	err := g.Wait()
 	if cerr := a.db.Close(); cerr != nil {
 		a.log.Error("closing database", "err", cerr)
+	}
+	if lerr := a.lock.Release(); lerr != nil {
+		a.log.Error("releasing data directory lock", "err", lerr)
 	}
 	if err != nil {
 		return fmt.Errorf("leasorixd: %w", err)

@@ -18,7 +18,9 @@ make test         # Go-Unit-Tests mit Race-Detector
 make ui-test      # Frontend: Typecheck + Vitest
 make lint         # golangci-lint
 make test-integration  # DHCP-Ende-zu-Ende in Network Namespaces (root)
+make test-ha      # Zwei-Knoten-HA-Tests (5000 Clients, Failover, Partition; root)
 make test-e2e     # Playwright gegen die echte UI + echten DHCP-Client (root)
+make generate     # API- und Peer-Protokoll-Code neu erzeugen (protoc 3.21)
 make ci           # lint + test + ui-test + build + vuln
 ```
 
@@ -40,13 +42,29 @@ Endpunkte des Management-Listeners (Default `https://127.0.0.1:8067`):
 | Pfad | Zweck |
 |---|---|
 | `/healthz` | Liveness |
-| `/readyz` | Readiness (Datenbank, später DHCP-Listener, HA) |
+| `/readyz` | Readiness (Datenbank, DHCP-Listener) |
 | `/metrics` | Prometheus-Metriken |
 | `/api/v1` | REST-API (Spec: `internal/api/openapi.yaml`) |
 | `/` | Web-UI |
 
+## Hochverfügbarkeit
+
+Zwei Server teilen sich die Scopes (Load Balance oder Hot Standby),
+replizieren Leases und Konfiguration über eine mTLS-gesicherte
+gRPC-Verbindung und übernehmen füreinander. Einrichtung und Betrieb:
+[docs/HA.md](docs/HA.md).
+
+Weitere Kommandos:
+
+```sh
+leasorixd ha certs --out ./ha-certs dhcp-a dhcp-b   # mTLS-Zertifikate erzeugen
+leasorixd leases export --config … --out leases.json   # Notfall-Export
+leasorixd leases import --config … leases.json          # Import (Dienst gestoppt)
+```
+
 ## Dokumentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/HA.md](docs/HA.md) – HA-Handbuch
 - [docs/DECISIONS.md](docs/DECISIONS.md)
 - [docs/PROGRESS.md](docs/PROGRESS.md)

@@ -4,8 +4,10 @@ import { Link, useParams } from "react-router";
 import { api, ApiError, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { OptionsEditor } from "../components/OptionsEditor";
-import { Alert, Badge, Button, Card, Input, PageHeader, Progress, Select, Spinner, Table, Tabs, Td, TextArea, Toggle, useFeedback } from "../components/ui";
+import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Progress, Select, Spinner, Table, Tabs, Td, TextArea, Toggle, useFeedback } from "../components/ui";
+import { downloadFile } from "../lib/download";
 import { formatDuration } from "../lib/format";
+import { formatIPv4, parseIPv4 } from "../lib/validate";
 import { hasErrors, validateRange, validateScope, type Errors } from "../lib/validate";
 import { LeasesTable } from "./Leases";
 import { PoliciesList } from "./Policies";
@@ -16,14 +18,31 @@ type Tab = "overview" | "exclusions" | "options" | "reservations" | "policies" |
 
 export function ScopeDetailPage() {
   const id = Number(useParams().id);
+  const { canWrite, haEnabled } = useAuth();
+  const { toast } = useFeedback();
   const [tab, setTab] = useState<Tab>("overview");
+  const [split, setSplit] = useState(false);
   const scope = useQuery({ queryKey: ["scope", id], queryFn: () => unwrap(api.GET("/scopes/{id}", { params: { path: { id } } })) });
   if (scope.isLoading) return <Spinner />;
   if (scope.error || !scope.data) return <Alert>{errorMessage(scope.error)}</Alert>;
   const s = scope.data;
+  const exportScope = async () => {
+    try {
+      const b = await unwrap(api.GET("/scopes/{id}/export", { params: { path: { id } } }));
+      downloadFile(`scope-${s.name.replace(/[^\w.-]+/g, "_")}.json`, JSON.stringify(b, null, 2));
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    }
+  };
   return (
     <>
       <PageHeader
+        actions={
+          <div className="flex gap-2">
+            <Button onClick={exportScope}>Exportieren</Button>
+            {canWrite && !haEnabled && <Button onClick={() => setSplit(true)}>Split-Scope…</Button>}
+          </div>
+        }
         title={s.name}
         subtitle={
           <>
@@ -56,7 +75,101 @@ export function ScopeDetailPage() {
       {tab === "reservations" && <ReservationsTable scopeId={s.id} />}
       {tab === "policies" && <PoliciesList scopeId={s.id} />}
       {tab === "leases" && <LeasesTable scopeId={s.id} />}
+      {split && <SplitWizard scope={s} onClose={() => setSplit(false)} />}
     </>
+  );
+}
+
+/** Classic split scope (two independent servers, no replication). */
+function SplitWizard({ scope, onClose }: { scope: S["Scope"]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [pct, setPct] = useState(80);
+  const [result, setResult] = useState<S["SplitScopeResult"] | null>(null);
+  const [err, setErr] = useState("");
+  const start = parseIPv4(scope.start) ?? 0;
+  const end = parseIPv4(scope.end) ?? 0;
+  const size = end - start + 1;
+  const n = Math.max(1, Math.min(size - 1, Math.floor((size * pct) / 100)));
+  const split = useMutation({
+    mutationFn: () => unwrap(api.POST("/scopes/{id}/split", { params: { path: { id: scope.id } }, body: { local_percent: pct } })),
+    onSuccess: (r) => {
+      setResult(r);
+      setErr("");
+      qc.invalidateQueries({ queryKey: ["exclusions", scope.id] });
+      qc.invalidateQueries({ queryKey: ["scope-stats", scope.id] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
+    onError: (e) => setErr(errorMessage(e)),
+  });
+  const file = `scope-${scope.name.replace(/[^\w.-]+/g, "_")}-partner.json`;
+  return (
+    <Modal
+      title={`Split-Scope – ${scope.name}`}
+      onClose={onClose}
+      wide
+      footer={
+        result ? (
+          <Button variant="primary" onClick={onClose}>
+            Fertig
+          </Button>
+        ) : (
+          <>
+            <Button onClick={onClose}>Abbrechen</Button>
+            <Button variant="primary" disabled={split.isPending || pct < 1 || pct > 99} onClick={() => split.mutate()}>
+              Aufteilen
+            </Button>
+          </>
+        )
+      }
+    >
+      {!result ? (
+        <>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Teilt den dynamischen Bereich zwischen zwei unabhängigen Servern ohne Replikation auf (klassischer Fallback). Dieser Server behält den
+            ersten Teil, der Rest wird hier ausgeschlossen. Für den zweiten Server entsteht eine Scope-Datei, die dort unter{" "}
+            <em>Scopes → Importieren</em> eingespielt wird.
+          </p>
+          <Input
+            label="Anteil dieses Servers (%)"
+            type="number"
+            min={1}
+            max={99}
+            value={String(pct)}
+            onChange={(e) => setPct(Number(e.target.value))}
+            hint={`üblich: 80/20`}
+          />
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
+            <dt className="text-slate-500">Dieser Server</dt>
+            <dd className="font-mono">
+              {formatIPv4(start)} – {formatIPv4(start + n - 1)} ({n} Adressen)
+            </dd>
+            <dt className="text-slate-500">Zweiter Server</dt>
+            <dd className="font-mono">
+              {formatIPv4(start + n)} – {formatIPv4(end)} ({size - n} Adressen)
+            </dd>
+          </dl>
+          <p className="text-xs text-slate-500">
+            Bestehende Leases im Bereich des zweiten Servers laufen hier aus; die Clients erhalten danach eine Adresse aus ihrem Teil.
+          </p>
+          {err && <Alert>{err}</Alert>}
+        </>
+      ) : (
+        <>
+          <Alert kind="success">
+            Aufgeteilt: dieser Server vergibt {result.local_range.start} – {result.local_range.end}, der zweite Server {result.partner_range.start} –{" "}
+            {result.partner_range.end}.
+          </Alert>
+          <p className="text-sm">
+            Jetzt die Scope-Datei herunterladen und auf dem zweiten Server importieren. Optionen, Reservierungen und Policies sind enthalten.
+          </p>
+          <div>
+            <Button variant="primary" onClick={() => downloadFile(file, JSON.stringify(result.partner, null, 2))}>
+              {file} herunterladen
+            </Button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 
