@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -138,14 +137,12 @@ func TestDHCPv6(t *testing.T) {
 	})
 
 	t.Run("dhclient", func(t *testing.T) {
-		if _, err := exec.LookPath("dhclient"); err != nil {
-			t.Skip("dhclient not installed")
-		}
+		dhclient := dhclientBin(t)
 		dir := t.TempDir()
 		lf, pf := filepath.Join(dir, "lease6"), filepath.Join(dir, "pid")
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		cmd := tp.cli.Command(ctx, "dhclient", "-6", "-d", "-N", "-P", "-sf", "/bin/true", "-lf", lf, "-pf", pf, "c0")
+		cmd := tp.cli.Command(ctx, dhclient, "-6", "-d", "-N", "-P", "-sf", "/bin/true", "-lf", lf, "-pf", pf, "c0")
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -174,7 +171,7 @@ func TestDHCPv6(t *testing.T) {
 		// Release (dhclient -r also stops the running client).
 		rctx, rcancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer rcancel()
-		if out, err := tp.cli.Command(rctx, "dhclient", "-6", "-r", "-N", "-P", "-sf", "/bin/true", "-lf", lf, "-pf", pf, "c0").CombinedOutput(); err != nil {
+		if out, err := tp.cli.Command(rctx, dhclient, "-6", "-r", "-N", "-P", "-sf", "/bin/true", "-lf", lf, "-pf", pf, "c0").CombinedOutput(); err != nil {
 			t.Fatalf("dhclient -6 -r: %v\n%s", err, out)
 		}
 		waitFor(t, 10*time.Second, "release", func() bool {
@@ -195,7 +192,18 @@ func TestDHCPv6(t *testing.T) {
 		}
 		b, _ := os.ReadFile(out)
 		got := string(b)
-		if !strings.Contains(got, "ipv6=2001:db8:77::") || !strings.Contains(got, "prefix=2001:db8:77") || !strings.Contains(got, "dns=2001:db8::53") {
+		// busybox prints addresses fully expanded (2001:0db8:0077:...).
+		vars := map[string]string{}
+		for _, kv := range strings.Fields(got) {
+			if k, v, ok := strings.Cut(kv, "="); ok {
+				vars[k] = v
+			}
+		}
+		addr, err1 := netip.ParseAddr(vars["ipv6"])
+		prefix, err2 := netip.ParsePrefix(vars["prefix"])
+		dns, err3 := netip.ParseAddr(vars["dns"])
+		if err1 != nil || err2 != nil || err3 != nil || addr.Compare(lan.Start) < 0 || addr.Compare(lan.End) > 0 || !lan.PDPool.Contains(prefix.Addr()) || prefix.Bits() != 56 ||
+			dns != netip.MustParseAddr("2001:db8::53") {
 			t.Fatalf("udhcpc6 bound with %q", got)
 		}
 	})

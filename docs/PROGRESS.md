@@ -451,7 +451,13 @@ mTLS mit per CLI erzeugten Zertifikaten)
   `integration`) und die 17 bestehenden Integrationstests inkl. HA und DNS
   (BIND/PowerDNS) ✅; der DHCPv6-Integrationstest ist hier übersprungen (s. u.).
 - CI-Workflow: `busybox` für `udhcpc6` installiert, manueller Start per
-  `workflow_dispatch` möglich.
+  `workflow_dispatch` möglich. Erster CI-Lauf der Integrationstests auf
+  GitHub-Runnern: Ubuntu vererbt `rp_filter=2` an neue Namespaces (verwarf
+  Broadcast-Antworten an den Go-Testclient) und beschränkt `/sbin/dhclient`
+  per AppArmor auf System-Skripte – Test-Namespaces schalten `rp_filter` ab,
+  dhclient läuft aus einer Kopie. Lokal mit `rp_filter=2` reproduziert und
+  verifiziert. Im selben Lauf liefen Go-Client- und Relay-Test für DHCPv6
+  erstmals real grün.
 
 **Offene Punkte / Hinweise**
 - Der Kernel dieser Entwicklungsumgebung ist mit `ipv6.disable=1` gebootet;

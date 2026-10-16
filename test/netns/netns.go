@@ -42,13 +42,16 @@ func Suffix() string {
 	return hex.EncodeToString(b)
 }
 
-// New creates a namespace with loopback up.
+// New creates a namespace with loopback up and reverse path filtering
+// off. New namespaces inherit the IPv4 settings of the host, and hosts like
+// Ubuntu enable rp_filter, which drops broadcast replies from the server on
+// a client interface without an IPv4 route back.
 func New(name string) (*NS, error) {
 	if out, err := exec.CommandContext(context.Background(), "ip", "netns", "add", name).CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("ip netns add %s: %w: %s", name, err, out)
 	}
 	ns := &NS{Name: name}
-	if err := ns.Sh("ip link set lo up"); err != nil {
+	if err := ns.Sh("ip link set lo up && echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter && echo 0 > /proc/sys/net/ipv4/conf/default/rp_filter"); err != nil {
 		_ = ns.Delete()
 		return nil, err
 	}

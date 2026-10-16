@@ -284,6 +284,27 @@ func readLines(path string) []string {
 	return out
 }
 
+// dhclientBin returns a copy of dhclient outside /sbin (or skips the test
+// if it is not installed). Distributions like Ubuntu attach an AppArmor
+// profile to /sbin/dhclient that only allows the system script and lease
+// directory, not the test's own files.
+func dhclientBin(t *testing.T) string {
+	t.Helper()
+	p, err := exec.LookPath("dhclient")
+	if err != nil {
+		t.Skip("dhclient not installed")
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "dhclient")
+	if err := os.WriteFile(dst, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dst
+}
+
 func writeScript(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
