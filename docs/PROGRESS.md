@@ -461,9 +461,10 @@ mTLS mit per CLI erzeugten Zertifikaten)
 
 **Offene Punkte / Hinweise**
 - Der Kernel dieser Entwicklungsumgebung ist mit `ipv6.disable=1` gebootet;
-  der DHCPv6-Integrationstest überspringt sich hier und läuft erst in CI
-  (GitHub-Runner mit IPv6). Der Socket-Pfad (`server_linux.go`) ist lokal
-  daher nur über die Handler-Tests und den Build abgedeckt.
+  der DHCPv6-Integrationstest überspringt sich hier. In CI (GitHub-Runner,
+  Lauf vom 16.10.2026 auf `c0ff4bc`) lief er vollständig grün – dhclient -6
+  mit Präfix-Delegation und Release, udhcpc6, Go-Client, Relay – ebenso alle
+  übrigen Jobs (Lint, Unit, govulncheck, npm audit, Integration, E2E, Docker).
 - Nicht umgesetzt (D-069): DNS-Updates für DHCPv6 (AAAA), Policies/Klassen
   für IPv6, Reconfigure, Server-Unicast, Leasequery, DHCPv6-Lease-Export,
   netsh-Übernahme von DHCPv6-Scopes.
