@@ -134,7 +134,7 @@ func toImportResult(s *configio.Summary) gen.ConfigImportResult {
 	return gen.ConfigImportResult{
 		Mode: gen.ConfigImportResultMode(s.Mode), DryRun: s.DryRun, Scopes: s.Scopes, Reservations: s.Reservations,
 		Policies: s.Policies, Classes: s.Classes, OptionDefinitions: s.OptionDefinitions, Options: s.Options,
-		MacFilters: s.MACFilters, Superscopes: s.Superscopes,
+		MacFilters: s.MACFilters, Superscopes: s.Superscopes, DnsZones: s.DNSZones,
 	}
 }
 

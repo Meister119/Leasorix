@@ -170,6 +170,48 @@ test("superscopes, configuration export, netsh dry run and backup", async ({ pag
   expect(readFileSync(await db.path()).subarray(0, 15).toString()).toBe("SQLite format 3");
 });
 
+test("DNS updates: TSIG key with server snippet, zone, scope settings, registration", async ({ page }) => {
+  test.skip(!clientNS, "E2E_CLIENT_NS not set");
+  await login(page, "admin", adminPassword);
+  await page.getByRole("link", { name: "DNS-Updates" }).click();
+  await page.getByRole("tab", { name: "TSIG-Schlüssel" }).click();
+  await page.getByRole("button", { name: "Schlüssel hinzufügen" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  // The generated secret is shown once, ready for BIND and PowerDNS.
+  await expect(dialog.getByLabel("BIND (named.conf)")).toHaveValue(/key "leasorix-key" \{\s+algorithm hmac-sha256;\s+secret "[A-Za-z0-9+/]{43}=";/);
+  await expect(dialog.getByLabel("PowerDNS (pdnsutil)")).toHaveValue(/pdnsutil import-tsig-key leasorix-key hmac-sha256 /);
+  await dialog.getByRole("button", { name: "Fertig" }).click();
+  await expect(page.getByRole("cell", { name: "leasorix-key" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Zonen" }).click();
+  await page.getByRole("button", { name: "Zone hinzufügen" }).click();
+  await dialog.getByLabel("Zone", { exact: true }).fill("e2e.example");
+  await dialog.getByLabel("Primärer Server").fill("192.0.2.53:5399");
+  await dialog.getByLabel("TSIG-Schlüssel").selectOption({ label: "leasorix-key (hmac-sha256)" });
+  await dialog.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByRole("cell", { name: "e2e.example" })).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Scopes" }).click();
+  await page.getByRole("link", { name: "E2E-LAN" }).click();
+  await page.getByRole("tab", { name: "DNS" }).click();
+  await page.getByLabel("Records registrieren").selectOption("always");
+  await page.getByLabel("Domäne").fill("e2e.example");
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("DNS-Einstellungen gespeichert")).toBeVisible();
+
+  // A real client: the registration appears (the zone's server does not
+  // exist, so it ends up as an error with a retry).
+  execFileSync("ip", ["netns", "exec", clientNS, "udhcpc", "-i", "c0", "-f", "-q", "-n", "-t", "5", "-T", "1", "-s", "/bin/true", "-x", "hostname:e2e-dns"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await page.getByRole("link", { name: "DNS-Updates" }).click();
+  await page.getByRole("tab", { name: "Registrierungen" }).click();
+  const row = page.getByRole("row", { name: /e2e-dns\.e2e\.example/ });
+  await expect(row).toBeVisible({ timeout: 20_000 });
+  await expect(row.getByText(/Fehler|ausstehend/)).toBeVisible();
+});
+
 test("roles: a read-only user cannot change anything", async ({ page }) => {
   await login(page, "admin", adminPassword);
   await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();

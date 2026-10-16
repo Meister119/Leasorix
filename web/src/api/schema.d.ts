@@ -188,6 +188,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dns/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description TSIG keys (the secrets are never returned). */
+        get: operations["listDnsKeys"];
+        put?: never;
+        post: operations["createDnsKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dns/keys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateDnsKey"];
+        post?: never;
+        delete: operations["deleteDnsKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dns/zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listDnsZones"];
+        put?: never;
+        post: operations["createDnsZone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dns/zones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateDnsZone"];
+        post?: never;
+        delete: operations["deleteDnsZone"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dns/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description DNS registrations of this server (local state, not replicated). */
+        get: operations["listDnsRegistrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/export": {
         parameters: {
             query?: never;
@@ -982,6 +1068,7 @@ export interface components {
              * @description 0 = no superscope.
              */
             superscope_id: number;
+            dns: components["schemas"]["DnsSettings"];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -1001,6 +1088,91 @@ export interface components {
              * @description 0 or absent = no superscope.
              */
             superscope_id?: number;
+            /** @description Absent = defaults on creation, unchanged on update. */
+            dns?: components["schemas"]["DnsSettings"];
+        };
+        DnsSettings: {
+            /**
+             * @description never: no updates. client: as requested by the client in the
+             *     Client FQDN option 81 (A and PTR, or only PTR). always: A and PTR
+             *     for every client that sends a name (option 81 or 12).
+             * @enum {string}
+             */
+            mode: "never" | "client" | "always";
+            /** @description Domain for the client names; empty = domain name option 15. */
+            domain?: string;
+            /** @description Record TTL in seconds; 0 = a third of the lease time (1 min .. 1 day). */
+            ttl?: number;
+            /** @description Remove the records when the lease ends (default true). */
+            cleanup?: boolean;
+            /** @description Name protection with DHCID records, RFC 4701/4703 (default true). */
+            protect?: boolean;
+        };
+        DnsKey: {
+            /** Format: int64 */
+            id: number;
+            /** @example leasorix-key */
+            name: string;
+            /** @example hmac-sha256 */
+            algorithm: string;
+        };
+        DnsKeyInput: {
+            name: string;
+            /**
+             * @description Default hmac-sha256.
+             * @enum {string}
+             */
+            algorithm?: "hmac-sha256" | "hmac-sha384" | "hmac-sha512" | "hmac-sha224" | "hmac-sha1" | "hmac-md5";
+            /** @description Base64 key (at least 16 bytes); required on creation, empty on update = unchanged. */
+            secret?: string;
+        };
+        DnsZone: {
+            /** Format: int64 */
+            id: number;
+            /** @example example.lan */
+            name: string;
+            /** @example 192.168.1.53 */
+            server: string;
+            /**
+             * Format: int64
+             * @description 0 = unsigned updates.
+             */
+            key_id: number;
+            key_name: string;
+        };
+        DnsZoneInput: {
+            /** @description Zone apex, e.g. example.lan or 1.168.192.in-addr.arpa. */
+            name: string;
+            /** @description Primary name server: IP or host name, optionally :port. */
+            server: string;
+            /**
+             * Format: int64
+             * @description TSIG key; 0 or absent = unsigned updates.
+             */
+            key_id?: number;
+        };
+        DnsRegistration: {
+            ip: string;
+            /** @description Wanted name ("" while records are being removed). */
+            fqdn: string;
+            /** @description The A record is wanted. */
+            forward: boolean;
+            /** @description The PTR record is wanted. */
+            reverse: boolean;
+            /** @description Name protection (DHCID). */
+            protected?: boolean;
+            /** @description Name of the registered A record ("" = none). */
+            a_record: string;
+            /** @description Name the registered PTR record points to ("" = none). */
+            ptr_record: string;
+            /** @enum {string} */
+            state: "registered" | "pending" | "conflict" | "error";
+            attempts: number;
+            /** Format: date-time */
+            next_attempt?: string;
+            last_error: string;
+            /** Format: date-time */
+            updated_at?: string;
         };
         Superscope: {
             /** Format: int64 */
@@ -1025,6 +1197,7 @@ export interface components {
             options: number;
             mac_filters: number;
             superscopes: number;
+            dns_zones: number;
         };
         NetshImportResult: {
             result: components["schemas"]["ConfigImportResult"];
@@ -1385,6 +1558,19 @@ export interface components {
                 /** Format: int64 */
                 lease_time: number;
                 enabled: boolean;
+                bootp?: boolean;
+                /** @description Name of the superscope (created if missing). */
+                superscope?: string;
+                /** @description DNS update settings (absent = no updates). */
+                dns?: {
+                    /** @enum {string} */
+                    mode: "never" | "client" | "always";
+                    domain?: string;
+                    /** Format: int64 */
+                    ttl?: number;
+                    cleanup: boolean;
+                    protect: boolean;
+                };
             };
             exclusions: components["schemas"]["BundleRange"][];
             reservations: {
@@ -1960,6 +2146,219 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listDnsKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All keys. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsKey"][];
+                };
+            };
+        };
+    };
+    createDnsKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DnsKeyInput"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateDnsKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DnsKeyInput"];
+            };
+        };
+        responses: {
+            /** @description Updated (an empty secret keeps the stored one). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteDnsKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listDnsZones: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Zones that receive dynamic updates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsZone"][];
+                };
+            };
+        };
+    };
+    createDnsZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DnsZoneInput"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsZone"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateDnsZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DnsZoneInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsZone"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteDnsZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listDnsRegistrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registrations ordered by address. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsRegistration"][];
+                };
+            };
         };
     };
     exportConfig: {

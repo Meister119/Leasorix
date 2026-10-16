@@ -99,6 +99,14 @@ func TestLeaseLimitAndFailedSyncReplication(t *testing.T) {
 	if l, _ := e.m.Get(o.IP); !l.Expires.Equal(e.clock.Now().Add(10 * time.Minute)) {
 		t.Fatalf("stored lease not shortened: %+v", l)
 	}
+	// The partner may have stored the unconfirmed (long) lease: the
+	// shortened one follows with a newer change stamp and wins the merge.
+	fc.mu.Lock()
+	long, short := fc.sent[len(fc.sent)-2].Lease, fc.sent[len(fc.sent)-1].Lease
+	fc.mu.Unlock()
+	if !short.Expires.Equal(e.clock.Now().Add(10*time.Minute)) || !short.Updated.After(long.Updated) || !Wins(&short, &long, e.clock.Now()) {
+		t.Fatalf("shortened lease not replicated: long=%+v short=%+v", long, short)
+	}
 	e.stop()
 	e.start()
 	if l, _ := e.m.Get(o.IP); !l.Expires.Equal(e.clock.Now().Add(10*time.Minute)) || l.Origin != "" {

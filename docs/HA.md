@@ -110,6 +110,13 @@ angleichen.
 **Wartung / Updates.** Server nacheinander neu starten. Ein neu gestarteter
 Server gleicht sofort mit dem laufenden Partner ab.
 
+**DNS-Updates.** DNS-Zonen und TSIG-Schlüssel werden wie die übrige
+Konfiguration repliziert. Jeder Server registriert die Leases, die er
+vergibt oder verlängert; übernimmt der Partner einen Client, aktualisiert er
+dessen Records (gleiche DHCID, kein Konflikt). Die Registrierungsliste
+(*DNS-Updates → Registrierungen*) zeigt jeweils den Stand des eigenen
+Servers.
+
 ## Fallback: Split Scope (ohne Replikation)
 
 Für zwei unabhängige Server ohne HA-Partnerschaft: Scope öffnen →

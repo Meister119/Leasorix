@@ -43,6 +43,33 @@ type BundleScope struct {
 	// Superscope is the name of the superscope (created on import if
 	// missing).
 	Superscope string `json:"superscope,omitempty" yaml:"superscope,omitempty"`
+	// DNS are the dynamic DNS settings (absent = defaults: no updates).
+	DNS *BundleDNS `json:"dns,omitempty" yaml:"dns,omitempty"`
+}
+
+// BundleDNS are the DNS update settings of a scope.
+type BundleDNS struct {
+	Mode   string `json:"mode" yaml:"mode"`
+	Domain string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	// TTL in seconds, 0 = automatic.
+	TTL     int64 `json:"ttl,omitempty" yaml:"ttl,omitempty"`
+	Cleanup bool  `json:"cleanup" yaml:"cleanup"`
+	Protect bool  `json:"protect" yaml:"protect"`
+}
+
+func bundleDNS(d DNSSettings) *BundleDNS {
+	if d == DefaultDNSSettings() {
+		return nil
+	}
+	return &BundleDNS{Mode: string(d.Mode), Domain: d.Domain, TTL: int64(d.TTL / time.Second), Cleanup: d.Cleanup, Protect: d.Protect}
+}
+
+// Settings returns the DNS settings of a bundle (nil = defaults).
+func (b *BundleDNS) Settings() DNSSettings {
+	if b == nil {
+		return DefaultDNSSettings()
+	}
+	return DNSSettings{Mode: DNSMode(b.Mode), Domain: b.Domain, TTL: time.Duration(b.TTL) * time.Second, Cleanup: b.Cleanup, Protect: b.Protect}
 }
 
 // BundleRange is an inclusive address range.
@@ -106,7 +133,7 @@ func (s *Store) ExportScope(ctx context.Context, id int64) (*Bundle, error) {
 		Scope: BundleScope{
 			Name: sc.Name, Description: sc.Description, Subnet: sc.Subnet.String(),
 			Start: sc.Start.String(), End: sc.End.String(), LeaseTime: int64(sc.LeaseTime / time.Second), Enabled: sc.Enabled,
-			BOOTP: sc.BOOTP,
+			BOOTP: sc.BOOTP, DNS: bundleDNS(sc.DNS),
 		},
 		Exclusions: []BundleRange{}, Reservations: []BundleReservation{}, Policies: []BundlePolicy{},
 	}
@@ -260,7 +287,7 @@ func (s *Store) ImportScope(ctx context.Context, b *Bundle) (Scope, error) {
 	sc, err := s.CreateScope(ctx, Scope{
 		Name: b.Scope.Name, Description: b.Scope.Description, Subnet: prefix, Start: start, End: end,
 		LeaseTime: time.Duration(b.Scope.LeaseTime) * time.Second, Enabled: b.Scope.Enabled,
-		BOOTP: b.Scope.BOOTP, SuperscopeID: superscopeID,
+		BOOTP: b.Scope.BOOTP, SuperscopeID: superscopeID, DNS: b.Scope.DNS.Settings(),
 	})
 	if err != nil {
 		return sc, err

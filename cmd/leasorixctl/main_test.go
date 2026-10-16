@@ -113,6 +113,10 @@ scopes:
 	contains(t, s.ctl(t, 0, "scopes", "list"), "lan", "10.80.0.0/24", "10.80.0.10 - 10.80.0.200", "1h0m0s")
 	contains(t, s.ctl(t, 0, "scopes", "show", "lan"), "Subnet:       10.80.0.0/24", "191 usable")
 	contains(t, s.ctl(t, 1, "config", "import", doc), "server answered 409", "lan")
+	zones := s.file(t, "zones.yaml", "format: leasorix-config/v1\ndns_zones: [{name: lan.example, server: 192.0.2.53}]\n")
+	contains(t, s.ctl(t, 0, "config", "import", zones), "1 DNS zones")
+	contains(t, s.ctl(t, 0, "dns", "zones"), "lan.example", "192.0.2.53", "(unsigned)")
+	contains(t, s.ctl(t, 0, "dns", "registrations"), "IP", "STATE")
 
 	bundle := filepath.Join(s.dir, "lan.json")
 	s.ctl(t, 0, "scopes", "export", "lan", "-f", bundle)

@@ -18,7 +18,7 @@ NPM ?= npm
 IMAGE ?= leasorix
 DOCKER_BUILD_ARGS ?=
 
-.PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e fuzz lint vuln fmt tidy clean
+.PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e test-dns fuzz lint vuln fmt tidy clean
 
 all: ci
 
@@ -77,6 +77,10 @@ test-docker:
 test-ha:
 	$(GO) test -tags integration -count=1 -v -timeout 15m -run 'TestHA' ./test/integration/...
 
+## test-dns: dynamic DNS updates against BIND and PowerDNS in Docker (root, docker compose)
+test-dns:
+	$(GO) test -tags integration -count=1 -v -timeout 10m -run 'TestDNS' ./test/integration/...
+
 ## test-e2e: Playwright end-to-end tests against a real server in network
 ## namespaces (requires root, a built binary and the web UI)
 test-e2e: build
@@ -86,6 +90,7 @@ test-e2e: build
 FUZZTIME ?= 60s
 fuzz:
 	$(GO) test -run '^$$' -fuzz FuzzHandle -fuzztime $(FUZZTIME) ./internal/dhcp4
+	$(GO) test -run '^$$' -fuzz FuzzParseClientFQDN -fuzztime $(FUZZTIME) ./internal/dnsupdate
 
 ## lint: run golangci-lint
 lint:

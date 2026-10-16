@@ -36,8 +36,10 @@ type Scope struct {
 	BOOTP bool
 	// SuperscopeID is the superscope the scope belongs to (0 = none).
 	SuperscopeID int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// DNS are the dynamic DNS update settings.
+	DNS       DNSSettings
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Exclusion removes an address range from dynamic allocation.
@@ -98,6 +100,7 @@ func (s *Scope) validate() error {
 	}
 	v.Check(s.LeaseTime == 0 || s.LeaseTime >= MinLeaseTime, "lease_time", "must be 0 (unlimited) or at least %s", MinLeaseTime)
 	v.Check(s.LeaseTime%time.Second == 0, "lease_time", "must be a whole number of seconds")
+	s.DNS.validate(&v)
 	return v.Err()
 }
 

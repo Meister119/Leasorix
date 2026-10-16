@@ -8,6 +8,7 @@ require (
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/insomniacslk/dhcp v0.0.0-20261014062924-c6bb46ad3f3a
+	github.com/miekg/dns v1.1.73
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
@@ -16,6 +17,8 @@ require (
 	golang.org/x/net v0.61.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
+	google.golang.org/grpc v1.84.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.60.1
 )
 
@@ -52,9 +55,7 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
-	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.78.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

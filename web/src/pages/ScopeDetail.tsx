@@ -13,8 +13,9 @@ import { LeasesTable } from "./Leases";
 import { PoliciesList } from "./Policies";
 import { ReservationsTable } from "./Reservations";
 import { leaseTimes, useScopes, useSuperscopes } from "./Scopes";
+import { ScopeDNS } from "./ScopeDNS";
 
-type Tab = "overview" | "exclusions" | "options" | "reservations" | "policies" | "leases";
+type Tab = "overview" | "exclusions" | "options" | "reservations" | "policies" | "dns" | "leases";
 
 export function ScopeDetailPage() {
   const id = Number(useParams().id);
@@ -62,6 +63,7 @@ export function ScopeDetailPage() {
           { id: "options", label: "Optionen" },
           { id: "reservations", label: "Reservierungen" },
           { id: "policies", label: "Policies" },
+          { id: "dns", label: "DNS" },
           { id: "leases", label: "Leases" },
         ]}
       />
@@ -74,6 +76,7 @@ export function ScopeDetailPage() {
       )}
       {tab === "reservations" && <ReservationsTable scopeId={s.id} />}
       {tab === "policies" && <PoliciesList scopeId={s.id} />}
+      {tab === "dns" && <ScopeDNS scope={s} />}
       {tab === "leases" && <LeasesTable scopeId={s.id} />}
       {split && <SplitWizard scope={s} onClose={() => setSplit(false)} />}
     </>

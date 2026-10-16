@@ -13,7 +13,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 6 – Hochverfügbarkeit | ✅ abgeschlossen |
 | 7 – Komfort & Kompatibilität | ✅ abgeschlossen |
 | 8 – Docker & Compose | ✅ abgeschlossen |
-| 9 – DNS-Integration | offen |
+| 9 – DNS-Integration | ✅ abgeschlossen |
 | 10 – DHCPv6 (optional) | offen |
 
 ---
@@ -346,3 +346,51 @@ mTLS mit per CLI erzeugten Zertifikaten)
   aus der Entwicklungsumgebung nicht möglich und passiert beim ersten
   Versionstag auf GitHub.
 - Bridge-Netz + DHCP-Relay ist nicht getestet und nicht unterstützt (D-062).
+
+## Phase 9 – DNS-Integration
+
+**Umgesetzt**
+- **RFC-2136-Updates** (A, PTR, DHCID) mit **TSIG** (HMAC-SHA256 u. a.,
+  `miekg/dns`), Zonen mit primärem Server und optionalem Schlüssel, längste
+  passende Zone pro Name; asynchroner Updater mit Wiederholungen und
+  persistentem Registrierungszustand (Migration 00006).
+- **Pro Scope:** nie / auf Anforderung des Clients (Option 81 nach RFC 4702)
+  / immer; Domäne (Fallback Option 15), TTL, Entfernen bei Lease-Ende,
+  Namensschutz. Option 81 wird in OFFER/ACK beantwortet (S/O/N-Bits).
+- **Name Protection** mit DHCID (RFC 4701/4703): fremde und manuell
+  angelegte Namen werden nie überschrieben; Konflikte im Log, Audit
+  (`dns.conflict`), Status und Metriken.
+- **Cleanup** bei Release, Ablauf, Löschen (auch nach Neustart) über einen
+  periodischen Abgleich mit der Lease-Tabelle.
+- API (`/dns/keys`, `/dns/zones`, `/dns/registrations`, `dns` am Scope),
+  Web-UI (Seite *DNS-Updates* mit Schlüssel-Generator und Snippets für BIND/
+  PowerDNS, Registrierungsstatus; Scope-Reiter *DNS*), `leasorixctl dns
+  zones|registrations`, Konfigurations-Export/-Import (Zonen, Scope-
+  Einstellungen; Schlüssel bewusst nicht), netsh `set dnsconfig`, HA-Sync
+  und Backup der Schlüssel/Zonen. Metriken `leasorix_dns_*`.
+- Korrektur aus Phase 6: gekürzte Leases (unbestätigte synchrone
+  Replikation) werden nachrepliziert (D-068).
+- Doku: [ADMIN.md](ADMIN.md#11-dns-updates), DECISIONS D-064…D-068.
+
+**Tests**
+- Unit: Option-81-Parser/-Antwort (inkl. Fuzzing), Entscheidungsmatrix,
+  DHCID gegen die Beispiele aus RFC 4701, TTL, Updater mit simuliertem DNS
+  (Registrierung, Verlängerung ohne Traffic, Umbenennung, Release, Ablauf,
+  Konflikt ohne Endlosschleife, Backoff, Neustart mit Cleanup, Records
+  behalten, fehlende Zone), Handler (Option 81 in OFFER/ACK), API (Rollen,
+  Geheimnis nie ausgegeben, Validierung, Read-only-Partner), Config-Roundtrip
+  mit Zonen, fehlender Schlüssel, netsh-Mapping, `leasorixctl`.
+- Integration (`make test-dns`, Teil von `make test-integration`): BIND 9.20
+  und PowerDNS 4.9 per Compose (`test/dns`) auf einem macvlan-Netz am
+  Server-Namespace; echte DHCP-Clients registrieren sich mit TSIG
+  (Option 81 bzw. nur Hostname), A/PTR/DHCID werden geprüft, Namensschutz
+  gegen manuellen Record und fremden Client, Entfernen nach Release und nach
+  Ablauf – gegen beide Server ✅
+- Playwright-E2E 8/8 (neu: Schlüssel mit Snippet, Zone, Scope-Einstellung,
+  Registrierung eines echten Clients) ✅; alle 17 Integrationstests ✅
+
+**Offene Punkte / Hinweise**
+- Kein GSS-TSIG (Windows-DNS mit „nur sicheren“ Updates); Windows-DNS nur
+  mit unsignierten Updates (D-067).
+- Keine AAAA-Records (kommen mit DHCPv6 in Frage, Phase 10).
+

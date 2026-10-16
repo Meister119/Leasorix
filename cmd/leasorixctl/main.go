@@ -35,6 +35,8 @@ Commands:
   leases delete <ip>
   leases export [-f FILE]               emergency export of the lease table
   leases import <FILE>                  merge a lease export (admin)
+  dns registrations                     DNS registrations of the server
+  dns zones                             zones for dynamic DNS updates
   ha status                             high availability status
   ha partner-down --yes                 confirm that the partner is down (admin)
   config export [--format yaml|json] [-f FILE]

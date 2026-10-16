@@ -136,6 +136,81 @@ func (e ConfigImportResultMode) Valid() bool {
 	}
 }
 
+// Defines values for DnsKeyInputAlgorithm.
+const (
+	HmacMd5    DnsKeyInputAlgorithm = "hmac-md5"
+	HmacSha1   DnsKeyInputAlgorithm = "hmac-sha1"
+	HmacSha224 DnsKeyInputAlgorithm = "hmac-sha224"
+	HmacSha256 DnsKeyInputAlgorithm = "hmac-sha256"
+	HmacSha384 DnsKeyInputAlgorithm = "hmac-sha384"
+	HmacSha512 DnsKeyInputAlgorithm = "hmac-sha512"
+)
+
+// Valid indicates whether the value is a known member of the DnsKeyInputAlgorithm enum.
+func (e DnsKeyInputAlgorithm) Valid() bool {
+	switch e {
+	case HmacMd5:
+		return true
+	case HmacSha1:
+		return true
+	case HmacSha224:
+		return true
+	case HmacSha256:
+		return true
+	case HmacSha384:
+		return true
+	case HmacSha512:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsRegistrationState.
+const (
+	DnsRegistrationStateConflict   DnsRegistrationState = "conflict"
+	DnsRegistrationStateError      DnsRegistrationState = "error"
+	DnsRegistrationStatePending    DnsRegistrationState = "pending"
+	DnsRegistrationStateRegistered DnsRegistrationState = "registered"
+)
+
+// Valid indicates whether the value is a known member of the DnsRegistrationState enum.
+func (e DnsRegistrationState) Valid() bool {
+	switch e {
+	case DnsRegistrationStateConflict:
+		return true
+	case DnsRegistrationStateError:
+		return true
+	case DnsRegistrationStatePending:
+		return true
+	case DnsRegistrationStateRegistered:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsSettingsMode.
+const (
+	DnsModeAlways DnsSettingsMode = "always"
+	DnsModeClient DnsSettingsMode = "client"
+	DnsModeNever  DnsSettingsMode = "never"
+)
+
+// Valid indicates whether the value is a known member of the DnsSettingsMode enum.
+func (e DnsSettingsMode) Valid() bool {
+	switch e {
+	case DnsModeAlways:
+		return true
+	case DnsModeClient:
+		return true
+	case DnsModeNever:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HAState.
 const (
 	COMMUNICATIONINTERRUPTED HAState = "COMMUNICATION_INTERRUPTED"
@@ -469,6 +544,27 @@ func (e ScopeBundlePoliciesOperator) Valid() bool {
 	}
 }
 
+// Defines values for ScopeBundleScopeDnsMode.
+const (
+	BundleDnsAlways ScopeBundleScopeDnsMode = "always"
+	BundleDnsClient ScopeBundleScopeDnsMode = "client"
+	BundleDnsNever  ScopeBundleScopeDnsMode = "never"
+)
+
+// Valid indicates whether the value is a known member of the ScopeBundleScopeDnsMode enum.
+func (e ScopeBundleScopeDnsMode) Valid() bool {
+	switch e {
+	case BundleDnsAlways:
+		return true
+	case BundleDnsClient:
+		return true
+	case BundleDnsNever:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportMode.
 const (
 	ImportModeMerge   ImportMode = "merge"
@@ -642,6 +738,7 @@ type ConditionField string
 // ConfigImportResult defines model for ConfigImportResult.
 type ConfigImportResult struct {
 	Classes           int                    `json:"classes"`
+	DnsZones          int                    `json:"dns_zones"`
 	DryRun            bool                   `json:"dry_run"`
 	MacFilters        int                    `json:"mac_filters"`
 	Mode              ConfigImportResultMode `json:"mode"`
@@ -655,6 +752,111 @@ type ConfigImportResult struct {
 
 // ConfigImportResultMode defines model for ConfigImportResult.Mode.
 type ConfigImportResultMode string
+
+// DnsKey defines model for DnsKey.
+type DnsKey struct {
+	// Algorithm Example: hmac-sha256
+	Algorithm string `json:"algorithm"`
+	Id        int64  `json:"id"`
+
+	// Name Example: leasorix-key
+	Name string `json:"name"`
+}
+
+// DnsKeyInput defines model for DnsKeyInput.
+type DnsKeyInput struct {
+	// Algorithm Default hmac-sha256.
+	Algorithm *DnsKeyInputAlgorithm `json:"algorithm,omitempty"`
+	Name      string                `json:"name"`
+
+	// Secret Base64 key (at least 16 bytes); required on creation, empty on update = unchanged.
+	Secret *string `json:"secret,omitempty"`
+}
+
+// DnsKeyInputAlgorithm Default hmac-sha256.
+type DnsKeyInputAlgorithm string
+
+// DnsRegistration defines model for DnsRegistration.
+type DnsRegistration struct {
+	// ARecord Name of the registered A record ("" = none).
+	ARecord  string `json:"a_record"`
+	Attempts int    `json:"attempts"`
+
+	// Forward The A record is wanted.
+	Forward bool `json:"forward"`
+
+	// Fqdn Wanted name ("" while records are being removed).
+	Fqdn        string     `json:"fqdn"`
+	Ip          string     `json:"ip"`
+	LastError   string     `json:"last_error"`
+	NextAttempt *time.Time `json:"next_attempt,omitempty"`
+
+	// Protected Name protection (DHCID).
+	Protected *bool `json:"protected,omitempty"`
+
+	// PtrRecord Name the registered PTR record points to ("" = none).
+	PtrRecord string `json:"ptr_record"`
+
+	// Reverse The PTR record is wanted.
+	Reverse   bool                 `json:"reverse"`
+	State     DnsRegistrationState `json:"state"`
+	UpdatedAt *time.Time           `json:"updated_at,omitempty"`
+}
+
+// DnsRegistrationState defines model for DnsRegistration.State.
+type DnsRegistrationState string
+
+// DnsSettings defines model for DnsSettings.
+type DnsSettings struct {
+	// Cleanup Remove the records when the lease ends (default true).
+	Cleanup *bool `json:"cleanup,omitempty"`
+
+	// Domain Domain for the client names; empty = domain name option 15.
+	Domain *string `json:"domain,omitempty"`
+
+	// Mode never: no updates. client: as requested by the client in the
+	// Client FQDN option 81 (A and PTR, or only PTR). always: A and PTR
+	// for every client that sends a name (option 81 or 12).
+	Mode DnsSettingsMode `json:"mode"`
+
+	// Protect Name protection with DHCID records, RFC 4701/4703 (default true).
+	Protect *bool `json:"protect,omitempty"`
+
+	// Ttl Record TTL in seconds; 0 = a third of the lease time (1 min .. 1 day).
+	Ttl *int `json:"ttl,omitempty"`
+}
+
+// DnsSettingsMode never: no updates. client: as requested by the client in the
+// Client FQDN option 81 (A and PTR, or only PTR). always: A and PTR
+// for every client that sends a name (option 81 or 12).
+type DnsSettingsMode string
+
+// DnsZone defines model for DnsZone.
+type DnsZone struct {
+	Id int64 `json:"id"`
+
+	// KeyId 0 = unsigned updates.
+	KeyId   int64  `json:"key_id"`
+	KeyName string `json:"key_name"`
+
+	// Name Example: example.lan
+	Name string `json:"name"`
+
+	// Server Example: 192.168.1.53
+	Server string `json:"server"`
+}
+
+// DnsZoneInput defines model for DnsZoneInput.
+type DnsZoneInput struct {
+	// KeyId TSIG key; 0 or absent = unsigned updates.
+	KeyId *int64 `json:"key_id,omitempty"`
+
+	// Name Zone apex, e.g. example.lan or 1.168.192.in-addr.arpa.
+	Name string `json:"name"`
+
+	// Server Primary name server: IP or host name, optionally :port.
+	Server string `json:"server"`
+}
 
 // Error defines model for Error.
 type Error struct {
@@ -974,10 +1176,11 @@ type Role string
 // Scope defines model for Scope.
 type Scope struct {
 	// Bootp Dynamic BOOTP for this scope.
-	Bootp       bool      `json:"bootp"`
-	CreatedAt   time.Time `json:"created_at"`
-	Description string    `json:"description"`
-	Enabled     bool      `json:"enabled"`
+	Bootp       bool        `json:"bootp"`
+	CreatedAt   time.Time   `json:"created_at"`
+	Description string      `json:"description"`
+	Dns         DnsSettings `json:"dns"`
+	Enabled     bool        `json:"enabled"`
 
 	// End Example: 192.168.1.200
 	End string `json:"end"`
@@ -1027,13 +1230,26 @@ type ScopeBundle struct {
 		Options     *[]BundleOption `json:"options,omitempty"`
 	} `json:"reservations"`
 	Scope struct {
+		Bootp       *bool   `json:"bootp,omitempty"`
 		Description *string `json:"description,omitempty"`
-		Enabled     bool    `json:"enabled"`
-		End         string  `json:"end"`
-		LeaseTime   int64   `json:"lease_time"`
-		Name        string  `json:"name"`
-		Start       string  `json:"start"`
-		Subnet      string  `json:"subnet"`
+
+		// Dns DNS update settings (absent = no updates).
+		Dns *struct {
+			Cleanup bool                    `json:"cleanup"`
+			Domain  *string                 `json:"domain,omitempty"`
+			Mode    ScopeBundleScopeDnsMode `json:"mode"`
+			Protect bool                    `json:"protect"`
+			Ttl     *int64                  `json:"ttl,omitempty"`
+		} `json:"dns,omitempty"`
+		Enabled   bool   `json:"enabled"`
+		End       string `json:"end"`
+		LeaseTime int64  `json:"lease_time"`
+		Name      string `json:"name"`
+		Start     string `json:"start"`
+		Subnet    string `json:"subnet"`
+
+		// Superscope Name of the superscope (created if missing).
+		Superscope *string `json:"superscope,omitempty"`
 	} `json:"scope"`
 }
 
@@ -1043,16 +1259,20 @@ type ScopeBundleFormat string
 // ScopeBundlePoliciesOperator defines model for ScopeBundle.Policies.Operator.
 type ScopeBundlePoliciesOperator string
 
+// ScopeBundleScopeDnsMode defines model for ScopeBundle.Scope.Dns.Mode.
+type ScopeBundleScopeDnsMode string
+
 // ScopeInput defines model for ScopeInput.
 type ScopeInput struct {
-	Bootp       *bool   `json:"bootp,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Enabled     bool    `json:"enabled"`
-	End         string  `json:"end"`
-	LeaseTime   int     `json:"lease_time"`
-	Name        string  `json:"name"`
-	Start       string  `json:"start"`
-	Subnet      string  `json:"subnet"`
+	Bootp       *bool        `json:"bootp,omitempty"`
+	Description *string      `json:"description,omitempty"`
+	Dns         *DnsSettings `json:"dns,omitempty"`
+	Enabled     bool         `json:"enabled"`
+	End         string       `json:"end"`
+	LeaseTime   int          `json:"lease_time"`
+	Name        string       `json:"name"`
+	Start       string       `json:"start"`
+	Subnet      string       `json:"subnet"`
 
 	// SuperscopeId 0 or absent = no superscope.
 	SuperscopeId *int64 `json:"superscope_id,omitempty"`
@@ -1315,6 +1535,18 @@ type ImportConfigJSONRequestBody ImportConfigJSONBody
 // ImportNetshTextRequestBody defines body for ImportNetsh for text/plain ContentType.
 type ImportNetshTextRequestBody = ImportNetshTextBody
 
+// CreateDnsKeyJSONRequestBody defines body for CreateDnsKey for application/json ContentType.
+type CreateDnsKeyJSONRequestBody = DnsKeyInput
+
+// UpdateDnsKeyJSONRequestBody defines body for UpdateDnsKey for application/json ContentType.
+type UpdateDnsKeyJSONRequestBody = DnsKeyInput
+
+// CreateDnsZoneJSONRequestBody defines body for CreateDnsZone for application/json ContentType.
+type CreateDnsZoneJSONRequestBody = DnsZoneInput
+
+// UpdateDnsZoneJSONRequestBody defines body for UpdateDnsZone for application/json ContentType.
+type UpdateDnsZoneJSONRequestBody = DnsZoneInput
+
 // CreateFilterJSONRequestBody defines body for CreateFilter for application/json ContentType.
 type CreateFilterJSONRequestBody = MacFilterInput
 
@@ -1536,6 +1768,57 @@ type ClientInterface interface {
 	//
 	// Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server).
 	ImportNetshWithTextBody(ctx context.Context, params *ImportNetshParams, body ImportNetshTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDnsKeys performs a GET /dns/keys (the `ListDnsKeys` operationId) request.
+	//
+	// TSIG keys (the secrets are never returned).
+	ListDnsKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDnsKeyWithBody performs a POST /dns/keys (the `CreateDnsKey` operationId) request,
+	// with any type of body and a specified content type.
+	CreateDnsKeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDnsKey performs a POST /dns/keys (the `CreateDnsKey` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateDnsKey(ctx context.Context, body CreateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDnsKey performs a DELETE /dns/keys/{id} (the `DeleteDnsKey` operationId) request.
+	DeleteDnsKey(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateDnsKeyWithBody performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateDnsKeyWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateDnsKey performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateDnsKey(ctx context.Context, id Id, body UpdateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDnsRegistrations performs a GET /dns/registrations (the `ListDnsRegistrations` operationId) request.
+	//
+	// DNS registrations of this server (local state, not replicated).
+	ListDnsRegistrations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDnsZones performs a GET /dns/zones (the `ListDnsZones` operationId) request.
+	ListDnsZones(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDnsZoneWithBody performs a POST /dns/zones (the `CreateDnsZone` operationId) request,
+	// with any type of body and a specified content type.
+	CreateDnsZoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDnsZone performs a POST /dns/zones (the `CreateDnsZone` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateDnsZone(ctx context.Context, body CreateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDnsZone performs a DELETE /dns/zones/{id} (the `DeleteDnsZone` operationId) request.
+	DeleteDnsZone(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateDnsZoneWithBody performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateDnsZoneWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateDnsZone performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateDnsZone(ctx context.Context, id Id, body UpdateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListFilters performs a GET /filters (the `ListFilters` operationId) request.
 	ListFilters(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2144,6 +2427,187 @@ func (c *Client) ImportNetshWithBody(ctx context.Context, params *ImportNetshPar
 // Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server).
 func (c *Client) ImportNetshWithTextBody(ctx context.Context, params *ImportNetshParams, body ImportNetshTextRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewImportNetshRequestWithTextBody(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDnsKeys performs a GET /dns/keys (the `ListDnsKeys` operationId) request.
+//
+// TSIG keys (the secrets are never returned).
+func (c *Client) ListDnsKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDnsKeysRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDnsKeyWithBody performs a POST /dns/keys (the `CreateDnsKey` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateDnsKeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDnsKeyRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDnsKey performs a POST /dns/keys (the `CreateDnsKey` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateDnsKey(ctx context.Context, body CreateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDnsKeyRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteDnsKey performs a DELETE /dns/keys/{id} (the `DeleteDnsKey` operationId) request.
+func (c *Client) DeleteDnsKey(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDnsKeyRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateDnsKeyWithBody performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateDnsKeyWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDnsKeyRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateDnsKey performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateDnsKey(ctx context.Context, id Id, body UpdateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDnsKeyRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDnsRegistrations performs a GET /dns/registrations (the `ListDnsRegistrations` operationId) request.
+//
+// DNS registrations of this server (local state, not replicated).
+func (c *Client) ListDnsRegistrations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDnsRegistrationsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDnsZones performs a GET /dns/zones (the `ListDnsZones` operationId) request.
+func (c *Client) ListDnsZones(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDnsZonesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDnsZoneWithBody performs a POST /dns/zones (the `CreateDnsZone` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateDnsZoneWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDnsZoneRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDnsZone performs a POST /dns/zones (the `CreateDnsZone` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateDnsZone(ctx context.Context, body CreateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDnsZoneRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteDnsZone performs a DELETE /dns/zones/{id} (the `DeleteDnsZone` operationId) request.
+func (c *Client) DeleteDnsZone(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDnsZoneRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateDnsZoneWithBody performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateDnsZoneWithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDnsZoneRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateDnsZone performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateDnsZone(ctx context.Context, id Id, body UpdateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateDnsZoneRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3961,6 +4425,329 @@ func NewImportNetshRequestWithBody(server string, params *ImportNetshParams, con
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListDnsKeysRequest constructs an http.Request for the ListDnsKeys method
+func NewListDnsKeysRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDnsKeyRequest calls the generic CreateDnsKey builder with application/json body
+func NewCreateDnsKeyRequest(server string, body CreateDnsKeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDnsKeyRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDnsKeyRequestWithBody constructs an http.Request for the CreateDnsKey method, with any body, and a specified content type
+func NewCreateDnsKeyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteDnsKeyRequest constructs an http.Request for the DeleteDnsKey method
+func NewDeleteDnsKeyRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/keys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateDnsKeyRequest calls the generic UpdateDnsKey builder with application/json body
+func NewUpdateDnsKeyRequest(server string, id Id, body UpdateDnsKeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateDnsKeyRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateDnsKeyRequestWithBody constructs an http.Request for the UpdateDnsKey method, with any body, and a specified content type
+func NewUpdateDnsKeyRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/keys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListDnsRegistrationsRequest constructs an http.Request for the ListDnsRegistrations method
+func NewListDnsRegistrationsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/registrations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListDnsZonesRequest constructs an http.Request for the ListDnsZones method
+func NewListDnsZonesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/zones")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDnsZoneRequest calls the generic CreateDnsZone builder with application/json body
+func NewCreateDnsZoneRequest(server string, body CreateDnsZoneJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDnsZoneRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDnsZoneRequestWithBody constructs an http.Request for the CreateDnsZone method, with any body, and a specified content type
+func NewCreateDnsZoneRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/zones")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteDnsZoneRequest constructs an http.Request for the DeleteDnsZone method
+func NewDeleteDnsZoneRequest(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/zones/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateDnsZoneRequest calls the generic UpdateDnsZone builder with application/json body
+func NewUpdateDnsZoneRequest(server string, id Id, body UpdateDnsZoneJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateDnsZoneRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateDnsZoneRequestWithBody constructs an http.Request for the UpdateDnsZone method, with any body, and a specified content type
+func NewUpdateDnsZoneRequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dns/zones/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -6431,6 +7218,75 @@ type ClientWithResponsesInterface interface {
 	// Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server).
 	ImportNetshWithTextBodyWithResponse(ctx context.Context, params *ImportNetshParams, body ImportNetshTextRequestBody, reqEditors ...RequestEditorFn) (*ImportNetshResponse, error)
 
+	// ListDnsKeysWithResponse performs a GET /dns/keys (the `ListDnsKeys` operationId) request.
+	//
+	// TSIG keys (the secrets are never returned).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListDnsKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsKeysResponse, error)
+
+	// CreateDnsKeyWithBodyWithResponse performs a POST /dns/keys (the `CreateDnsKey` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateDnsKeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDnsKeyResponse, error)
+
+	// CreateDnsKeyWithResponse performs a POST /dns/keys (the `CreateDnsKey` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateDnsKeyWithResponse(ctx context.Context, body CreateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDnsKeyResponse, error)
+
+	// DeleteDnsKeyWithResponse performs a DELETE /dns/keys/{id} (the `DeleteDnsKey` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteDnsKeyWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteDnsKeyResponse, error)
+
+	// UpdateDnsKeyWithBodyWithResponse performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateDnsKeyWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDnsKeyResponse, error)
+
+	// UpdateDnsKeyWithResponse performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateDnsKeyWithResponse(ctx context.Context, id Id, body UpdateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDnsKeyResponse, error)
+
+	// ListDnsRegistrationsWithResponse performs a GET /dns/registrations (the `ListDnsRegistrations` operationId) request.
+	//
+	// DNS registrations of this server (local state, not replicated).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListDnsRegistrationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsRegistrationsResponse, error)
+
+	// ListDnsZonesWithResponse performs a GET /dns/zones (the `ListDnsZones` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListDnsZonesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsZonesResponse, error)
+
+	// CreateDnsZoneWithBodyWithResponse performs a POST /dns/zones (the `CreateDnsZone` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateDnsZoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDnsZoneResponse, error)
+
+	// CreateDnsZoneWithResponse performs a POST /dns/zones (the `CreateDnsZone` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateDnsZoneWithResponse(ctx context.Context, body CreateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDnsZoneResponse, error)
+
+	// DeleteDnsZoneWithResponse performs a DELETE /dns/zones/{id} (the `DeleteDnsZone` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteDnsZoneWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteDnsZoneResponse, error)
+
+	// UpdateDnsZoneWithBodyWithResponse performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateDnsZoneWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDnsZoneResponse, error)
+
+	// UpdateDnsZoneWithResponse performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateDnsZoneWithResponse(ctx context.Context, id Id, body UpdateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDnsZoneResponse, error)
+
 	// ListFiltersWithResponse performs a GET /filters (the `ListFilters` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -7492,6 +8348,452 @@ func (r ImportNetshResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ImportNetshResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDnsKeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]DnsKey
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDnsKeysResponse) GetJSON200() *[]DnsKey {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDnsKeysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDnsKeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDnsKeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDnsKeysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateDnsKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *DnsKey
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateDnsKeyResponse) GetJSON201() *DnsKey {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateDnsKeyResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateDnsKeyResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateDnsKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDnsKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDnsKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateDnsKeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteDnsKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteDnsKeyResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteDnsKeyResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteDnsKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDnsKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDnsKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteDnsKeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateDnsKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DnsKey
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateDnsKeyResponse) GetJSON200() *DnsKey {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateDnsKeyResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateDnsKeyResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateDnsKeyResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateDnsKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateDnsKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateDnsKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateDnsKeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDnsRegistrationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]DnsRegistration
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDnsRegistrationsResponse) GetJSON200() *[]DnsRegistration {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDnsRegistrationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDnsRegistrationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDnsRegistrationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDnsRegistrationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDnsZonesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]DnsZone
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDnsZonesResponse) GetJSON200() *[]DnsZone {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDnsZonesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDnsZonesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDnsZonesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDnsZonesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateDnsZoneResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *DnsZone
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateDnsZoneResponse) GetJSON201() *DnsZone {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateDnsZoneResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateDnsZoneResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateDnsZoneResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDnsZoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDnsZoneResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateDnsZoneResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteDnsZoneResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteDnsZoneResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteDnsZoneResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDnsZoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDnsZoneResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteDnsZoneResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateDnsZoneResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DnsZone
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateDnsZoneResponse) GetJSON200() *DnsZone {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateDnsZoneResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateDnsZoneResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateDnsZoneResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateDnsZoneResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateDnsZoneResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateDnsZoneResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateDnsZoneResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -10668,6 +11970,153 @@ func (c *ClientWithResponses) ImportNetshWithTextBodyWithResponse(ctx context.Co
 	return ParseImportNetshResponse(rsp)
 }
 
+// ListDnsKeysWithResponse performs a GET /dns/keys (the `ListDnsKeys` operationId) request.
+//
+// TSIG keys (the secrets are never returned).
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListDnsKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsKeysResponse, error) {
+	rsp, err := c.ListDnsKeys(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDnsKeysResponse(rsp)
+}
+
+// CreateDnsKeyWithBodyWithResponse performs a POST /dns/keys (the `CreateDnsKey` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateDnsKeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDnsKeyResponse, error) {
+	rsp, err := c.CreateDnsKeyWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDnsKeyResponse(rsp)
+}
+
+// CreateDnsKeyWithResponse performs a POST /dns/keys (the `CreateDnsKey` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateDnsKeyWithResponse(ctx context.Context, body CreateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDnsKeyResponse, error) {
+	rsp, err := c.CreateDnsKey(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDnsKeyResponse(rsp)
+}
+
+// DeleteDnsKeyWithResponse performs a DELETE /dns/keys/{id} (the `DeleteDnsKey` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteDnsKeyWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteDnsKeyResponse, error) {
+	rsp, err := c.DeleteDnsKey(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDnsKeyResponse(rsp)
+}
+
+// UpdateDnsKeyWithBodyWithResponse performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateDnsKeyWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDnsKeyResponse, error) {
+	rsp, err := c.UpdateDnsKeyWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDnsKeyResponse(rsp)
+}
+
+// UpdateDnsKeyWithResponse performs a PUT /dns/keys/{id} (the `UpdateDnsKey` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateDnsKeyWithResponse(ctx context.Context, id Id, body UpdateDnsKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDnsKeyResponse, error) {
+	rsp, err := c.UpdateDnsKey(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDnsKeyResponse(rsp)
+}
+
+// ListDnsRegistrationsWithResponse performs a GET /dns/registrations (the `ListDnsRegistrations` operationId) request.
+//
+// DNS registrations of this server (local state, not replicated).
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListDnsRegistrationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsRegistrationsResponse, error) {
+	rsp, err := c.ListDnsRegistrations(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDnsRegistrationsResponse(rsp)
+}
+
+// ListDnsZonesWithResponse performs a GET /dns/zones (the `ListDnsZones` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListDnsZonesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDnsZonesResponse, error) {
+	rsp, err := c.ListDnsZones(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDnsZonesResponse(rsp)
+}
+
+// CreateDnsZoneWithBodyWithResponse performs a POST /dns/zones (the `CreateDnsZone` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateDnsZoneWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDnsZoneResponse, error) {
+	rsp, err := c.CreateDnsZoneWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDnsZoneResponse(rsp)
+}
+
+// CreateDnsZoneWithResponse performs a POST /dns/zones (the `CreateDnsZone` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateDnsZoneWithResponse(ctx context.Context, body CreateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDnsZoneResponse, error) {
+	rsp, err := c.CreateDnsZone(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDnsZoneResponse(rsp)
+}
+
+// DeleteDnsZoneWithResponse performs a DELETE /dns/zones/{id} (the `DeleteDnsZone` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteDnsZoneWithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteDnsZoneResponse, error) {
+	rsp, err := c.DeleteDnsZone(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDnsZoneResponse(rsp)
+}
+
+// UpdateDnsZoneWithBodyWithResponse performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateDnsZoneWithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateDnsZoneResponse, error) {
+	rsp, err := c.UpdateDnsZoneWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDnsZoneResponse(rsp)
+}
+
+// UpdateDnsZoneWithResponse performs a PUT /dns/zones/{id} (the `UpdateDnsZone` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateDnsZoneWithResponse(ctx context.Context, id Id, body UpdateDnsZoneJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateDnsZoneResponse, error) {
+	rsp, err := c.UpdateDnsZone(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateDnsZoneResponse(rsp)
+}
+
 // ListFiltersWithResponse performs a GET /filters (the `ListFilters` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -12042,6 +13491,323 @@ func ParseImportNetshResponse(rsp *http.Response) (*ImportNetshResponse, error) 
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDnsKeysResponse parses an HTTP response from a ListDnsKeysWithResponse call
+func ParseListDnsKeysResponse(rsp *http.Response) (*ListDnsKeysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDnsKeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []DnsKey
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDnsKeyResponse parses an HTTP response from a CreateDnsKeyWithResponse call
+func ParseCreateDnsKeyResponse(rsp *http.Response) (*CreateDnsKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDnsKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest DnsKey
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDnsKeyResponse parses an HTTP response from a DeleteDnsKeyWithResponse call
+func ParseDeleteDnsKeyResponse(rsp *http.Response) (*DeleteDnsKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDnsKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateDnsKeyResponse parses an HTTP response from a UpdateDnsKeyWithResponse call
+func ParseUpdateDnsKeyResponse(rsp *http.Response) (*UpdateDnsKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateDnsKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DnsKey
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDnsRegistrationsResponse parses an HTTP response from a ListDnsRegistrationsWithResponse call
+func ParseListDnsRegistrationsResponse(rsp *http.Response) (*ListDnsRegistrationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDnsRegistrationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []DnsRegistration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDnsZonesResponse parses an HTTP response from a ListDnsZonesWithResponse call
+func ParseListDnsZonesResponse(rsp *http.Response) (*ListDnsZonesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDnsZonesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []DnsZone
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDnsZoneResponse parses an HTTP response from a CreateDnsZoneWithResponse call
+func ParseCreateDnsZoneResponse(rsp *http.Response) (*CreateDnsZoneResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDnsZoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest DnsZone
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDnsZoneResponse parses an HTTP response from a DeleteDnsZoneWithResponse call
+func ParseDeleteDnsZoneResponse(rsp *http.Response) (*DeleteDnsZoneResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDnsZoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateDnsZoneResponse parses an HTTP response from a UpdateDnsZoneWithResponse call
+func ParseUpdateDnsZoneResponse(rsp *http.Response) (*UpdateDnsZoneResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateDnsZoneResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DnsZone
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest Conflict
@@ -14165,6 +15931,33 @@ type ServerInterface interface {
 	// (POST /config/import/netsh)
 	ImportNetsh(w http.ResponseWriter, r *http.Request, params ImportNetshParams)
 
+	// (GET /dns/keys)
+	ListDnsKeys(w http.ResponseWriter, r *http.Request)
+
+	// (POST /dns/keys)
+	CreateDnsKey(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /dns/keys/{id})
+	DeleteDnsKey(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /dns/keys/{id})
+	UpdateDnsKey(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /dns/registrations)
+	ListDnsRegistrations(w http.ResponseWriter, r *http.Request)
+
+	// (GET /dns/zones)
+	ListDnsZones(w http.ResponseWriter, r *http.Request)
+
+	// (POST /dns/zones)
+	CreateDnsZone(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /dns/zones/{id})
+	DeleteDnsZone(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /dns/zones/{id})
+	UpdateDnsZone(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /filters)
 	ListFilters(w http.ResponseWriter, r *http.Request)
 
@@ -14410,6 +16203,51 @@ func (_ Unimplemented) ImportConfig(w http.ResponseWriter, r *http.Request, para
 
 // (POST /config/import/netsh)
 func (_ Unimplemented) ImportNetsh(w http.ResponseWriter, r *http.Request, params ImportNetshParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /dns/keys)
+func (_ Unimplemented) ListDnsKeys(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /dns/keys)
+func (_ Unimplemented) CreateDnsKey(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /dns/keys/{id})
+func (_ Unimplemented) DeleteDnsKey(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /dns/keys/{id})
+func (_ Unimplemented) UpdateDnsKey(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /dns/registrations)
+func (_ Unimplemented) ListDnsRegistrations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /dns/zones)
+func (_ Unimplemented) ListDnsZones(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /dns/zones)
+func (_ Unimplemented) CreateDnsZone(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /dns/zones/{id})
+func (_ Unimplemented) DeleteDnsZone(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /dns/zones/{id})
+func (_ Unimplemented) UpdateDnsZone(w http.ResponseWriter, r *http.Request, id Id) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15103,6 +16941,180 @@ func (siw *ServerInterfaceWrapper) ImportNetsh(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ImportNetsh(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDnsKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListDnsKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDnsKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDnsKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateDnsKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDnsKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDnsKey operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDnsKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDnsKey(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDnsKey operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDnsKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDnsKey(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDnsRegistrations operation middleware
+func (siw *ServerInterfaceWrapper) ListDnsRegistrations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDnsRegistrations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDnsZones operation middleware
+func (siw *ServerInterfaceWrapper) ListDnsZones(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDnsZones(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDnsZone operation middleware
+func (siw *ServerInterfaceWrapper) CreateDnsZone(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDnsZone(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDnsZone operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDnsZone(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDnsZone(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateDnsZone operation middleware
+func (siw *ServerInterfaceWrapper) UpdateDnsZone(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateDnsZone(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16648,6 +18660,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/superscopes/{id}", wrapper.UpdateSuperscope)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dns/keys", wrapper.ListDnsKeys)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/dns/keys", wrapper.CreateDnsKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/dns/keys/{id}", wrapper.DeleteDnsKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/dns/keys/{id}", wrapper.UpdateDnsKey)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dns/zones", wrapper.ListDnsZones)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/dns/zones", wrapper.CreateDnsZone)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/dns/zones/{id}", wrapper.DeleteDnsZone)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/dns/zones/{id}", wrapper.UpdateDnsZone)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dns/registrations", wrapper.ListDnsRegistrations)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/config/export", wrapper.ExportConfig)
 	})
 	r.Group(func(r chi.Router) {
@@ -16818,134 +18857,153 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"1L+nz0//PQA=",
+	"7H3tU9w48+C/ovLdB6gyM5Bk89tA7QcC5FnuEuAHZPfuWVIzGlsw2ngkryRD5knxv1/pzZY9ksfzGlJ1",
+	"XxLGlqVWq9XqbvXL9yihk5wSRASPDr9HOWRwggRi6tcJTZH8H5PoMMqhGEdxROAERYdRIl/FEUP/FJih",
+	"NDoUrEBxxJMxmkD5zQR+w5NiEh2++uVNHE0w0b8O4khMc9kDJgI9IBY9P8fRKZteF6Qc6p8CsWk1Vsqm",
+	"A1aQyO0+RfewyER0eA8zjspOR5RmCBLV6flVAHact0JuuuKCYfKge0pDPaWtPd1TNoFCz/Xtm8g79fNJ",
+	"Tpn45GK6Mf2JRrVn7tEEsQf5DhGJ27/K3wzlGUxQ9CX2zObyiSAWmBBV79rm9D8Zuo8Oo//Rrwinr9/y",
+	"/mUuMCW6/3IkjbwU8YRh9T46jPbBPWVAjBHgiD0iBjL0iLJeFAdhOl8V08/yc55TwpGi7fcwvUb/FIgL",
+	"+SuhRCCi/oR5nuEESkj7f3OqqLLb9M8Yo2ao+nTPySPMcAowyQvRi57j6ISS+wwnWxjbjsTBExZjgL5h",
+	"LjB5ACkUUIHygbIRTlNENg/LBRUAZhl9Qqka+oKKD7Qg6XZGvpdDqXFvKf0EydSsP9/88LeUggkkUwCF",
+	"QJNccAXGZwILMaYM/wdtCQVyPESE7FktwbPdQwoHx2nKriF5UJwoZzRHTGC9W5BepAYziSMuIBN+pllt",
+	"1r9Ms1h1U/EkOvobJUJ2c5zjW/oVkdmBE4YkrAMoats8hQLtCTxBUTwLFPqWY4Z42zekyDI4ypDlJDN9",
+	"4LQTW4mjDHIxKDhKVxpOszoPgnOG7vG3WQ76ATMuQDKGDCYCMQ7oveKnQqJRcVeGEvpAsGzf82GJ0QzN",
+	"I6Zr2aa5mOrQUwCX4JneYne52tb5RDXzkJlZOUwGKZzymhzx+u0v++2CRAsal56s6nH+VNLZuWByT+cN",
+	"aTuRHQq7Adq3km4W6+69gBUpFmdEsOksTDDR5OPBEEwEZd43KRIQZ/r7NFUEBbMrp98aTVeAdN5C+pMB",
+	"9rMY81Y/97zntGCJ/5XafR3Zho/ITUuNmthirw6SC35wOT5iLmZXAws0qf/RSivVuj6X40DGoPpN0Dcx",
+	"GKF7ytAggPgAE3KF0RoGFFC+Kb0vSJqhy9zSUoNjG1G2uwIQR48wK9B82jdKh24dhuzHnGEnGeR8dlQp",
+	"ZwW2lcPPv69wAgWZnt0yVjt4RCRVhFxwxPy6QYjPG1JXk6mDHkTFuRR214iPTU3TM0PvnCjRvG92SvcY",
+	"Zem87Vt+/0G1lowtRwwapmthR/9InPsUt86bREPjdN+2YRpQOZBMYBLFUZJhRBRvi6Mx5cIgS6N4kCiS",
+	"14guf9j/GcrgdJBglhTY9KAfMTShArlPeDGSaz9CrM5Fq7lLLQY/aF35GnGl/c4wHjmw/nN2k6SED/5D",
+	"SfC1MTEcfp+xJMQSFYN7nFmryOzXE8Pyuqvhcnkk2gcpusdaSAv0TfOWlznNcIJDk2JIatew5Xue0Dz0",
+	"NS9yxMINGlRnjBSuqUZ92YDCATkuF8yLjGrm9QWoA+YurI++Twn/38gnCGUPlGExnmipE07yTH44nsBk",
+	"j4/hq1/eRvEaWHLVc4Ygpwx/2/uKptEinLeCNDy/AKutTbKuPpxqExJwJtxz7Eh1PNhfr3994/z65eCV",
+	"8+vVK/fdgf17kv7ipf4gM+coYUjMAvwecvT2DfiKpmAHCiDRKcDBWzCaCsR3j4BFH6AEKCUEUxIDqWtP",
+	"5aMil6If+A0UJBlL8SDtRZ0OhgDSr9ED5oJB/4EABwwllHkMXxdwgqyqxlQfSAJ9DPQHYOcuuovAb4BQ",
+	"gna9apu1IPg37T1lT9A38O0YVaNgDp4gETUkOPzu/p+UzPbwp/oCSKwYMJ/GOEOmTw4gQ2CEpGlJMvhH",
+	"lPrhx7l33ZUajZTtwvdaibdm6t0NATmjAiVGO/MshHmPKQE7p7+fnJ/u+hGSC9a+oo3lvLq9tqjOKSaC",
+	"A0E7LC1Dj4hx5F88p885y8eF0a3tbq4gi+IoRySV48VRYm2QcaQR79uoeuMsYn9p8rI8MhRVUWc11bja",
+	"KzU021k49F6jkcC2vEFCGje5TzhAkBT5LG6vFbGaFdSU/DRGRD2QXAYBRFIOdozRHQhWoACZpHQCsWfn",
+	"nKrnpclby1RqI/Ejw6J+A/pjvb30yQcOfvGSiZU26oMQidFDQKjhdbxnBjoEkCv2iLjcv6OpCwRWE70j",
+	"J/rnh/8+vbCj/3oAdo4BJIqcY0AZoCSbyh+7PQCzJzjlh6BscEfk9CQMU9u3GEMBuMIeNGyj6poycPBq",
+	"t3dHnFNHTaEUOtXZJ0eZpcs4+rYnP9p7hEyhUX59Sri8RbkwnZifJ7Yv8/vYdFlxh/m8QRnOFX+wJBKD",
+	"6w8n4M1/7R/03/zX/utO1CFE5qM+taNvbz/KpeAooSTlR2Af/AYgEGPMUntaaFqUWw7sHIAJJqDXAwcg",
+	"hVM1Xqltv91/8+u+ayjbjzvJboEd9W9KPKp0Z0HoK5oac0TzAkgexRw/EJSWBBvFXbsMig+zgpf5q5dB",
+	"4ttM+v6p/snBu1e9g7e/9g56v7xeSFYznZXTdoBtQW9Aeguh7vbm/F9SDpJUQhmAIy4329LotBirDyLh",
+	"AjBH32KAeg894GBRbV2Nn3evepjswTRlPchy2GtHcH2EK4YnkE01Y9CNDsH5lexdKprqeWx4EcyyKTiU",
+	"ul9Hqa0c1of2Mytl1PEdFj6URt3dUKdUaT3IjKGuAWz4MDv7lmQF90qXITtW502pdKdB9+bd7GOK3suu",
+	"47n2MgdNYYvK7OGHOIcPC5hB7Ac+EH4/PpFj3qv7MJ/QAAcJ8s49jghNG1bcxrehD7+iqfe57NBvA29S",
+	"uGkY6zF0j77pzdiIqRjAe4FYbeG7i3IWHW5PFhF+9N40RdGLy+tPxx+jODq5/PTp88X5yfHt+eXF4Pzi",
+	"9uz6+vPV7dlpFEdXx9e3F2fXg9PLPy+iOLo+O7n84+y6+mtwenlx5pVW9YiFZzlgIeggh0wQxAYpfVL7",
+	"Sp5CE0gKmCnZphcdSht58+L0Rp/K3r0h8TEwt1bL3/4lyrrVov6YBpgM+JQkfiuVaZMhmCLW2oQhmA7k",
+	"hFtbSQHd8J8OTCKhhJSq1myfiEgEhF4G560k/oQSAZMVLldVLwxZ1C3ZCYXpYAQzSBI0yBFLzE29xxqY",
+	"ZB6h0lBRz4u9pgFRDrZnBlOWV7HHBSTpaOq3pgRZRxy5ND/gmCRoeRzkCLGBPO4R5/7BkDbhBt+Vumkd",
+	"OR+lNUe9AwzJc75SVAz8XtlCdenQqZjVqEs3Che9ihLiCKr/v3g1cfmqZUPa+2TbY66lGSV4yHWWf38J",
+	"SEPyz9n7fJhx5FhUHpH8BOwQKjWPKwAJf0KM7wZVfkkcA21rnUOf5Rq0CTGWd9v2q5KOgF+RnJQxJDT9",
+	"o4DL82Nwz+hEqj9cKzxUq+NPY5ohkFOaSRNIwbUBZEl4Mj6YMduLjEelCXLuxZHlab6jb85NReUzMLs8",
+	"iujaJIsMExTgPF2FI9VFu2zUKrfaCZTQ+nr4iCBHPkuMvVLybay6706dTN69e/du7+DV3usDZUspSIYn",
+	"WLIKpRvzIDHMDFLeZHnFaL+BUt6H+VmM2nIBk6thlmAMpRHEuQoJ7OMFJXPVPDgTJYHzhVynOvEGtbAl",
+	"e1iPhdBVHKpZxe3XkNZGWE20RkA12JyVChLr2Te5a71uSZSZfjqj0rZyTnV7B6Tptf944D0j9Ns21aLL",
+	"DuoO6Dp3A2X4AZN2N4tNU+IqZKjJrUZXFU1VBNVR3Uq76Kka0rhGZCURBEl1zgGj77j8p4S1+wdvjZWJ",
+	"s8Odr20Zl+O5nQdBX4czlOrIh3RBBcw6wK5Hse2DsM4osDAR+BGVNGF8GGTTVDnGJPJo9fswfKQPmDg+",
+	"5/X555DzJ3PDNPNpwRELbNHGvMqWcdWjb3afYPJB3aivx+V2bc5MmSGOEt/SXVxhlvgl6hwKgRjpaJ9S",
+	"3Vcf1QGf675aIi3k2zQHC5ubXGNePuAvkODjdrbByudzPJmavjjPcfQEGbFXbwsLrkyejH6cCfRNdBZo",
+	"VeOyu4XFWjN/ZzK+LrTj42npqzI70VGBM4FJyLySBrCwsgfc/NicW9ky4FbZcISrbQw7oy74CGyOZfxC",
+	"XxBGwjMv46lK84K9BlKSrPV5mtZ9obz73QHJ6U9JJjjfM5u8vAQtMBG/mv8P3po/XkuvHPu/JDspMiPp",
+	"oq9vmG0vjBYC8RYo/rDuhv5lXMAPlVoEdY4dM99014QWXe/O3pQ2IK6EJ/Zvl7CLpYPNwM7YGPBhoK6M",
+	"bHAy9vtKJwVjUsdolUoIempr0NxTzS4bHXjB1BvHQ4TGbbW7xFj573qkxk2IPK0m7+7yEIIcDWwgg9ek",
+	"fASktQv8BjAZI4bVHek8X/+23epxS4ZELlfARYiy+oWDMwiT1LVAiEMZgOZZI9c2MutM0Iwj7YDa1Q0X",
+	"jRtPwxHqJ6fGTkUONcdsh45LZNWosQZleIcEj9z1bpOVSL5OyT+EQJtkY31FpWMozHNEUv/1zHbI+FK6",
+	"V0mrdgXXEViKtv0uEfMo0Ede147AsqAdahM8td1U1ZWnLmjTWtAou3a24himAnbQoBI7l3046xviIa2L",
+	"vNqCbXAdGjitozOACUEZCqnGlVF2uTgLyRkWvFJvC84oeCAYZWbetYHDYRm6w1a743XjzhOmE0zq3IQh",
+	"mCrHAh8bvpFDe5RlSoXHL/d0SuAEJ+D95eXtlfGdxRwo+P2XJ5tgOCmZy+1dt+N5Z6Bx3fK5Gr7a318p",
+	"5KR+vGr/SnM/toRfS/udUmgOB/458GJEUPCj/f6rN/6vbJhPUOgjFFSttir1eRmvmWfd9a22Mu4hrOm+",
+	"OU9NcosxcbWxdOir7+7KOBJ2l1/cKFqPBNNysaWmEbrXciLZFgDDhBl74HCD30I3ZX4BuKuzoStpbiUc",
+	"c4MC9yqBxItL3Gte6vWpmK207Zebu2pwXRa0KSosdcO7TaFrvSs5e+XaBWl8juDgicTpdqw3JI6LGxsn",
+	"yM2BDnZK9/oqsEb5YAWji9rCgoKhPOuJgNG4PyXcxsCUD8oomPKJPw4mGLWyqLxtwoEtXqpBfOvdRWTy",
+	"e0mshbuF/NtdwaVFOmkP8qzagR1zpgN8DyaYc0wedrvHMywgW8ziOORzYC8oHCFhRjOowrDLAzcohAR0",
+	"yNV36poF8DnU1BY7tTlCCoi5bozP4gLvJqjJLLb0jeD+HEOPaFApzB32JnyE2JgDO7UfTStPYn9OogVu",
+	"jZx5lf4b3b5X2ybt3ByTQcFXZleuw+EGgn3ClFq61nTRsvgCq1kInOH/KIbjei6XX6a0kJ2Vn5JiMmq3",
+	"8TTJXIPuLFgJYbkqDmIdOnBJ0w9o3CB4hzi9Owdxf1RXwtn9oMwB1tTUSSqjeP/P3snN9Yc9lTIMjFWg",
+	"h7QVE0r2/nV2a4N8eW/JpHhet6N53Pcz9yyF+jB251QDwI+YUOh2lf1joBxmBq0c3mmdIjJta9yUWULj",
+	"hDsNTKTIl3Pz4vLTQSgR3CJuYG5PcWenMAV6KIJKd1kNMhefjQ+8A+YZFm2SQ0YTmLlMofQeefdublZh",
+	"F5h6R+2whGzAlZQkg2BQ2lkpqoI5PdqNhozZe/gFlFcTGjPvK9c8VH21xIhelOpumt3Gs8iq4PVif33C",
+	"RA6Tr0jwQcponqO0k4wQOmI8kNruGUoQftxc/9xQ/Dr7rq4UOtGtI+Z5CLfI5bkxMEkLlr6V4VE15xKn",
+	"DTTMLurssdsAx0tkNaVtMd/N1dPxWfmkjv/uYmrAhhI2R5fjteNiSWfWbgdRMPnBzZQLNDk3SVKbZtvJ",
+	"BIu2SNgqyrWZ5DhFAJdJM3TrQudpAvojsPP7sQr39Sfh8cXIzmbUrjrVru8cTAouwAiBCUzLgLXfjw0E",
+	"ZujAvZVxmR+kyGQcCajK4yR/M5B0we5h0tjGAQ/Iarc+0NZIyTFsF6uUorjg5ZrIuL+zMCBNB7by3tKQ",
+	"RG0eNag8+NEQeBFcm7Bn0X0U+5mvzVse83X4hnVParzMtdci4iZO61KmyQZdznOx+yyJ6FCG6Fb5eSGE",
+	"rBRSYcYKQf9ZTdDDU1sXfk1ze/aZ/zhKCobF9EY2tQJ9qYpiEh1GCaVfMarqLthbvYFtWDGVHMusim7S",
+	"agWCmg+CDLGq7ViIXKejtwmxGxmQzm5uwfHVuWXZH82oOuxZuz717sgdOa5y12NKDoGBCmiwwc4TGoHP",
+	"5zFQeSnA8Ory5hb0ZcL7fiYDb4a7ypImO7o6N2nSd4bHJgG/6fO9Ah5k38Sg1+sNd3vA1giop84Ho+kd",
+	"aQCgDgAuNXU5Damom1FMMDMCCo7+UAM1QcM7YitSmDxcYOhq+ENHxdeJtRqKvkKLXHN+CIbW9WIIJnAK",
+	"5C/9kRjLOHL0LUG5AJKU+REY2gss1fiOVCJmNjUHmgJHLUH9DJXpvrTIdQSGygNEDwgzTu/IBBL4gPQw",
+	"cXWLIj8a44cxMMYUnGExVdD/3nx6aM9OoyzoLGKYA0JF8Ei/Ixo/iedklt8y9LfKTaEzeb3Zfwd2hk2W",
+	"PwSY3JGhRG+fK9lkuHukpwo0uqQuAxhSadpyyjkeZeqkH1ExNoTKdUIzgYXcrFFJy8dX55Fz7EUHvf3e",
+	"vrlZJTDH0WH0urffe61DeMZqe/ahTPgt/3rQBrkSCllRJZJRdColeBTXqvb85S8io8P3vSVTWl0f/L0V",
+	"ROBsbb3Z/OotJXhms0fJugNgAkUyNimqhmqtekO5zYfaQK4PnWFZV2Z2XCsptwzs+7KeAH7Zz3G6zMdV",
+	"kvcFSw35u1M+QpG3ctPB/v6cigvPXxpVdaQX07oqmVSZ8z3VTGQifIx4DAh6QlyAe8y40BVNBHzgykNB",
+	"fh99kY+cc0AdypT7dpR6rc9+xMV7mk7XNpda7OdzXcIQrEDPG8SjNTl7sPiRPjzIC0lyJJk1NxWZ3GNN",
+	"Fap5s38QGqSEul+rZiM/evVu/kfNSjyuqBId/vXFXU0xbiwmLUTrasr3M3h948k+o7FAixkCqg85QUFu",
+	"/C8kPqHoxyziiQ6sUaeuOmrNCi67dC0YcCVUP9p1QNHlE7lyROUNbKhGAFOnLeVZetuNERbSI0DFGDGL",
+	"Qp3VWCA2wcSUTJIo3Z+PUqe8mPrk9fxPqkJcgSVwEtwHRYIT02ZFUuwWKyLH8hioZij0D1UuQNGmIlIz",
+	"kfpuq7wLnuMQcanz/KQsMLB+snIqV3QiqYP1juzd3gytRnod2HBZji6wIA719b/j9FlvpAwJNLtIp+p5",
+	"tUjztqBub+f3Zj6wZdW4dc1uRoD2dVc16Z+nkRR8jNW0Pnut+b8kEt3fPInqSa9Aoj9i1RVNKyWwj8q8",
+	"Pw++2gMnVDqtC68+vKMFb1C6QJsuHw+k/otAShPePz79dH7Rm6S7R1o1VpywNEPoQ0bqt5ho94ReFDfI",
+	"Smcm0pbnbgqf4+M1Wzd0CieZk3jb/Pybe8PSVxbyF6ga9hzX+lKA1fpqwuatd1ktT0qTYoJIQ7DT+n2d",
+	"BvDE0oA9exo56tR7mcUr8Y4Adv7v8aePUvn8XzeXF7s9MFRVYIYyBRgHWABB74iUr8sKnA1CKp9rXGiq",
+	"KNPp7MZgaMrJKLuR+os7afF8tKkNNQATjlNt0SHoSYfQ8Dsi+/+KcrHbA2dYST2OwQhzoBZCysVMEqd8",
+	"qq0bdcrUeAlR5jxOWhW/fY7ntjZVgjU9LsdYN0yKW+TFniQsnsKz6j3QeU22L0GE91mfIMHH4d12Qskj",
+	"UtuNpACbrScJmBYiL4Q0Fg9VF0De+tgI2bSY5EOw8ycmKX3irgV5txcgXJUV5yXQrUDfRD/PjKf4C6Gy",
+	"2ZxB84hMG4gxUbwJCvCE7NmmWqH0B1NhSnj/K5ry4GFv0+tzsKOtIQlDhhkrKzNgSBSMoNRDUlIB0xWZ",
+	"tqOA6bG6aGDHWaYmVT8HUzJf2zJjbEaWdctXbVnfsrh7QQqXXg6XSjsqW84avVBtq6S0NStaL4s697dA",
+	"nUbXAjuQmNpBmkWBrwjlxoIrqK6EJkvRvHiVrE71zCmsFmbSMlSr1lLfHmNuJYEd5ZyoU4rH6vyxqcDb",
+	"GPd1bfAtcXB30C6s/Lo+b5aqkmOjqc013GvBblkBM2g/NDVptjZ7OViXWf+bliKFcRIEqckQUNa7WeJo",
+	"U8NvjHtU1X22f7hpxL7Y001RYvfjrVynDZ5v2zmuXhTF7W+D4n4e62BFok653yCr/GDabINTVul6O/DK",
+	"T8cnQEWw9FNEpiDDXACk78vrTNLOch6jNENvhmobSXW3zCkdxL4gXlktjEOMHbmls1jbYZY1KlqcYcoZ",
+	"jmE/aVbi8tqF/oWInDFSJSXREzjRBSgpQcDpAORI2ixTpPIGTQohKzzdfry5IyMknhAi0jPbOJjxHrig",
+	"pc2zFJ2NK4QUJo/U3yfHqvgw5nckxTyBTNrpPfZQC2Gjttjye6fuQTpbdsyTyuHbuX75q/LeMT9ezct2",
+	"Eajjtd1zpIE2z6a8OvsEEEloilJ3zbWp0Ng4ltiuIYPRGPYNpezZsmF+0rw0PpXaCM8m2gavJFbXnxFz",
+	"IPvpAZXur/QjVJV/7oh0cy+IQZ1sq9zZWZHLbQqOlWvrp5OPtzVlR/J6jQLpaqpvGapaOT2g0kEAGdOq",
+	"vBnkl2q4Jlxc4Cy7I6ZGkSnjyn1Efqr7utLfnkq8bJQmTEyijxqcukFyDjoqqLdGi+EY9nkZEhly/ilB",
+	"/EFomPGjBRrmlnuvKqYuKOF81E26OZi6BVxW9kosK3B0865zyoDM+oreFCPNHLW7qGTu51cx+HR8Epdl",
+	"kFPto2wS54QcRv9Zytnz/p6jhodla23en81Psyrq4fMwlC/Lytq8LO12flUnTZt30CHNedfyZ+qClSRT",
+	"oBtWQV/mut6UTJYRF6Eb9ZLCN4sdPVgYP3oC8zEy75L6k8SIlI0yp1t5hlC3hrRECNgh6AmxMnztCZNY",
+	"Hj+aG8rNMsKqULy++mCI0+xRltrCX1W0wu/HQBfJGzNKMFeYkeW8r81K00KoS2eYZebCWfXDv+I89wtO",
+	"+hrJWZANeOE212J7cs1s0Z7NXNfOIaDvOG+oEL5q+NyhFr11tQxsq5mNUEInStxAnp2ltQo14S1qIeVs",
+	"4+AhHQBpzYvsW9jbBjrXN9cFFa4ro3A55NBnjRzPi/cYtB7oW3yFllvq5pJelzrUHqTsiYR73qQxwZ2h",
+	"13JfvgY2F1gVHKaiV7Zs8KqxCJ3oay8tC7m0C4fNsi/bMYQ1R+1iD3svi9fsYR28lhRc0IkpLA+cydZP",
+	"X/1+vmlsBp7NnFz+GjtbtpXN4v4FmcyqBfPTcv+7NBl0sJ95V/SFXqvXqHQhvn2ifJe+VLji/e+qxs2z",
+	"+f88fe6w/be56XVBog77XTcHKs0ut1qBmtTKMtXyCLeVjbo1LC2jwcVZkJ63KIltE0dxV0IPXMvdIOHg",
+	"Z1N82yn+tGW1o7ZzZnfKjTZ37ySQUGl1zPSmcX3ctnJpF+Tjbo7vICu6so1m6K29ThCwvR8BOsFCimO/",
+	"SYU1ZP5Z0sT1ZRss0lTK6sAdLbaWjL66qmrZbSCqz6lmtGXhxiJwAyLNj4pusT87Xhw6K7udg6JGcyGl",
+	"PQTV/hZWXqrtCsjpOme6bqeSl7Ujt7EuP228WTP9f/BIu3YbbvL+ZSuHU80u0sXDsZo82KH36npfzU+l",
+	"8Mmy3RW3Y20Z5h146zFbdUTPDzn65pitfp7zr7GuzR039/rk5OYPE6cCduTFRRX5ttsDv+tkTBkmCNi1",
+	"OQIJzYoJ4XdEp5wZgh2isv8zgFMZs4fzYQyGE5jI/8qyHvKHvWwcxndk6MAxBDsyH5HJYTPUfSjTlepG",
+	"pbepOgKQIZV3KYWCsuluD9ygHGpHhGGsWx8Nw/ctDUYzJz4p4Y8vKDppsesUcH4PhogxyvjQJpTSDvRm",
+	"jcET5CuGKS1Ai91ksibz2Y5gNsMfQ8JZK3j722JQUkxzQF774bBmee2lHihbW6+fR3zzbOIqhXJQeLtx",
+	"aixuWLJSQ3UNANSgN1yC1LO5QpAeZzPU6uR/37LgY7D3gm4xyuWoSG2+1KKAlV4f6gN9pQjBSKVul3kF",
+	"rHMMJDa5kbKBqZKa6I5YD8AcmmaA5xkWurdQcgB7f0nZHZmbHWDj1GOz2/9/8pkln26CRrVEHUUMIOgD",
+	"UoShkmrWKkgZG66TLLQsQVoZdPXvukYsn610eDvsLCSzBGa6v3mykHKKqdy0rkmuWzZ5SXx+Cyvy80gi",
+	"oZ3dr9d3DcokZ40KbxuWS1oqnnhyedrGQBfz/NHbo0UOqua1mT1ynKbsuntGw/WdZc6C/cwWoA7bpP+9",
+	"/Pu8y8lYX/LtKOArkbB1IJeZpCv7sDPpqElYC5qMZ3Hb8NP2eVpv59h1BcHA4duUV2LXdsBj4AoveXVX",
+	"+uM4UhPdSjpfwlOzzt0aOzyDnOPElfx1zf0nCjBJUY5Iioiwac4VDmkhdCayMiW/G5RUpaNQqZnBsFaB",
+	"a2jccu6IjeJXrF8h3RTp0x8zxEUPGAuPwrGMrxIQE66/N2qOoNZyW8buJZSkFhqTD0KpOKZ/laefoV2f",
+	"2lLVAtuULNQofLZtgahZ68znG6JIIaUE/cx8n9u6Yq3qgK5xtWnmpEfxGWeMX33B4UNVOXh9moIqlCNW",
+	"Y0BOecYgKm2bTSLSjuG7NyyIwJOqencg+K1dAXLnsIF9XwN/ixu+BW11JWjpRNW14EJV+3EOrZSlJjc7",
+	"73IYz9T/HGsThtxvyt0XZkAVNdGxsGAMuTxZRsjau3rzM9THc8x01ZGoRyo4YrrODGbmNSVoz1JykZsy",
+	"MjnDRFUPd2PTZU2Z2Qgcm7BWzX5zlFyVOd224S2cDP9Y4dRaJ5UBytY42Fby9mXOsbk1D+afYxs/wkKn",
+	"142mxCcZ7ifBxFzgpMl8zfmjplJWHpxzjeK028pdSjle5wuVCkKtVYgxwgxM0GSE2ErXLRUoG9q9jeqP",
+	"297ADqrD5gbwSSFSR45K/eSBoBQ8YljJR2CnVj9/90eb3CuC6Gp3r690R/OCDses0Rmw6ZzXp6sGWU0L",
+	"zPtbohGlzpctXrBB/UXu5G2t0s9qX9eibNtpW1Wv3SRyq1G8VVVUOTkl5DCj+mCi7XfaDSYonasf/RFM",
+	"vtak9EDZA90O7Nz890csEEihgCOoDDH5NK7MMbY4kJSax4h70mzKRDEZhel7PfBCmKOJQGKPC4bgpI7B",
+	"0mI5wgQql9i5RQI0AOAeZ2g+mhjigjIUvoC/1g14Pf1+bMsguoUeygvR8pZeQXJHdmDGqVT9aZYiBkyp",
+	"QL7bA0rQsOWIEEmPpEQrtQD4AOW/9wKxJ8hSb6IeA5qD8C4caEVcb9XRSE4vbMQyDdL15oTSqxncOM6C",
+	"25QkTokuf/bZW93lNuTc4xyr0bpIuRosb1m0dglWj7ChSzIzAT3StmXX+uhpEGulyUBZr02SZsxV6XHA",
+	"x/SJAEoStDJlOkqiJrqOkme1QvOEzmv0SL+ufKdVkc1yFkjFTVsVxs98W+k45UhdlUQFN9jRxh5Td341",
+	"S5vGxLwdqGDczAZ0CnRvefNpxL8gjyu7FiWFdtx95eq80MwCDo0tpRHJTGshnWjDlKkH2bYoEqLMn0cF",
+	"Kkm5bo90CsX/9UU6F5ia7399kQttLoRVu4Jl0WHUhznuPx4oMjBdfy8rLssz4Dkufxuty3lS8wd0ntN8",
+	"5lHpSug8s7lonUda3q6Nqi2ZsQNWioX7QKPC/USLf86TVALz5fn/DQA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

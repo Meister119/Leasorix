@@ -46,6 +46,7 @@ make ui-test      # Frontend: Typecheck + Vitest
 make lint         # golangci-lint
 make test-integration  # DHCP-Ende-zu-Ende in Network Namespaces (root)
 make test-ha      # Zwei-Knoten-HA-Tests (5000 Clients, Failover, Partition; root)
+make test-dns     # DNS-Updates gegen BIND und PowerDNS (root, Docker)
 make test-e2e     # Playwright gegen die echte UI + echten DHCP-Client (root)
 make docker       # Container-Image leasorix:<version> und :latest
 make test-docker  # Image + Compose-Dateien (host, macvlan, HA) testen (root)
@@ -92,6 +93,13 @@ leasorixd leases import --config … leases.json          # Import (Dienst gesto
 leasorixd backup --config … --out backup.db             # Backup (auch im Betrieb)
 leasorixd restore --config … backup.db                  # Restore (Dienst gestoppt)
 ```
+
+## DNS-Updates
+
+Leasorix trägt Clients per RFC 2136 (mit TSIG) als A- und PTR-Records ein –
+pro Scope nie, auf Anforderung des Clients oder immer, mit Namensschutz
+(DHCID) und Entfernen beim Lease-Ende. Einrichtung unter *DNS-Updates* in der
+Web-UI: [docs/ADMIN.md](docs/ADMIN.md#11-dns-updates).
 
 ## Verwaltung per Kommandozeile
 

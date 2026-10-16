@@ -126,7 +126,7 @@ func requiredRole(method, path string) (role auth.Role, public bool) {
 	case p == "/settings" && !read:
 		return auth.RoleAdmin, false
 	case strings.HasPrefix(p, "/ha/") && !read, p == "/leases/import", strings.HasPrefix(p, "/config/import"),
-		p == "/system/backup", p == "/system/restore":
+		p == "/system/backup", p == "/system/restore", strings.HasPrefix(p, "/dns/keys") && !read:
 		return auth.RoleAdmin, false
 	case p == "/auth/logout" || p == "/auth/me" || p == "/auth/password" || strings.HasPrefix(p, "/tokens"):
 		return auth.RoleReadonly, false

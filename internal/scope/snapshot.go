@@ -94,6 +94,7 @@ type Snapshot struct {
 	filterSettings     FilterSettings
 	allowList          []string
 	denyList           []string
+	dnsTargets         []DNSTarget // longest zone first
 }
 
 func emptySnapshot() *Snapshot {
@@ -118,6 +119,7 @@ type snapshotData struct {
 	customDefs   []dhcpopt.Definition
 	filters      []MACFilter
 	filterCfg    FilterSettings
+	dnsTargets   []DNSTarget
 }
 
 // Pools returns all scopes ordered by network address.
@@ -147,6 +149,7 @@ func (s *Snapshot) ForAddr(ip uint32) *Pool {
 func buildSnapshot(version uint64, d *snapshotData) *Snapshot {
 	snap := emptySnapshot()
 	snap.Version = version
+	snap.dnsTargets = d.dnsTargets
 	scopes, excl, res := d.scopes, d.exclusions, d.reservations
 	for _, sc := range scopes {
 		network := ip4.MustFromAddr(sc.Subnet.Addr())

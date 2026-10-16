@@ -37,8 +37,33 @@ func toScope(sc scope.Scope) gen.Scope {
 	return gen.Scope{
 		Id: sc.ID, Name: sc.Name, Description: sc.Description, Subnet: sc.Subnet.String(),
 		Start: sc.Start.String(), End: sc.End.String(), LeaseTime: int(sc.LeaseTime / time.Second),
-		Enabled: sc.Enabled, Bootp: sc.BOOTP, SuperscopeId: sc.SuperscopeID, CreatedAt: sc.CreatedAt, UpdatedAt: sc.UpdatedAt,
+		Enabled: sc.Enabled, Bootp: sc.BOOTP, SuperscopeId: sc.SuperscopeID, Dns: toDNSSettings(sc.DNS),
+		CreatedAt: sc.CreatedAt, UpdatedAt: sc.UpdatedAt,
 	}
+}
+
+func toDNSSettings(d scope.DNSSettings) gen.DnsSettings {
+	ttl := int(d.TTL / time.Second)
+	return gen.DnsSettings{
+		Mode: gen.DnsSettingsMode(d.Mode), Domain: &d.Domain, Ttl: &ttl, Cleanup: &d.Cleanup, Protect: &d.Protect,
+	}
+}
+
+// fromDNSSettings applies optional fields over the defaults.
+func fromDNSSettings(in gen.DnsSettings) scope.DNSSettings {
+	d := scope.DefaultDNSSettings()
+	d.Mode = scope.DNSMode(in.Mode)
+	d.Domain = str(in.Domain)
+	if in.Ttl != nil {
+		d.TTL = time.Duration(*in.Ttl) * time.Second
+	}
+	if in.Cleanup != nil {
+		d.Cleanup = *in.Cleanup
+	}
+	if in.Protect != nil {
+		d.Protect = *in.Protect
+	}
+	return d
 }
 
 func fromScopeInput(in gen.ScopeInput) (scope.Scope, error) {
@@ -52,6 +77,10 @@ func fromScopeInput(in gen.ScopeInput) (scope.Scope, error) {
 	}
 	if in.SuperscopeId != nil {
 		sc.SuperscopeID = *in.SuperscopeId
+	}
+	sc.DNS = scope.DefaultDNSSettings()
+	if in.Dns != nil {
+		sc.DNS = fromDNSSettings(*in.Dns)
 	}
 	p, err := netip.ParsePrefix(strings.TrimSpace(in.Subnet))
 	if err != nil || !p.Addr().Is4() {

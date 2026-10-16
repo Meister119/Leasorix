@@ -100,17 +100,19 @@ Rolle ist höchstens die des Benutzers. Sie werden als
 Jede Änderung (UI, API, DHCP-Ereignisse, HA) steht im Audit-Log mit Akteur
 und Vorher/Nachher. Prometheus-Metriken unter `/metrics`
 (`leasorix_dhcp4_*`, `leasorix_lease_*`, `leasorix_scope_*`, `leasorix_leases`,
-`leasorix_ha_*`), Health unter `/healthz` und `/readyz`.
+`leasorix_ha_*`, `leasorix_dns_*`), Health unter `/healthz` und `/readyz`.
 
 ## 7. Konfiguration exportieren und importieren
 
 *Benutzer & Einstellungen → Sicherung & Import* oder
 `leasorixctl config export|import`. Das Format `leasorix-config/v1` (YAML oder
 JSON) enthält Einstellungen, eigene Optionsdefinitionen, Klassen,
-Server-Optionen und -Policies, MAC-Filter, Superscopes und alle Scopes mit
-Ausschlüssen, Reservierungen, Optionen und Policies. Bezüge laufen über
-Namen, nicht über Datenbank-IDs; Benutzer und API-Tokens sind nicht
-enthalten.
+Server-Optionen und -Policies, MAC-Filter, Superscopes, DNS-Zonen und alle
+Scopes mit Ausschlüssen, Reservierungen, Optionen, Policies und
+DNS-Einstellungen. Bezüge laufen über Namen, nicht über Datenbank-IDs;
+Benutzer, API-Tokens und TSIG-Schlüssel (Geheimnisse) sind nicht enthalten –
+eine Zone mit Schlüssel lässt sich nur importieren, wenn ein Schlüssel
+gleichen Namens auf dem Zielserver existiert.
 
 ```yaml
 format: leasorix-config/v1
@@ -149,10 +151,12 @@ Datei unter *Sicherung & Import → Windows-DHCP übernehmen* (zuerst mit
 einspielen. Übernommen werden Scopes (Name, Bereich, Status, Lease-Dauer aus
 Option 51, BOOTP-Freigabe), Ausschlüsse, Reservierungen, Optionswerte auf
 Server-, Scope- und Reservierungsebene, eigene Optionsdefinitionen,
-Klassen, Superscopes und MAC-Filter. Nicht übernommene Zeilen werden mit
-Grund aufgelistet – typischerweise klassenspezifische Optionswerte (in
-Leasorix als Policy anlegen), DNS-Update-Einstellungen, Multicast-Scopes und
-DHCPv6. Aktive Leases sind im Dump nicht enthalten; Clients erneuern ihre
+Klassen, Superscopes, MAC-Filter und die DNS-Update-Einstellungen
+(`set dnsconfig` auf Server- und Scope-Ebene, siehe
+[Abschnitt 11](#11-dns-updates)). DNS-Zonen und TSIG-Schlüssel stehen nicht im
+Dump und müssen in Leasorix angelegt werden. Nicht übernommene Zeilen werden
+mit Grund aufgelistet – typischerweise klassenspezifische Optionswerte (in
+Leasorix als Policy anlegen), Multicast-Scopes und DHCPv6. Aktive Leases sind im Dump nicht enthalten; Clients erneuern ihre
 Adresse beim nächsten Renew (Reservierungen bleiben ohnehin gleich).
 
 ## 9. Backup und Wiederherstellung
@@ -185,6 +189,7 @@ leasorixctl status
 leasorixctl scopes list
 leasorixctl leases list --scope LAN -q printer
 leasorixctl ha status
+leasorixctl dns registrations
 leasorixctl config export -f config.yaml
 leasorixctl -o json leases list            # JSON statt Tabelle
 ```
@@ -192,7 +197,59 @@ leasorixctl -o json leases list            # JSON statt Tabelle
 `leasorixctl` ohne Argumente zeigt alle Befehle. Exit-Code 0 = Erfolg,
 1 = Fehler (Meldung des Servers wird ausgegeben), 2 = Aufruffehler.
 
-## 11. Sicherheit
+## 11. DNS-Updates
+
+Leasorix trägt Clients per RFC 2136 als A- und PTR-Record in DNS ein (wie
+die DNS-Registerkarte eines Windows-DHCP-Scopes). Einrichtung:
+
+1. **TSIG-Schlüssel** (*DNS-Updates → TSIG-Schlüssel*, nur Admins): Name und
+   Algorithmus (Standard `hmac-sha256`); das Geheimnis wird zufällig erzeugt
+   oder aus `tsig-keygen` übernommen. Nach dem Speichern zeigt die UI einmalig
+   die passende Konfiguration für BIND und PowerDNS.
+2. **Zonen** (*DNS-Updates → Zonen*): Vorwärtszone (z. B. `example.lan`) und
+   Reverse-Zone (z. B. `1.168.192.in-addr.arpa`) jeweils mit primärem Server
+   (`IP` oder `host:port`) und Schlüssel. Für jeden Namen gilt die
+   spezifischste passende Zone.
+3. **Scope** (*Scope → DNS*):
+
+| Einstellung | Bedeutung |
+|---|---|
+| Records registrieren | **Nie**; **auf Anforderung des Clients** (Option 81: A und PTR, bzw. nur PTR, wenn der Client seinen A-Record selbst einträgt; Clients ohne Option 81 werden nicht registriert); **immer** (A und PTR für jeden Client mit Namen aus Option 81 oder 12) |
+| Domäne | Name = erstes Label des Client-Namens + diese Domäne; leer = Domänenname aus Option 15 |
+| TTL | 0 = ein Drittel der Lease-Dauer (1 min … 1 Tag) |
+| Records entfernen, wenn der Lease endet | Release, Ablauf oder Löschen entfernen A und PTR (Standard: an) |
+| Namensschutz (DHCID) | Ein Name, der einem anderen Client gehört oder manuell angelegt wurde, wird nie überschrieben (RFC 4701/4703, Standard: an) |
+
+Der DHCP-Server wartet nie auf DNS: Updates laufen im Hintergrund mit
+Wiederholungen (30 s, dann verdoppelt bis 1 h). *DNS-Updates →
+Registrierungen* bzw. `leasorixctl dns registrations` zeigt pro Adresse den
+eingetragenen Namen und den Zustand (`registriert`, `ausstehend`, `Konflikt`,
+`Fehler` mit Meldung). Konflikte durch den Namensschutz stehen zusätzlich im
+Audit-Log (`dns.conflict`) und werden bei der nächsten Verlängerung des
+Leases erneut versucht. Metriken: `leasorix_dns_updates_total`,
+`leasorix_dns_registrations`.
+
+Der Client kann nur einen Namen in der Domäne seines Scopes registrieren –
+ein mitgesendeter vollqualifizierter Name in einer anderen Zone wird auf die
+Scope-Domäne umgeschrieben (und so in der Antwort-Option 81 mitgeteilt).
+
+**DNS-Server:**
+
+- *BIND:* Schlüssel per `key "…" { … };` einbinden und in jeder Zone
+  `update-policy { grant <schlüssel> zonesub ANY; };` setzen.
+- *PowerDNS:* `dnsupdate=yes`, `allow-dnsupdate-from=<Leasorix-Adresse>`,
+  Schlüssel mit `pdnsutil import-tsig-key` anlegen und pro Zone
+  `pdnsutil set-meta <zone> TSIG-ALLOW-DNSUPDATE <schlüssel>`.
+- *Windows-DNS* unterstützt kein TSIG, sondern nur GSS-TSIG (Kerberos). Mit
+  „nicht sicheren und sicheren“ dynamischen Updates kann die Zone ohne
+  Schlüssel eingetragen werden (Updates dann nur über die Quelladresse
+  geschützt).
+
+Bei Hochverfügbarkeit registriert jeder Server die Leases, die er vergibt;
+übernimmt der Partner einen Client, aktualisiert er dessen Records (gleiche
+DHCID, daher kein Konflikt). Die Registrierungsliste ist pro Server.
+
+## 12. Sicherheit
 
 - Den Management-Listener nur im Management-Netz (oder auf localhost hinter
   einem Reverse Proxy) erreichbar machen.
@@ -202,3 +259,6 @@ leasorixctl -o json leases list            # JSON statt Tabelle
   markieren.
 - Backups und HA-Schlüssel sind vertraulich; API-Tokens mit der kleinsten
   nötigen Rolle anlegen und ein Ablaufdatum setzen.
+- TSIG-Schlüssel liegen in der Datenbank (für die Signatur nötig), werden
+  von der API nie ausgegeben und sind nur für Admins änderbar. DNS-Updates
+  ohne Schlüssel nur in vertrauenswürdigen Netzen verwenden.

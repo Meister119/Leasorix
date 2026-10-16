@@ -802,3 +802,96 @@ veröffentlicht mit dem `GITHUB_TOKEN` in der GitHub Container Registry
 `main` → `edge`; Pull Requests bauen nur. Kein Docker Hub (eigener
 Account/Secret nötig, Rate-Limits). Der CI-Workflow hat zusätzlich einen
 Job, der das Image baut und `make test-docker` ausführt.
+
+## D-057 (Nachtrag Phase 9) – netsh `set dnsconfig`
+
+Der netsh-Importer übernimmt jetzt `set dnsconfig Enable Update Lookup
+NonDyn` auf Server- und Scope-Ebene (Server-Einstellung gilt für Scopes ohne
+eigene): `Enable=0` → nie, `Update=1` oder `NonDyn=1` → immer, sonst „auf
+Anforderung des Clients“; `Lookup` → Records beim Lease-Ende entfernen.
+`NonDyn` (Updates auch für Clients ohne Option 81) hat in Leasorix kein
+eigenes Gegenstück; „immer“ ist die nächstliegende Abbildung. Zonen und
+Schlüssel stehen nicht im Dump (Warnung).
+
+## D-064 – DNS-Updates: Architektur
+
+- Bibliothek `github.com/miekg/dns` für RFC-2136-Nachrichten und TSIG statt
+  eigener DNS-Kodierung (verbreitet, stabil, unterstützt alle
+  TSIG-Algorithmen und den DHCID-Typ).
+- Der DHCP-Pfad wartet nie auf DNS: Beim ACK berechnet der Handler nur die
+  Entscheidung (Name, A/PTR, Antwort-Option 81) und übergibt sie dem
+  Updater (`Bound`, nur Speicher). Ein Hintergrund-Worker sendet die Updates
+  (bis zu 4 parallel) mit Wiederholungen (30 s, verdoppelnd bis 1 h).
+- Zustand pro Adresse in `dns_registrations` (gewollt / tatsächlich
+  eingetragen, getrennt nach A mit DHCID und PTR). Damit überleben
+  ausstehende Löschungen einen Neustart, und Umbenennungen entfernen erst den
+  alten Namen. Die Tabelle ist lokal (nicht repliziert, nicht im Export).
+- Lease-Ende (Release, Ablauf, Löschen, Scope entfernt, Restore) erkennt ein
+  periodischer Abgleich (alle 15 s) gegen die Lease-Tabelle statt Hooks an
+  jeder Stelle des Lease-Managers – ein Mechanismus für alle Fälle, auch für
+  während einer Downtime abgelaufene Leases. Löschversuche werden nach 12
+  Fehlschlägen aufgegeben (geloggt).
+- Zonen und Schlüssel liegen im Scope-Snapshot; HA-Config-Sync und Restore
+  laden sie ohne eigenen Mechanismus neu.
+
+## D-065 – DNS-Updates: Namen und Modi
+
+- Modi wie Windows: nie / auf Anforderung des Clients / immer. „Auf
+  Anforderung“ folgt RFC 4702 (Option 81: S=1 → A+PTR, S=0 → nur PTR, N=1 →
+  nichts); ohne Option 81 keine Registrierung. „Immer“ registriert A+PTR für
+  jeden Client mit Namen (Option 81 oder 12) und setzt in der Antwort das
+  O-Bit, wenn es den Wunsch des Clients übersteuert.
+- Der Name ist immer das erste (bereinigte) Label des Client-Namens plus die
+  Scope-Domäne (Fallback: Option 15). Vollqualifizierte Client-Namen in
+  anderen Zonen werden nicht übernommen – ein Client soll sich nicht in
+  beliebige Zonen eintragen können, für die der Server Schreibrechte hat.
+- Option 81 wird in OFFER und ACK beantwortet (RCODE1/2 = 255, Kodierung wie
+  vom Client), auch im Modus „nie“ (dann mit N-Bit). Option 81 ist dadurch
+  „managed“ und nicht mehr als Optionswert konfigurierbar. Fehlt Option 12,
+  übernimmt die Lease den Namen aus Option 81.
+- Neue Scopes haben „nie“ als Standard (Windows: „auf Anforderung“), damit
+  ein Update auf diese Version oder das Anlegen einer Zone keine Updates in
+  bestehenden Scopes auslöst. TTL automatisch ein Drittel der Lease-Dauer
+  (1 min … 1 Tag).
+- BOOTP-Clients werden nicht registriert.
+
+## D-066 – Namensschutz mit DHCID
+
+Name Protection nach RFC 4701/4703 (DHCID-Record mit SHA-256 über
+Client-Kennung und Namen; Client-ID, DUID nach RFC 4361 oder
+Hardware-Adresse): Ein Name wird nur angelegt, wenn er frei ist, oder
+aktualisiert, wenn er die eigene DHCID trägt; manuell angelegte Namen und
+Namen anderer Clients bleiben unangetastet. Löschen ebenfalls nur mit
+passender DHCID; PTR-Records werden nur gelöscht, wenn sie noch auf den
+eigenen Namen zeigen. Standard **an** (Windows: aus) – die sichere Variante;
+pro Scope abschaltbar (dann ersetzt Leasorix vorhandene A-Records). Ein
+Konflikt wird geloggt, auditiert (`dns.conflict`) und erst bei der nächsten
+Verlängerung des Leases erneut versucht, nicht in einer Schleife. Weil die
+DHCID nur vom Client abhängt, können beide HA-Server denselben Namen
+aktualisieren.
+
+## D-067 – TSIG-Schlüssel
+
+- Das Geheimnis wird im Klartext in der Datenbank gespeichert – für die
+  HMAC-Berechnung nötig (anders als Passwörter, die nur gehasht werden). Die
+  API gibt es nie aus (nur schreiben), Änderungen nur durch Admins, Audit
+  ohne Geheimnis.
+- Schlüssel sind wie Benutzer nicht Teil des Konfigurations-Exports (Zonen
+  verweisen per Name darauf), werden aber per HA repliziert und sind im
+  Backup enthalten.
+- Algorithmen: HMAC-SHA256 (Standard), -SHA384/-512/-224 sowie -SHA1/-MD5
+  für ältere Server; Mindestlänge 16 Byte. Zonen ohne Schlüssel sind
+  möglich (unsignierte Updates), weil Windows-DNS kein TSIG beherrscht;
+  GSS-TSIG (Kerberos) ist nicht umgesetzt.
+
+## D-068 – Korrektur HA: gekürzte Leases nachreplizieren
+
+Gefunden beim Phase-9-Testlauf (sporadisch roter Unit-Test). Bestätigt der
+Partner eine synchrone Replikation nicht rechtzeitig, kürzt der vergebende
+Server den Lease auf MCLT – der Partner kann die lange Fassung aber trotzdem
+gespeichert haben. Bisher blieb sie dort stehen (gleicher Änderungsstempel,
+längere Laufzeit gewinnt), die Tabellen divergierten. Jetzt bekommt die
+gekürzte Fassung einen strikt neueren Stempel und wird nachrepliziert
+(asynchron, bei Ausfall per Resync), sodass beide Server dieselbe Laufzeit
+kennen.
+

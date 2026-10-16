@@ -53,9 +53,12 @@ type netshParser struct {
 	supers   map[string]bool
 	settings Settings
 	setSet   bool
-	skipped  map[string]int
-	line     int
-	text     string
+	// DNS update settings of the server (default for scopes without own
+	// settings).
+	serverDNS *scope.BundleDNS
+	skipped   map[string]int
+	line      int
+	text      string
 }
 
 // ParseNetsh converts the output of "netsh dhcp server dump" (Windows DHCP
@@ -105,7 +108,12 @@ func ParseNetsh(r io.Reader) (*Document, []Warning, error) {
 	}
 	for _, net := range p.order {
 		if p.ranges[net] {
-			p.doc.Scopes = append(p.doc.Scopes, *p.scopes[net])
+			b := p.scopes[net]
+			if b.Scope.DNS == nil && p.serverDNS != nil {
+				d := *p.serverDNS
+				b.Scope.DNS = &d
+			}
+			p.doc.Scopes = append(p.doc.Scopes, *b)
 		}
 	}
 	if p.setSet {
@@ -232,7 +240,7 @@ func (p *netshParser) command(t []string) {
 		case "filter":
 			p.setFilter(t[2:])
 		case "dnsconfig":
-			p.warn("dynamic DNS settings are configured separately in Leasorix (phase 9)")
+			p.serverDNS = p.dnsConfig(t[2:])
 		default:
 			p.skipped["server settings without Leasorix equivalent (audit log, database, bindings, ...)"]++
 		}
@@ -365,7 +373,7 @@ func (p *netshParser) scopeCommand(net string, t []string) {
 			p.doc.Superscopes = append(p.doc.Superscopes, Superscope{Name: rest[1]})
 		}
 	case verb == "set" && obj == "dnsconfig":
-		p.warn("dynamic DNS settings are configured separately in Leasorix (phase 9)")
+		b.Scope.DNS = p.dnsConfig(rest[1:])
 	case verb == "add" && obj == "policy", verb == "set" && obj == "policy":
 		p.warn("Windows policies are not converted; create them in Leasorix")
 	default:
@@ -587,4 +595,35 @@ func (p *netshParser) setFilter(t []string) {
 			p.setSet = true
 		}
 	}
+}
+
+// dnsConfig converts "set dnsconfig Enable Update Lookup NonDyn" (values 0
+// or 1, optionally as Name=value): Enable=0 -> never; Update=1 (always
+// update) or NonDyn=1 (also for clients that do not ask) -> always;
+// otherwise client. Lookup (discard records when the lease is deleted) ->
+// cleanup. Name protection keeps the Leasorix default (on). Zones and TSIG
+// keys are not part of the dump and must be created in Leasorix.
+func (p *netshParser) dnsConfig(args []string) *scope.BundleDNS {
+	v := make([]bool, 4)
+	for i := 0; i < len(args) && i < 4; i++ {
+		a := args[i]
+		if j := strings.IndexByte(a, '='); j >= 0 {
+			a = a[j+1:]
+		}
+		v[i] = a == "1"
+	}
+	d := scope.DefaultDNSSettings()
+	switch {
+	case !v[0]:
+		d.Mode = scope.DNSNever
+	case v[1] || v[3]:
+		d.Mode = scope.DNSAlways
+	default:
+		d.Mode = scope.DNSClient
+	}
+	d.Cleanup = v[2]
+	if d.Mode != scope.DNSNever {
+		p.skipped["DNS updates enabled: create the DNS zones and TSIG keys in Leasorix (not part of the dump)"]++
+	}
+	return &scope.BundleDNS{Mode: string(d.Mode), Cleanup: d.Cleanup, Protect: d.Protect}
 }

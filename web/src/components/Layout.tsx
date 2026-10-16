@@ -10,6 +10,7 @@ const nav = [
   { to: "/reservations", label: "Reservierungen" },
   { to: "/leases", label: "Leases" },
   { to: "/policies", label: "Policies & Filter" },
+  { to: "/dns", label: "DNS-Updates" },
   { to: "/ha", label: "Hochverfügbarkeit" },
   { to: "/audit", label: "Audit-Log" },
   { to: "/settings", label: "Benutzer & Einstellungen" },

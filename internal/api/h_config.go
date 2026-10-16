@@ -64,7 +64,7 @@ func (h *handlers) UpdateScope(w http.ResponseWriter, r *http.Request, id gen.Id
 		return
 	}
 	sc, err := fromScopeInput(in)
-	if err == nil && (in.Bootp == nil || in.SuperscopeId == nil) {
+	if err == nil && (in.Bootp == nil || in.SuperscopeId == nil || in.Dns == nil) {
 		// Optional fields that are absent keep their current value.
 		var cur scope.Scope
 		if cur, err = h.s.deps.Scopes.GetScope(r.Context(), id); err == nil {
@@ -73,6 +73,9 @@ func (h *handlers) UpdateScope(w http.ResponseWriter, r *http.Request, id gen.Id
 			}
 			if in.SuperscopeId == nil {
 				sc.SuperscopeID = cur.SuperscopeID
+			}
+			if in.Dns == nil {
+				sc.DNS = cur.DNS
 			}
 		}
 	}
