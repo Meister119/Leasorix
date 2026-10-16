@@ -5,6 +5,33 @@ Docker/Compose-Deployment, Web-UI und Hochverfügbarkeit.
 
 > Status: in Entwicklung – siehe [docs/PROGRESS.md](docs/PROGRESS.md) und [PLAN.md](PLAN.md).
 
+## Schnellstart mit Docker Compose
+
+DHCP braucht Layer-2-Zugang zum LAN, deshalb läuft der Container im
+Host-Netzwerk (oder mit eigener Adresse per macvlan – ein Bridge-Netz ohne
+Relay funktioniert nicht):
+
+```sh
+git clone https://github.com/meister119/leasorix && cd leasorix/deploy
+export LEASORIX_DHCP4_INTERFACES=eth0             # LAN-Interface des Hosts
+export LEASORIX_HTTP_LISTEN=192.168.1.10:8067     # Adresse für die Web-UI
+docker compose up -d                              # Image: ghcr.io/meister119/leasorix
+docker compose logs leasorix | grep setup_token   # einmaliges Setup-Token
+```
+
+`https://192.168.1.10:8067/` öffnen, mit dem Token den ersten Administrator
+anlegen, Scope einrichten – fertig. Lokal gebautes Image statt Registry:
+`make docker` und `LEASORIX_IMAGE=leasorix:latest docker compose up -d`.
+
+| Compose-Datei | Variante |
+|---|---|
+| `deploy/docker-compose.yml` | ein Server, Host-Netzwerk |
+| `deploy/docker-compose.macvlan.yml` | ein Server mit eigener IP im LAN |
+| `deploy/docker-compose.ha.yml` | HA-Paar (zwei Container, mTLS-Zertifikate automatisch) |
+
+Details, Rechte, macvlan-Besonderheiten und Fehlersuche:
+[docs/DOCKER.md](docs/DOCKER.md).
+
 ## Bauen
 
 Voraussetzungen: Go ≥ 1.26 (die Toolchain wird über `go.mod` automatisch
@@ -20,6 +47,8 @@ make lint         # golangci-lint
 make test-integration  # DHCP-Ende-zu-Ende in Network Namespaces (root)
 make test-ha      # Zwei-Knoten-HA-Tests (5000 Clients, Failover, Partition; root)
 make test-e2e     # Playwright gegen die echte UI + echten DHCP-Client (root)
+make docker       # Container-Image leasorix:<version> und :latest
+make test-docker  # Image + Compose-Dateien (host, macvlan, HA) testen (root)
 make generate     # API- und Peer-Protokoll-Code neu erzeugen (protoc 3.21)
 make ci           # lint + test + ui-test + build + vuln
 ```
@@ -82,5 +111,6 @@ leasorixctl config import --netsh dhcp-dump.txt --dry-run   # Umzug von Windows
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/ADMIN.md](docs/ADMIN.md) – Admin-Handbuch
 - [docs/HA.md](docs/HA.md) – HA-Handbuch
+- [docs/DOCKER.md](docs/DOCKER.md) – Docker, Compose, Netzwerk-Hinweise
 - [docs/DECISIONS.md](docs/DECISIONS.md)
 - [docs/PROGRESS.md](docs/PROGRESS.md)

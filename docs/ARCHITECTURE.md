@@ -25,7 +25,7 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 
 | Paket | Aufgabe |
 |---|---|
-| `cmd/leasorixd` | Daemon: Flags, Config, Logger, Signal-Handling; Offline-Kommandos (`ha certs`, `leases`, `backup`, `restore`) |
+| `cmd/leasorixd` | Daemon: Flags, Config, Logger, Signal-Handling; Offline-Kommandos (`ha certs`, `leases`, `backup`, `restore`, `healthcheck`) |
 | `cmd/leasorixctl` | REST-CLI auf Basis des generierten API-Clients |
 | `internal/app` | Verdrahtung aller Komponenten, Lifecycle |
 | `internal/config` | Bootstrap-Konfiguration (YAML + Env) |
@@ -161,3 +161,26 @@ Details und Bedienung: [HA.md](HA.md); Entscheidungen D-043 bis D-052.
   bei Änderung einen Snapshot aller Konfigurationstabellen, der Partner
   ersetzt seine Tabellen in einer Transaktion und lädt den Scope-Snapshot
   neu. Die API des Partners lehnt Konfigurationsänderungen ab.
+
+## Deployment (Container)
+
+Details: [DOCKER.md](DOCKER.md); Entscheidungen D-060 bis D-063.
+
+```
+ deploy/Dockerfile
+   ui     (Node, $BUILDPLATFORM)  npm ci + vite build ------------+
+   build  (Go,   $BUILDPLATFORM)  go build -tags ui (cross) <-----+
+                                  setcap-Helfer: File-Capabilities
+   final  distroless/static:nonroot  /usr/local/bin/{leasorixd,leasorixctl}
+                                     /etc/leasorix/leasorix.yml, VOLUME /data
+                                     HEALTHCHECK leasorixd healthcheck
+
+ Compose:  host  ── network_mode: host, DHCP auf Host-Interfaces
+           macvlan ─ eigene MAC/IP im LAN (Parent-Interface/VLAN)
+           ha    ── certs (Einmal-Dienst) -> dhcp-a + dhcp-b im macvlan-Netz
+```
+
+- Ein Container = ein Server-Prozess; Konfiguration über die Datei im Image
+  plus `LEASORIX_*`-Variablen, Zustand ausschließlich im Volume `/data`.
+- Läuft als UID 65532 mit read-only Root-FS; die einzigen Rechte sind die
+  File-Capabilities `NET_BIND_SERVICE` und `NET_RAW` des Binaries.

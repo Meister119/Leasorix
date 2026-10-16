@@ -1,7 +1,8 @@
 # Admin-Handbuch
 
 Betrieb eines Leasorix-Servers. Hochverfügbarkeit hat ein eigenes Handbuch:
-[HA.md](HA.md). Entscheidungen und Hintergründe: [DECISIONS.md](DECISIONS.md).
+[HA.md](HA.md), Container-Betrieb [DOCKER.md](DOCKER.md). Entscheidungen und
+Hintergründe: [DECISIONS.md](DECISIONS.md).
 
 ## 1. Start und Bootstrap-Konfiguration
 
