@@ -1,0 +1,2493 @@
+openapi: 3.0.3
+info:
+  title: Leasorix API
+  version: 1.0.0
+  description: |
+    REST API of the Leasorix DHCP server.
+
+    Authentication: session cookie (web UI, after `POST /auth/login`) or an
+    API token (`Authorization: Bearer lxt_...`). Requests authenticated by
+    session cookie must send the CSRF token from the login/`/auth/me`
+    response in the `X-CSRF-Token` header on every non-GET request.
+
+    Roles: `readonly` may read everything except users; `operator` may
+    additionally change the DHCP configuration and leases; `admin` may also
+    manage users, settings and high availability.
+
+    High availability: on the partner that is not the configuration leader
+    every configuration change is rejected with 409 (`config_read_only` in
+    `GET /system`); lease operations remain possible on both servers.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+  - token: []
+
+tags:
+  - name: auth
+  - name: scopes
+  - name: reservations
+  - name: options
+  - name: policies
+  - name: filters
+  - name: leases
+  - name: stats
+  - name: audit
+  - name: users
+  - name: system
+  - name: dns
+  - name: ipv6
+
+paths:
+  /setup:
+    get:
+      tags: [auth]
+      operationId: getSetupStatus
+      security: []
+      responses:
+        "200":
+          description: Whether the initial admin still has to be created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupStatus" }
+    post:
+      tags: [auth]
+      operationId: completeSetup
+      security: []
+      description: Creates the first admin user. Requires the one-time setup token printed in the server log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupRequest" }
+      responses:
+        "201":
+          description: Admin created and logged in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Logged in; sets the session cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        "204": { description: Logged out. }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user and session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/password:
+    post:
+      tags: [auth]
+      operationId: changeOwnPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordChange" }
+      responses:
+        "204": { description: Password changed; other sessions are terminated. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /tokens:
+    get:
+      tags: [auth]
+      operationId: listTokens
+      description: API tokens of the current user.
+      responses:
+        "200":
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ApiToken" }
+    post:
+      tags: [auth]
+      operationId: createToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApiTokenCreate" }
+      responses:
+        "201":
+          description: Token created. The secret is only shown once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiTokenCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /tokens/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [auth]
+      operationId: deleteToken
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /scopes:
+    get:
+      tags: [scopes]
+      operationId: listScopes
+      responses:
+        "200":
+          description: All scopes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope" }
+    post:
+      tags: [scopes]
+      operationId: createScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: getScope
+      responses:
+        "200":
+          description: The scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [scopes]
+      operationId: updateScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [scopes]
+      operationId: deleteScope
+      responses:
+        "204": { description: Deleted together with exclusions, reservations, policies, options and leases. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /superscopes:
+    get:
+      tags: [scopes]
+      operationId: listSuperscopes
+      responses:
+        "200":
+          description: All superscopes with their member scopes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Superscope" }
+    post:
+      tags: [scopes]
+      operationId: createSuperscope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuperscopeInput" }
+      responses:
+        "201":
+          description: Created. Members are assigned via the scope (superscope_id).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /superscopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: getSuperscope
+      responses:
+        "200":
+          description: The superscope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [scopes]
+      operationId: updateSuperscope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuperscopeInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [scopes]
+      operationId: deleteSuperscope
+      responses:
+        "204": { description: Deleted; the member scopes are kept. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /dns/keys:
+    get:
+      tags: [dns]
+      operationId: listDnsKeys
+      description: TSIG keys (the secrets are never returned).
+      responses:
+        "200":
+          description: All keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsKey" }
+    post:
+      tags: [dns]
+      operationId: createDnsKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsKeyInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [dns]
+      operationId: updateDnsKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsKeyInput" }
+      responses:
+        "200":
+          description: Updated (an empty secret keeps the stored one).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [dns]
+      operationId: deleteDnsKey
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/zones:
+    get:
+      tags: [dns]
+      operationId: listDnsZones
+      responses:
+        "200":
+          description: Zones that receive dynamic updates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsZone" }
+    post:
+      tags: [dns]
+      operationId: createDnsZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsZoneInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsZone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/zones/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [dns]
+      operationId: updateDnsZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsZoneInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsZone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [dns]
+      operationId: deleteDnsZone
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /dns/registrations:
+    get:
+      tags: [dns]
+      operationId: listDnsRegistrations
+      description: DNS registrations of this server (local state, not replicated).
+      responses:
+        "200":
+          description: Registrations ordered by address.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsRegistration" }
+  /v6/scopes:
+    get:
+      tags: [ipv6]
+      operationId: listScopes6
+      responses:
+        "200":
+          description: DHCPv6 scopes by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope6" }
+    post:
+      tags: [ipv6]
+      operationId: createScope6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Scope6Input" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v6/scopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [ipv6]
+      operationId: getScope6
+      responses:
+        "200":
+          description: The scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [ipv6]
+      operationId: updateScope6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Scope6Input" }
+      responses:
+        "200":
+          description: Updated (the prefix cannot be changed).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteScope6
+      responses:
+        "204": { description: Deleted with exclusions, reservations, options and bindings. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/scopes/{id}/exclusions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [ipv6]
+      operationId: listExclusions6
+      responses:
+        "200":
+          description: Exclusions of the scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Exclusion6" }
+    post:
+      tags: [ipv6]
+      operationId: createExclusion6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Range6" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Exclusion6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/scopes/{id}/exclusions/{exclusionId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: exclusionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [ipv6]
+      operationId: deleteExclusion6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/reservations:
+    get:
+      tags: [ipv6]
+      operationId: listReservations6
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Reservations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reservation6" }
+    post:
+      tags: [ipv6]
+      operationId: createReservation6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reservation6Input" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v6/reservations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [ipv6]
+      operationId: updateReservation6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reservation6Input" }
+      responses:
+        "200":
+          description: Updated (the scope stays).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteReservation6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/option-definitions:
+    get:
+      tags: [ipv6]
+      operationId: listOptionDefinitions6
+      responses:
+        "200":
+          description: Well-known DHCPv6 options.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Option6Definition" }
+  /v6/options/{owner}/{ownerId}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Option6Owner" }
+      - $ref: "#/components/parameters/OwnerId"
+    get:
+      tags: [ipv6]
+      operationId: listOptions6
+      responses:
+        "200":
+          description: Option values of the owner.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Option6Value" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/options/{owner}/{ownerId}/{code}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Option6Owner" }
+      - $ref: "#/components/parameters/OwnerId"
+      - name: code
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1, maximum: 65535 }
+    put:
+      tags: [ipv6]
+      operationId: setOption6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Option6Input" }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Option6Value" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteOption6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/leases:
+    get:
+      tags: [ipv6]
+      operationId: listLeases6
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: q
+          in: query
+          description: Substring of address, DUID or host name.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Bindings (addresses and delegated prefixes) by address.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lease6" }
+  /v6/leases/{address}:
+    parameters:
+      - name: address
+        in: path
+        required: true
+        description: Address of the binding (first address for a prefix).
+        schema: { type: string }
+    delete:
+      tags: [ipv6]
+      operationId: deleteLease6
+      responses:
+        "204": { description: Deleted; the address or prefix becomes free. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/stats:
+    get:
+      tags: [ipv6]
+      operationId: getStats6
+      responses:
+        "200":
+          description: Per scope binding counts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope6Stats" }
+  /config/export:
+    get:
+      tags: [system]
+      operationId: exportConfig
+      description: Complete DHCP configuration (format leasorix-config/v1, see docs/ADMIN.md); users and API tokens are not included.
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [yaml, json], default: yaml }
+      responses:
+        "200":
+          description: Configuration document.
+          content:
+            application/yaml:
+              schema: { type: string }
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /config/import:
+    post:
+      tags: [system]
+      operationId: importConfig
+      description: |
+        Imports a configuration document (YAML or JSON). `merge` adds it to
+        the existing configuration (existing objects are conflicts), `replace`
+        replaces the whole DHCP configuration (leases inside the new scopes
+        are kept). Either everything is applied or nothing.
+      parameters:
+        - $ref: "#/components/parameters/ImportMode"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema: { type: string }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Import result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /config/import/netsh:
+    post:
+      tags: [system]
+      operationId: importNetsh
+      description: Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server).
+      parameters:
+        - $ref: "#/components/parameters/ImportMode"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Import result and lines that were not imported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetshImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/import:
+    post:
+      tags: [scopes]
+      operationId: importScope
+      description: |
+        Creates a scope from a bundle (export of another server or the
+        partner part of a split scope). Either everything is created or
+        nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScopeBundle" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: exportScope
+      responses:
+        "200":
+          description: The scope with exclusions, reservations, options and policies.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopeBundle" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/{id}/split:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [scopes]
+      operationId: splitScope
+      description: |
+        Classic split scope for two independent servers without
+        replication: this server keeps the first `local_percent` of the
+        dynamic range and excludes the rest. The response contains the
+        bundle to import on the second server (local part excluded there).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SplitScopeInput" }
+      responses:
+        "200":
+          description: Split done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SplitScopeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}/stats:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes, stats]
+      operationId: getScopeStats
+      responses:
+        "200":
+          description: Address usage of the scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScopeStats" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scopes/{id}/exclusions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: listExclusions
+      responses:
+        "200":
+          description: Exclusion ranges.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Exclusion" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [scopes]
+      operationId: createExclusion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddrRange" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Exclusion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{id}/exclusions/{exclusionId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: exclusionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [scopes]
+      operationId: deleteExclusion
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /reservations:
+    get:
+      tags: [reservations]
+      operationId: listReservations
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Reservations (of one scope or all).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [reservations]
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /reservations/import:
+    post:
+      tags: [reservations]
+      operationId: importReservations
+      description: |
+        CSV import (all or nothing). Header line required; columns
+        `scope` (name or id), `ip`, `mac`, `client_id`, `hostname`,
+        `description` (only `scope`, `ip` and `mac` or `client_id` are
+        mandatory). Separator `,` or `;`.
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Import result. If `errors` is not empty nothing was imported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /reservations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [reservations]
+      operationId: getReservation
+      responses:
+        "200":
+          description: The reservation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [reservations]
+      operationId: updateReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReservationInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [reservations]
+      operationId: deleteReservation
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /option-definitions:
+    get:
+      tags: [options]
+      operationId: listOptionDefinitions
+      responses:
+        "200":
+          description: Built-in and custom option definitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OptionDefinition" }
+    post:
+      tags: [options]
+      operationId: createOptionDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OptionDefinitionInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OptionDefinition" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /option-definitions/{code}:
+    parameters:
+      - $ref: "#/components/parameters/Code"
+    delete:
+      tags: [options]
+      operationId: deleteOptionDefinition
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /options/{owner}/{ownerId}:
+    parameters:
+      - $ref: "#/components/parameters/Owner"
+      - $ref: "#/components/parameters/OwnerId"
+    get:
+      tags: [options]
+      operationId: listOptions
+      responses:
+        "200":
+          description: Option values of the owner.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OptionValue" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /options/{owner}/{ownerId}/{code}:
+    parameters:
+      - $ref: "#/components/parameters/Owner"
+      - $ref: "#/components/parameters/OwnerId"
+      - $ref: "#/components/parameters/Code"
+    put:
+      tags: [options]
+      operationId: setOption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OptionValueInput" }
+      responses:
+        "200":
+          description: Stored (canonical value returned).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OptionValue" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [options]
+      operationId: deleteOption
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /classes:
+    get:
+      tags: [policies]
+      operationId: listClasses
+      responses:
+        "200":
+          description: Vendor and user classes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Class" }
+    post:
+      tags: [policies]
+      operationId: createClass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClassInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Class" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /classes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [policies]
+      operationId: updateClass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClassInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Class" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [policies]
+      operationId: deleteClass
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /policies:
+    get:
+      tags: [policies]
+      operationId: listPolicies
+      parameters:
+        - name: scope_id
+          in: query
+          description: 0 = server level policies; omitted = all.
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Policy" }
+    post:
+      tags: [policies]
+      operationId: createPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /policies/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [policies]
+      operationId: getPolicy
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [policies]
+      operationId: updatePolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [policies]
+      operationId: deletePolicy
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /filters:
+    get:
+      tags: [filters]
+      operationId: listFilters
+      responses:
+        "200":
+          description: MAC allow/deny list entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MacFilter" }
+    post:
+      tags: [filters]
+      operationId: createFilter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MacFilterInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MacFilter" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /filters/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      tags: [filters]
+      operationId: deleteFilter
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /leases:
+    get:
+      tags: [leases]
+      operationId: listLeases
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: state
+          in: query
+          schema: { $ref: "#/components/schemas/LeaseState" }
+        - name: q
+          in: query
+          description: Substring match on IP, MAC, client id and hostname.
+          schema: { type: string }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: Lease records sorted by IP.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseList" }
+  /leases/export:
+    get:
+      tags: [leases]
+      operationId: exportLeases
+      description: Emergency export of the complete lease table.
+      responses:
+        "200":
+          description: Lease export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseExport" }
+  /leases/import:
+    post:
+      tags: [leases]
+      operationId: importLeases
+      description: |
+        Merges a lease export into the lease table (newer changes win,
+        conflicting bindings are resolved like in HA resynchronisation).
+        Records outside all scopes are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseExport" }
+      responses:
+        "200":
+          description: Import result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /leases/{ip}:
+    parameters:
+      - $ref: "#/components/parameters/IP"
+    get:
+      tags: [leases]
+      operationId: getLease
+      responses:
+        "200":
+          description: The lease record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [leases]
+      operationId: deleteLease
+      description: Removes the lease record; the address becomes free.
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /leases/{ip}/reservation:
+    parameters:
+      - $ref: "#/components/parameters/IP"
+    post:
+      tags: [leases]
+      operationId: convertLeaseToReservation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        "201":
+          description: Reservation created from the lease.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /stats:
+    get:
+      tags: [stats]
+      operationId: getStats
+      responses:
+        "200":
+          description: Server wide statistics.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+
+  /audit:
+    get:
+      tags: [audit]
+      operationId: listAudit
+      parameters:
+        - name: since
+          in: query
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actor
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          description: Prefix match, e.g. `lease.` or `scope.create`.
+          schema: { type: string }
+        - name: object_type
+          in: query
+          schema: { type: string }
+        - name: object_id
+          in: query
+          schema: { type: string }
+        - name: before_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+      responses:
+        "200":
+          description: Entries, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditList" }
+
+  /users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      responses:
+        "200":
+          description: All users (admin only).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [users]
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /users/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      tags: [users]
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [users]
+      operationId: deleteUser
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /settings:
+    get:
+      tags: [system]
+      operationId: getSettings
+      responses:
+        "200":
+          description: Runtime settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    put:
+      tags: [system]
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Settings" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /system:
+    get:
+      tags: [system]
+      operationId: getSystemInfo
+      responses:
+        "200":
+          description: Version and runtime information.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemInfo" }
+
+  /system/backup:
+    get:
+      tags: [system]
+      operationId: downloadBackup
+      description: Complete backup (SQLite database copy, contains password hashes).
+      responses:
+        "200":
+          description: Backup file.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /system/restore:
+    post:
+      tags: [system]
+      operationId: restoreBackup
+      description: |
+        Restores configuration, users, API tokens and leases from a backup
+        (also of older versions). All sessions end; log in again afterwards.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Restored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RestoreResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /ha/status:
+    get:
+      tags: [system]
+      operationId: getHAStatus
+      responses:
+        "200":
+          description: High availability status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HAStatus" }
+  /ha/partner-down:
+    post:
+      tags: [system]
+      operationId: declarePartnerDown
+      description: |
+        Operator confirmation that the partner is down. Only possible while
+        communication is interrupted. After MCLT this server allocates from
+        the whole pool. Never declare this while the partner is still
+        serving clients.
+      responses:
+        "200":
+          description: PARTNER_DOWN is active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HAStatus" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /ha/certificates:
+    post:
+      tags: [system]
+      operationId: generateHACertificates
+      description: |
+        Generates a new CA and one certificate per node for mutual TLS
+        between HA partners. Nothing is stored on the server; the CA key is
+        discarded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nodes]
+              properties:
+                nodes:
+                  type: array
+                  minItems: 2
+                  maxItems: 8
+                  items: { type: string }
+      responses:
+        "200":
+          description: PEM encoded certificates and keys.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HACertificates" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: leasorix_session
+    token:
+      type: http
+      scheme: bearer
+
+  parameters:
+    ImportMode:
+      name: mode
+      in: query
+      schema: { type: string, enum: [merge, replace], default: merge }
+    DryRun:
+      name: dry_run
+      in: query
+      schema: { type: boolean, default: false }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    Code:
+      name: code
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1, maximum: 254 }
+    Owner:
+      name: owner
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/OptionOwner" }
+    OwnerId:
+      name: ownerId
+      in: path
+      required: true
+      description: 0 for the server level.
+      schema: { type: integer, format: int64 }
+    IP:
+      name: ip
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid input.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Not authenticated.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Not allowed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicts with existing data.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Too many attempts.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        fields:
+          type: array
+          items: { $ref: "#/components/schemas/FieldError" }
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    Role:
+      type: string
+      enum: [admin, operator, readonly]
+
+    SetupStatus:
+      type: object
+      required: [setup_required]
+      properties:
+        setup_required: { type: boolean }
+    SetupRequest:
+      type: object
+      required: [setup_token, username, password]
+      properties:
+        setup_token: { type: string }
+        username: { type: string }
+        password: { type: string }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    Session:
+      type: object
+      required: [user, csrf_token, expires_at]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        csrf_token:
+          type: string
+          description: Send as X-CSRF-Token header on non-GET requests.
+        expires_at: { type: string, format: date-time }
+    PasswordChange:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string }
+
+    User:
+      type: object
+      required: [id, username, role, disabled, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UserCreate:
+      type: object
+      required: [username, password, role]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+    UserUpdate:
+      type: object
+      properties:
+        role: { $ref: "#/components/schemas/Role" }
+        disabled: { type: boolean }
+        password: { type: string }
+
+    ApiToken:
+      type: object
+      required: [id, name, prefix, role, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        prefix: { type: string, description: First characters of the token for recognition. }
+        role: { $ref: "#/components/schemas/Role" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+    ApiTokenCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        role:
+          $ref: "#/components/schemas/Role"
+        expires_in_days: { type: integer, minimum: 1, maximum: 3650 }
+    ApiTokenCreated:
+      type: object
+      required: [token, info]
+      properties:
+        token: { type: string }
+        info: { $ref: "#/components/schemas/ApiToken" }
+
+    Scope:
+      type: object
+      required: [id, name, description, subnet, start, end, lease_time, enabled, bootp, superscope_id, dns, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        subnet: { type: string, example: 192.168.1.0/24 }
+        start: { type: string, example: 192.168.1.100 }
+        end: { type: string, example: 192.168.1.200 }
+        lease_time: { type: integer, description: Seconds, 0 = unlimited. }
+        enabled: { type: boolean }
+        bootp: { type: boolean, description: Dynamic BOOTP for this scope. }
+        superscope_id: { type: integer, format: int64, description: 0 = no superscope. }
+        dns: { $ref: "#/components/schemas/DnsSettings" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ScopeInput:
+      type: object
+      required: [name, subnet, start, end, lease_time, enabled]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        subnet: { type: string }
+        start: { type: string }
+        end: { type: string }
+        lease_time: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        bootp: { type: boolean }
+        superscope_id: { type: integer, format: int64, description: 0 or absent = no superscope. }
+        dns:
+          $ref: "#/components/schemas/DnsSettings"
+          description: Absent = defaults on creation, unchanged on update.
+    DnsSettings:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [never, client, always]
+          x-enum-varnames: [DnsModeNever, DnsModeClient, DnsModeAlways]
+          description: |
+            never: no updates. client: as requested by the client in the
+            Client FQDN option 81 (A and PTR, or only PTR). always: A and PTR
+            for every client that sends a name (option 81 or 12).
+        domain: { type: string, description: "Domain for the client names; empty = domain name option 15." }
+        ttl: { type: integer, minimum: 0, maximum: 604800, description: "Record TTL in seconds; 0 = a third of the lease time (1 min .. 1 day)." }
+        cleanup: { type: boolean, description: "Remove the records when the lease ends (default true)." }
+        protect: { type: boolean, description: "Name protection with DHCID records, RFC 4701/4703 (default true)." }
+    DnsKey:
+      type: object
+      required: [id, name, algorithm]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: leasorix-key }
+        algorithm: { type: string, example: hmac-sha256 }
+    DnsKeyInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        algorithm:
+          type: string
+          enum: [hmac-sha256, hmac-sha384, hmac-sha512, hmac-sha224, hmac-sha1, hmac-md5]
+          description: Default hmac-sha256.
+        secret: { type: string, description: "Base64 key (at least 16 bytes); required on creation, empty on update = unchanged." }
+    DnsZone:
+      type: object
+      required: [id, name, server, key_id, key_name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: example.lan }
+        server: { type: string, example: "192.168.1.53" }
+        key_id: { type: integer, format: int64, description: 0 = unsigned updates. }
+        key_name: { type: string }
+    DnsZoneInput:
+      type: object
+      required: [name, server]
+      properties:
+        name: { type: string, description: "Zone apex, e.g. example.lan or 1.168.192.in-addr.arpa." }
+        server: { type: string, description: "Primary name server: IP or host name, optionally :port." }
+        key_id: { type: integer, format: int64, description: TSIG key; 0 or absent = unsigned updates. }
+    DnsRegistration:
+      type: object
+      required: [ip, fqdn, forward, reverse, a_record, ptr_record, state, attempts, last_error]
+      properties:
+        ip: { type: string }
+        fqdn: { type: string, description: Wanted name ("" while records are being removed). }
+        forward: { type: boolean, description: The A record is wanted. }
+        reverse: { type: boolean, description: The PTR record is wanted. }
+        protected: { type: boolean, description: Name protection (DHCID). }
+        a_record: { type: string, description: Name of the registered A record ("" = none). }
+        ptr_record: { type: string, description: Name the registered PTR record points to ("" = none). }
+        state: { type: string, enum: [registered, pending, conflict, error] }
+        attempts: { type: integer }
+        next_attempt: { type: string, format: date-time }
+        last_error: { type: string }
+        updated_at: { type: string, format: date-time }
+    Scope6:
+      type: object
+      required: [id, name, description, prefix, start, end, preferred_lifetime, valid_lifetime, rapid_commit, preference, enabled, pd_pool, pd_length, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        prefix: { type: string, example: "2001:db8:1::/64" }
+        start: { type: string, description: "First address of the range (empty = no addresses)." }
+        end: { type: string }
+        preferred_lifetime: { type: integer, description: Seconds. }
+        valid_lifetime: { type: integer, description: Seconds. }
+        rapid_commit: { type: boolean }
+        preference: { type: integer, minimum: 0, maximum: 255 }
+        enabled: { type: boolean }
+        pd_pool: { type: string, description: "Prefix delegation pool (empty = none), e.g. 2001:db8:100::/40." }
+        pd_length: { type: integer, description: "Length of the delegated prefixes, e.g. 56." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Scope6Input:
+      type: object
+      required: [name, prefix, preferred_lifetime, valid_lifetime, enabled]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        prefix: { type: string }
+        start: { type: string }
+        end: { type: string }
+        preferred_lifetime: { type: integer, minimum: 1 }
+        valid_lifetime: { type: integer, minimum: 60 }
+        rapid_commit: { type: boolean }
+        preference: { type: integer, minimum: 0, maximum: 255 }
+        enabled: { type: boolean }
+        pd_pool: { type: string }
+        pd_length: { type: integer }
+    Range6:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    Exclusion6:
+      type: object
+      required: [id, scope_id, start, end]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        start: { type: string }
+        end: { type: string }
+    Reservation6:
+      type: object
+      required: [id, scope_id, duid, iaid, ip, hostname, description]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        duid: { type: string, description: Client DUID as hex. }
+        iaid: { type: integer, format: int64, description: "-1 = any IA of the client." }
+        ip: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    Reservation6Input:
+      type: object
+      required: [duid, ip]
+      properties:
+        scope_id: { type: integer, format: int64, description: Required on creation. }
+        duid: { type: string }
+        iaid: { type: integer, format: int64, description: "Absent or -1 = any IA." }
+        ip: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    Option6Owner:
+      type: string
+      enum: [server, scope, reservation]
+      x-enum-varnames: [Option6OwnerServer, Option6OwnerScope, Option6OwnerReservation]
+    Option6Type:
+      type: string
+      enum: [ipv6-list, domain-list, string, uint8, uint16, uint32, hex, ntp-servers]
+      x-enum-varnames: [Option6TypeIpv6List, Option6TypeDomainList, Option6TypeString, Option6TypeUint8, Option6TypeUint16, Option6TypeUint32, Option6TypeHex, Option6TypeNtpServers]
+    Option6Definition:
+      type: object
+      required: [code, name, type, description]
+      properties:
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/Option6Type" }
+        description: { type: string }
+    Option6Value:
+      type: object
+      required: [owner, owner_id, code, name, type, value]
+      properties:
+        owner: { $ref: "#/components/schemas/Option6Owner" }
+        owner_id: { type: integer, format: int64 }
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/Option6Type" }
+        value: { type: string }
+    Option6Input:
+      type: object
+      required: [value]
+      properties:
+        type: { $ref: "#/components/schemas/Option6Type" }
+        value: { type: string }
+    Lease6:
+      type: object
+      required: [address, prefix_len, kind, scope_id, duid, iaid, hostname, state, starts_at, preferred_until, expires_at]
+      properties:
+        address: { type: string }
+        prefix_len: { type: integer }
+        kind:
+          type: string
+          enum: [na, pd]
+          x-enum-varnames: [Lease6KindNa, Lease6KindPd]
+        scope_id: { type: integer, format: int64 }
+        duid: { type: string }
+        iaid: { type: integer, format: int64 }
+        hostname: { type: string }
+        state:
+          type: string
+          enum: [active, expired, released, declined]
+          x-enum-varnames: [Lease6Active, Lease6Expired, Lease6Released, Lease6Declined]
+        starts_at: { type: string, format: date-time }
+        preferred_until: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    Scope6Stats:
+      type: object
+      required: [scope_id, addresses_in_use, prefixes_in_use, declined, size, prefix_capacity]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        addresses_in_use: { type: integer }
+        prefixes_in_use: { type: integer }
+        declined: { type: integer }
+        size: { type: string, description: "Addresses in the range (decimal; ranges can exceed 2^53)." }
+        prefix_capacity: { type: string, description: Delegable prefixes (decimal). }
+    Superscope:
+      type: object
+      required: [id, name, description, scope_ids]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        scope_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    SuperscopeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    ConfigImportResult:
+      type: object
+      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes, dns_zones, scopes6]
+      properties:
+        mode: { type: string, enum: [merge, replace] }
+        dry_run: { type: boolean }
+        scopes: { type: integer }
+        reservations: { type: integer }
+        policies: { type: integer }
+        classes: { type: integer }
+        option_definitions: { type: integer }
+        options: { type: integer }
+        mac_filters: { type: integer }
+        superscopes: { type: integer }
+        dns_zones: { type: integer }
+        scopes6: { type: integer }
+    NetshImportResult:
+      type: object
+      required: [result, warnings]
+      properties:
+        result: { $ref: "#/components/schemas/ConfigImportResult" }
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [line, text, reason]
+            properties:
+              line: { type: integer }
+              text: { type: string }
+              reason: { type: string }
+    RestoreResult:
+      type: object
+      required: [schema_version, scopes, reservations, users, leases]
+      properties:
+        schema_version: { type: integer, format: int64 }
+        scopes: { type: integer }
+        reservations: { type: integer }
+        users: { type: integer }
+        leases: { type: integer }
+    AddrRange:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    Exclusion:
+      type: object
+      required: [id, scope_id, start, end]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        start: { type: string }
+        end: { type: string }
+    ScopeStats:
+      type: object
+      required: [scope_id, name, subnet, total, excluded, usable, in_use, reserved, declined, available, utilization_percent, active_leases, by_state]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        name: { type: string }
+        subnet: { type: string }
+        total: { type: integer, format: int64 }
+        excluded: { type: integer, format: int64 }
+        usable: { type: integer, format: int64 }
+        in_use: { type: integer, format: int64 }
+        reserved: { type: integer, format: int64 }
+        declined: { type: integer, format: int64 }
+        available: { type: integer, format: int64 }
+        utilization_percent: { type: number, format: double }
+        active_leases: { type: integer, format: int64 }
+        by_state:
+          type: object
+          additionalProperties: { type: integer, format: int64 }
+
+    Reservation:
+      type: object
+      required: [id, scope_id, ip, mac, client_id, hostname, description, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        ip: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReservationInput:
+      type: object
+      required: [scope_id, ip]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        ip: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    ImportResult:
+      type: object
+      required: [created, errors]
+      properties:
+        created: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [line, message]
+            properties:
+              line: { type: integer }
+              message: { type: string }
+
+    OptionOwner:
+      type: string
+      enum: [server, scope, policy, reservation]
+    OptionType:
+      type: string
+      enum: [ip, ip-list, string, uint8, uint16, uint32, int32, bool, hex, domain-list, routes]
+    OptionDefinition:
+      type: object
+      required: [code, name, type, description, builtin]
+      properties:
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        description: { type: string }
+        builtin: { type: boolean }
+    OptionDefinitionInput:
+      type: object
+      required: [code, name, type]
+      properties:
+        code: { type: integer, minimum: 1, maximum: 254 }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        description: { type: string }
+    OptionValue:
+      type: object
+      required: [owner, owner_id, code, name, type, value]
+      properties:
+        owner: { $ref: "#/components/schemas/OptionOwner" }
+        owner_id: { type: integer, format: int64 }
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OptionType" }
+        value: { type: string }
+    OptionValueInput:
+      type: object
+      required: [value]
+      properties:
+        type: { $ref: "#/components/schemas/OptionType" }
+        value: { type: string }
+
+    Class:
+      type: object
+      required: [id, name, type, data, description]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [vendor, user] }
+        data: { type: string }
+        description: { type: string }
+    ClassInput:
+      type: object
+      required: [name, type, data]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [vendor, user] }
+        data: { type: string }
+        description: { type: string }
+
+    ConditionField:
+      type: string
+      enum: [mac, client_id, hostname, vendor_class, user_class, class, relay_circuit_id, relay_remote_id, relay_subscriber_id]
+    Condition:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field: { $ref: "#/components/schemas/ConditionField" }
+        operator: { type: string, enum: [eq, ne] }
+        value: { type: string }
+    Policy:
+      type: object
+      required: [id, scope_id, name, description, order, enabled, operator, conditions, ranges, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64, description: 0 = server level. }
+        name: { type: string }
+        description: { type: string }
+        order: { type: integer }
+        enabled: { type: boolean }
+        operator: { type: string, enum: [and, or] }
+        lease_time: { type: integer, nullable: true, description: Seconds; null = inherit. }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/Condition" }
+        ranges:
+          type: array
+          items: { $ref: "#/components/schemas/AddrRange" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PolicyInput:
+      type: object
+      required: [name, enabled, operator, conditions]
+      properties:
+        scope_id: { type: integer, format: int64, description: Only used on create; 0 = server level. }
+        name: { type: string }
+        description: { type: string }
+        order: { type: integer, description: 0 on create = append. }
+        enabled: { type: boolean }
+        operator: { type: string, enum: [and, or] }
+        lease_time: { type: integer, nullable: true }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/Condition" }
+        ranges:
+          type: array
+          items: { $ref: "#/components/schemas/AddrRange" }
+
+    MacFilter:
+      type: object
+      required: [id, list, pattern, description, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        list: { type: string, enum: [allow, deny] }
+        pattern: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+    MacFilterInput:
+      type: object
+      required: [list, pattern]
+      properties:
+        list: { type: string, enum: [allow, deny] }
+        pattern: { type: string }
+        description: { type: string }
+
+    LeaseState:
+      type: string
+      enum: [active, expired, released, declined]
+    Lease:
+      type: object
+      required: [ip, scope_id, scope_name, mac, client_id, hostname, state, starts_at, expires_at, updated_at, reserved]
+      properties:
+        ip: { type: string }
+        scope_id: { type: integer, format: int64 }
+        scope_name: { type: string }
+        mac: { type: string }
+        client_id: { type: string }
+        hostname: { type: string }
+        state: { $ref: "#/components/schemas/LeaseState" }
+        starts_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: 9999-12-31 for unlimited leases. }
+        updated_at: { type: string, format: date-time }
+        reserved: { type: boolean, description: The address has a reservation. }
+    LeaseList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Lease" }
+        total: { type: integer }
+
+    Stats:
+      type: object
+      required: [scopes, packets_received, packets_sent, packets_dropped, active_leases, uptime_seconds]
+      properties:
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/ScopeStats" }
+        packets_received:
+          type: object
+          additionalProperties: { type: number, format: double }
+        packets_sent:
+          type: object
+          additionalProperties: { type: number, format: double }
+        packets_dropped:
+          type: object
+          additionalProperties: { type: number, format: double }
+        active_leases: { type: integer, format: int64 }
+        uptime_seconds: { type: integer, format: int64 }
+
+    AuditEntry:
+      type: object
+      required: [id, time, actor, action, object_type, object_id]
+      properties:
+        id: { type: integer, format: int64 }
+        time: { type: string, format: date-time }
+        actor: { type: string }
+        source: { type: string }
+        action: { type: string }
+        object_type: { type: string }
+        object_id: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+    AuditList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+        next_before_id:
+          type: integer
+          format: int64
+          nullable: true
+
+    Settings:
+      type: object
+      required: [mac_filter_allow_enabled, mac_filter_deny_enabled]
+      properties:
+        mac_filter_allow_enabled: { type: boolean }
+        mac_filter_deny_enabled: { type: boolean }
+    SystemInfo:
+      type: object
+      required: [version, commit, go_version, started_at, dhcp4_interfaces, dhcp6_interfaces, tls, conflict_detection, ha_enabled, config_read_only]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        go_version: { type: string }
+        started_at: { type: string, format: date-time }
+        dhcp4_interfaces:
+          type: array
+          items: { type: string }
+        dhcp6_interfaces:
+          type: array
+          items: { type: string }
+        dhcp6_server_duid: { type: string, description: DUID of this DHCPv6 server (hex). }
+        tls: { type: boolean }
+        conflict_detection: { type: boolean }
+        ha_enabled: { type: boolean }
+        config_read_only:
+          type: boolean
+          description: Configuration changes must be made on the HA config leader.
+        config_leader:
+          type: string
+          description: Node id of the configuration leader (HA only).
+    HAStatus:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        node_id: { type: string }
+        peer_id: { type: string }
+        peer_address: { type: string }
+        mode: { type: string, enum: [load-balance, hot-standby] }
+        role: { type: string, enum: [primary, secondary] }
+        replication: { type: string, enum: [sync, async] }
+        tls_mode: { type: string, enum: [mtls, secret] }
+        state: { $ref: "#/components/schemas/HAState" }
+        state_since: { type: string, format: date-time, nullable: true }
+        serving:
+          type: boolean
+          description: False while recovering (no DHCP answers).
+        connected: { type: boolean }
+        peer_state: { type: string, description: Last state reported by the partner. }
+        peer_version: { type: string }
+        last_contact: { type: string, format: date-time, nullable: true }
+        partner_down_since: { type: string, format: date-time, nullable: true }
+        takeover_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: In PARTNER_DOWN, from this time on the whole pool is used.
+        config_leader: { type: boolean }
+        config_read_only: { type: boolean }
+        config_version: { type: integer, format: int64 }
+        config_in_sync: { type: boolean }
+        load_balance_percent: { type: integer }
+        standby_reserve_percent: { type: integer }
+        mclt: { type: integer, description: Seconds. }
+        auto_partner_down: { type: integer, description: Seconds, 0 = manual only. }
+        last_resync: { type: string, format: date-time, nullable: true }
+        error: { type: string }
+        resync_error: { type: string }
+        config_error: { type: string }
+        cert_expires: { type: string, format: date-time, nullable: true }
+    HAState:
+      type: string
+      enum: [NORMAL, COMMUNICATION_INTERRUPTED, PARTNER_DOWN, RECOVER, RECOVER_DONE]
+    HACertificates:
+      type: object
+      required: [ca_cert, not_after, nodes]
+      properties:
+        ca_cert: { type: string }
+        not_after: { type: string, format: date-time }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [node_id, cert, key]
+            properties:
+              node_id: { type: string }
+              cert: { type: string }
+              key: { type: string }
+    BundleRange:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    BundleOption:
+      type: object
+      required: [code, value]
+      properties:
+        code: { type: integer, minimum: 1, maximum: 254 }
+        value: { type: string }
+    ScopeBundle:
+      type: object
+      required: [format, scope, exclusions, reservations, options, policies]
+      properties:
+        format: { type: string, enum: [leasorix-scope/v1] }
+        scope:
+          type: object
+          required: [name, subnet, start, end, lease_time, enabled]
+          properties:
+            name: { type: string }
+            description: { type: string }
+            subnet: { type: string }
+            start: { type: string }
+            end: { type: string }
+            lease_time: { type: integer, format: int64 }
+            enabled: { type: boolean }
+            bootp: { type: boolean }
+            superscope: { type: string, description: Name of the superscope (created if missing). }
+            dns:
+              type: object
+              description: DNS update settings (absent = no updates).
+              required: [mode, cleanup, protect]
+              properties:
+                mode:
+                  type: string
+                  enum: [never, client, always]
+                  x-enum-varnames: [BundleDnsNever, BundleDnsClient, BundleDnsAlways]
+                domain: { type: string }
+                ttl: { type: integer, format: int64 }
+                cleanup: { type: boolean }
+                protect: { type: boolean }
+        exclusions:
+          type: array
+          items: { $ref: "#/components/schemas/BundleRange" }
+        reservations:
+          type: array
+          items:
+            type: object
+            required: [ip]
+            properties:
+              ip: { type: string }
+              mac: { type: string }
+              client_id: { type: string }
+              hostname: { type: string }
+              description: { type: string }
+              options:
+                type: array
+                items: { $ref: "#/components/schemas/BundleOption" }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/BundleOption" }
+        policies:
+          type: array
+          items:
+            type: object
+            required: [name, order, enabled, operator, conditions]
+            properties:
+              name: { type: string }
+              description: { type: string }
+              order: { type: integer }
+              enabled: { type: boolean }
+              operator: { type: string, enum: [and, or] }
+              lease_time: { type: integer, format: int64 }
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required: [field, operator, value]
+                  properties:
+                    field: { type: string }
+                    operator: { type: string }
+                    value: { type: string }
+              ranges:
+                type: array
+                items: { $ref: "#/components/schemas/BundleRange" }
+              options:
+                type: array
+                items: { $ref: "#/components/schemas/BundleOption" }
+    SplitScopeInput:
+      type: object
+      required: [local_percent]
+      properties:
+        local_percent: { type: integer, minimum: 1, maximum: 99 }
+    SplitScopeResult:
+      type: object
+      required: [local_range, partner_range, exclusions_added, partner]
+      properties:
+        local_range: { $ref: "#/components/schemas/BundleRange" }
+        partner_range: { $ref: "#/components/schemas/BundleRange" }
+        exclusions_added:
+          type: array
+          items: { $ref: "#/components/schemas/Exclusion" }
+        partner: { $ref: "#/components/schemas/ScopeBundle" }
+    LeaseExport:
+      type: object
+      required: [format, exported_at, leases]
+      properties:
+        format: { type: string, enum: [leasorix-leases/v1] }
+        exported_at: { type: string, format: date-time }
+        node: { type: string }
+        leases:
+          type: array
+          items:
+            type: object
+            required: [ip, mac, state, start, expires, updated]
+            properties:
+              ip: { type: string }
+              mac: { type: string }
+              client_id: { type: string }
+              hostname: { type: string }
+              state: { $ref: "#/components/schemas/LeaseState" }
+              start: { type: string, format: date-time }
+              expires: { type: string, format: date-time }
+              updated: { type: string, format: date-time }
+              origin: { type: string }
+    LeaseImportResult:
+      type: object
+      required: [records, changed, conflicts]
+      properties:
+        records: { type: integer }
+        changed: { type: integer }
+        conflicts: { type: integer }

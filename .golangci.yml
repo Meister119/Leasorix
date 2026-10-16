@@ -30,6 +30,10 @@ linters:
         linters:
           - gosec
           - noctx
+      # test tooling runs ip/dhclient/dnsmasq with computed arguments
+      - path: ^test/
+        linters:
+          - gosec
 
 formatters:
   enable:

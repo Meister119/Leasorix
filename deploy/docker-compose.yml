@@ -1,0 +1,39 @@
+# Leasorix – single server with host networking (simplest variant).
+#
+#   cd deploy && docker compose up -d
+#   docker compose logs leasorix | grep setup_token     # one-time setup token
+#
+# DHCP needs layer-2 broadcasts, so the container uses the host's network
+# stack and binds to the interfaces in LEASORIX_DHCP4_INTERFACES. The web UI
+# listens on LEASORIX_HTTP_LISTEN (default: localhost only – set a
+# management address). Bridge networking without a DHCP relay does NOT work.
+# See docs/DOCKER.md.
+name: leasorix
+
+services:
+  leasorix:
+    image: ${LEASORIX_IMAGE:-ghcr.io/meister119/leasorix:latest}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    network_mode: host
+    restart: unless-stopped
+    # Hardening: read-only root file system (data lives in the volume),
+    # no privilege escalation, only the two capabilities DHCP needs.
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, NET_RAW]
+    environment:
+      LEASORIX_DHCP4_INTERFACES: ${LEASORIX_DHCP4_INTERFACES:-eth0}
+      LEASORIX_HTTP_LISTEN: ${LEASORIX_HTTP_LISTEN:-127.0.0.1:8067}
+      # Empty = random token printed to the log on first start.
+      LEASORIX_AUTH_SETUP_TOKEN: ${LEASORIX_SETUP_TOKEN:-}
+    volumes:
+      - leasorix-data:/data
+      # Own configuration file (optional):
+      # - ./leasorix.yml:/etc/leasorix/leasorix.yml:ro
+
+volumes:
+  leasorix-data:

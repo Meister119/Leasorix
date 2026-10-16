@@ -1,0 +1,49 @@
+# Leasorix – single server with its own address in the LAN (macvlan).
+#
+#   cd deploy && LEASORIX_PARENT=eth0 LEASORIX_SUBNET=192.168.1.0/24 \
+#     LEASORIX_GATEWAY=192.168.1.1 LEASORIX_IP=192.168.1.5 \
+#     docker compose -f docker-compose.macvlan.yml up -d
+#
+# The container gets LEASORIX_IP on the network of LEASORIX_PARENT and
+# answers DHCP there. Exclude that address from your DHCP scope. Note: the
+# Docker host itself cannot reach macvlan containers directly (use another
+# machine, or a macvlan "shim" interface on the host – see docs/DOCKER.md).
+name: leasorix
+
+services:
+  leasorix:
+    image: ${LEASORIX_IMAGE:-ghcr.io/meister119/leasorix:latest}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    # Hardening: read-only root file system (data lives in the volume),
+    # no privilege escalation, only the two capabilities DHCP needs.
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, NET_RAW]
+    networks:
+      lan:
+        ipv4_address: ${LEASORIX_IP:-192.168.1.5}
+    environment:
+      LEASORIX_DHCP4_INTERFACES: eth0
+      LEASORIX_AUTH_SETUP_TOKEN: ${LEASORIX_SETUP_TOKEN:-}
+    volumes:
+      - leasorix-data:/data
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: ${LEASORIX_PARENT:-eth0}
+    ipam:
+      config:
+        - subnet: ${LEASORIX_SUBNET:-192.168.1.0/24}
+          gateway: ${LEASORIX_GATEWAY:-192.168.1.1}
+          # Keep Docker's own address allocation away from the DHCP pool.
+          ip_range: ${LEASORIX_IP:-192.168.1.5}/32
+
+volumes:
+  leasorix-data:

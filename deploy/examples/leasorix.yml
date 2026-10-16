@@ -13,9 +13,101 @@ log:
   level: info
   # json | text
   format: json
+  # Optional log file (default: stderr). Rotated by size.
+  # file: /var/log/leasorix/leasorixd.log
+  max_size_mb: 100
+  max_backups: 5
 
 http:
   # Management listener for UI, REST API, /healthz, /readyz and /metrics.
   # Keep it on localhost or a dedicated management interface.
   listen: 127.0.0.1:8067
   shutdown_timeout: 10s
+  tls:
+    # off | self-signed (generated into <data_dir>/tls) | files
+    mode: self-signed
+    # cert_file: /etc/leasorix/tls/cert.pem
+    # key_file: /etc/leasorix/tls/key.pem
+
+auth:
+  # Absolute session lifetime and inactivity timeout of web sessions.
+  session_ttl: 12h
+  idle_timeout: 1h
+  # Failed logins per client IP and per username before blocking.
+  login_max_failures: 10
+  login_window: 15m
+  # One-time token for creating the first admin. Default: random, printed
+  # to the log on first start (key "setup_token").
+  # setup_token: change-me
+
+dhcp4:
+  # Interfaces to serve (one socket per interface, SO_BINDTODEVICE).
+  # Relayed requests must arrive on one of these interfaces as well.
+  # Empty list = DHCPv4 disabled.
+  interfaces: [eth0]
+  # Max. packets processed concurrently.
+  workers: 256
+  # How long an offered address is held for the client's REQUEST.
+  offer_timeout: 60s
+  # Lease duration for BOOTP clients (reservations and scopes with BOOTP
+  # enabled); BOOTP clients never renew.
+  bootp_lease_time: 720h
+  # How long declined / conflicting addresses stay blocked.
+  decline_time: 24h
+  # How long expired/released leases are kept so the client gets its
+  # previous address back (Windows: 4h).
+  expired_grace: 4h
+  expiry_interval: 10s
+  # Ping an address before offering it (needs CAP_NET_RAW or
+  # net.ipv4.ping_group_range).
+  conflict_detection:
+    enabled: true
+    timeout: 500ms
+    attempts: 1
+
+dhcp6:
+  # Interfaces to serve; each socket joins ff02::1:2 on its interface.
+  # Relayed requests (RELAY-FORW) must arrive on one of them as well.
+  # Empty list = DHCPv6 disabled.
+  interfaces: []
+  workers: 64
+  # How long an advertised address is held for the client's REQUEST.
+  offer_timeout: 60s
+  # How long declined addresses (duplicate address detection) stay blocked.
+  decline_time: 24h
+  # How long expired/released bindings are kept for the previous client.
+  expired_grace: 4h
+  expiry_interval: 10s
+
+audit:
+  # How long audit entries are kept (0 = forever). Purged every 6 hours.
+  retention: 2160h
+  # Record lease events (assign, release, decline, conflict, expire).
+  lease_events: true
+  # Also record every renewal - high volume, off by default.
+  lease_renewals: false
+
+# High availability with one partner server (see docs/HA.md). Disabled when
+# mode is empty. mode, percentages, mclt and config_leader must be the same
+# on both servers.
+# ha:
+#   mode: load-balance          # or hot-standby
+#   node_id: dhcp-a             # this server (= name in its certificate)
+#   role: primary               # partner: secondary
+#   listen: ":8068"             # peer (gRPC) listener
+#   peer: { id: dhcp-b, address: "10.0.0.2:8068" }
+#   load_balance_percent: 50    # share of the primary (load-balance)
+#   standby_reserve_percent: 5  # reserve of the standby (hot-standby)
+#   replication: sync           # sync: partner confirms before the ACK; async
+#   mclt: 1h                    # max. client lead time
+#   heartbeat_interval: 2s
+#   communication_timeout: 10s
+#   replication_timeout: 2s
+#   auto_partner_down: 0        # 0 = only by operator confirmation
+#   config_leader: primary      # the other server's configuration is read-only
+#   tls:
+#     mode: mtls                # or secret
+#     ca_file: /etc/leasorix/ha/ca.pem
+#     cert_file: /etc/leasorix/ha/dhcp-a.pem
+#     key_file: /etc/leasorix/ha/dhcp-a-key.pem
+#     # shared_secret_file: /etc/leasorix/ha/secret   # mode secret

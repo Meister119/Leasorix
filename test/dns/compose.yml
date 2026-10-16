@@ -1,0 +1,42 @@
+# DNS servers for the dynamic DNS integration test (TestDNSUpdates,
+# make test-dns). Both sit on a macvlan network whose parent is a veth into
+# the test's server namespace (DNS_PARENT), so leasorixd reaches them
+# directly; nothing is exposed on the host or the real network.
+#
+#   BIND        10.78.0.53  zones bind.test, 77.10.in-addr.arpa
+#   PowerDNS    10.78.0.54  zones pdns.test, 76.10.in-addr.arpa
+#
+# Both accept updates signed with the TSIG key "leasorix-key" (test only).
+name: leasorix-dns-test
+
+services:
+  bind:
+    image: ${BIND_IMAGE:-internetsystemsconsortium/bind9:9.20}
+    # Zone files must be writable by named (journal).
+    entrypoint: ["sh", "-c", "cp /zones/*.zone /var/lib/bind/ && chown bind:bind /var/lib/bind/*.zone && exec /usr/sbin/named -u bind -g -c /etc/bind/named.conf"]
+    volumes:
+      - ./bind/named.conf:/etc/bind/named.conf:ro
+      - ./bind/zones:/zones:ro
+    networks:
+      dns:
+        ipv4_address: 10.78.0.53
+
+  pdns:
+    image: ${PDNS_IMAGE:-powerdns/pdns-auth-49:4.9.8}
+    entrypoint: ["sh", "/init.sh"]
+    volumes:
+      - ./pdns/init.sh:/init.sh:ro
+      - ./pdns/test.conf:/etc/powerdns/pdns.d/test.conf:ro
+    networks:
+      dns:
+        ipv4_address: 10.78.0.54
+
+networks:
+  dns:
+    driver: macvlan
+    driver_opts:
+      parent: ${DNS_PARENT:?set DNS_PARENT}
+    ipam:
+      config:
+        - subnet: 10.78.0.0/24
+          gateway: 10.78.0.1

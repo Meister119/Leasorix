@@ -1,0 +1,17 @@
+# Default configuration of the container image. Override single values with
+# environment variables (LEASORIX_<SECTION>_<KEY>, e.g.
+# LEASORIX_DHCP4_INTERFACES=eth0) or mount your own file over
+# /etc/leasorix/leasorix.yml. See deploy/examples/leasorix.yml for all keys.
+data_dir: /data
+log:
+  level: info
+  format: json
+http:
+  # Inside the container network namespace. With network_mode: host set
+  # LEASORIX_HTTP_LISTEN to a management address (or 127.0.0.1:8067).
+  listen: 0.0.0.0:8067
+  tls:
+    mode: self-signed
+dhcp4:
+  # Set LEASORIX_DHCP4_INTERFACES (comma separated) to enable DHCP.
+  interfaces: []

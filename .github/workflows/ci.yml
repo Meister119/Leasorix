@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,15 +17,78 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.14.0
+      - name: generated code is up to date
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
+          (cd web && npm ci --no-audit --no-fund)
+          make generate
+          git diff --exit-code
       - name: test
         run: make test
-      - name: build
+      - name: ui tests
+        run: make ui-test
+      - name: build (with web UI)
         run: make build
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           make vuln GOVULNCHECK="$(go env GOPATH)/bin/govulncheck"
+      - name: npm audit
+        run: cd web && npm audit --omit=dev --audit-level=high
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: install DHCP clients and relay
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 isc-dhcp-client udhcpc busybox dnsmasq-base
+      - name: netns integration tests
+        run: sudo -E env "PATH=$PATH" make test-integration
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/pw-browsers
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 udhcpc
+      - name: build
+        run: make build
+      - name: install browser
+        run: cd web && npx playwright install --with-deps chromium
+      - name: playwright end-to-end tests
+        run: sudo -E env "PATH=$PATH" ./test/e2e/run.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: install tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 udhcpc
+      - name: build image
+        run: make docker
+      - name: compose tests (host, macvlan, HA)
+        run: sudo -E env "PATH=$PATH" make test-docker
