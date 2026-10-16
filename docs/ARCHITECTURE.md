@@ -1,8 +1,8 @@
-# Architektur
+# Architecture
 
-> Lebendes Dokument – wird mit jeder Phase ergänzt.
+> Living document — extended with each phase.
 
-## Überblick
+## Overview
 
 ```
                 +---------------------------------------------+
@@ -13,132 +13,131 @@
   HTTP   ----> |  api (chi): UI, REST,         v               |
   (mgmt)        |  /healthz /readyz /metrics  store (SQLite)   |
                 |                              ^               |
-  gRPC   <---> |  ha: Failover, Replikation ---+               |
+  gRPC   <---> |  ha: failover, replication ---+               |
   (peer)        +---------------------------------------------+
 ```
 
-Ein Prozess, ein statisches Binary. Komponenten laufen als Goroutinen unter
-einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
-`SIGTERM`, wird der Kontext abgebrochen und alle fahren geordnet herunter.
+One process, one static binary. Components run as goroutines under a
+shared `errgroup`; if a component fails or `SIGTERM` arrives, the context
+is canceled and all components shut down in an orderly fashion.
 
-## Pakete
+## Packages
 
-| Paket | Aufgabe |
+| Package | Purpose |
 |---|---|
-| `cmd/leasorixd` | Daemon: Flags, Config, Logger, Signal-Handling; Offline-Kommandos (`ha certs`, `leases`, `backup`, `restore`, `healthcheck`) |
-| `cmd/leasorixctl` | REST-CLI auf Basis des generierten API-Clients |
-| `internal/app` | Verdrahtung aller Komponenten, Lifecycle |
-| `internal/config` | Bootstrap-Konfiguration (YAML + Env) |
-| `internal/logging` | `slog`-Logger (JSON/Text) |
-| `internal/store` | SQLite-Zugriff, Migrationen, Transaktionen |
-| `internal/health` | Liveness/Readiness mit registrierbaren Checks |
-| `internal/metrics` | Prometheus-Registry |
-| `internal/api` | HTTP-Management-Server |
-| `internal/dhcp4` | DHCPv4-Engine (Phase 2) |
-| `internal/scope` | Scopes, Pools, Exclusions, Reservierungen, Policies |
-| `internal/lease` | Lease-Store, Allokation, Konfliktprüfung, Expiry |
-| `internal/auth` | Benutzer, Rollen, Sessions, API-Tokens, Setup |
-| `internal/audit` | Audit-Log (Schreiben im Tx, Abfrage, Purge) |
-| `internal/dhcpopt` | Options-Katalog und typisierte Werte |
-| `internal/api/gen` | aus OpenAPI generierter Code (Server-Interface, Modelle, Client) |
-| `internal/configio` | Konfigurations-Export/-Import (`leasorix-config/v1`), netsh-Importer |
-| `internal/backup` | Backup (VACUUM INTO) und logischer Restore |
-| `web` | React-UI, per `go:embed` eingebettet |
-| `internal/ha` | HA-Partnerschaft: Zustandsautomat, Pool-Aufteilung, gRPC-Peer-Protokoll (`pb`), Lease-/Config-Replikation, Zertifikate |
-| `internal/dnsupdate` | DNS-Updates: Option 81 (RFC 4702), DHCID (RFC 4701), RFC-2136-Client mit TSIG, Updater-Worker |
-| `internal/dhcp6` | DHCPv6-Engine (RFC 8415): Handler, Sockets pro Interface, Server-DUID |
-| `internal/scope6` | IPv6-Scopes, Ausschlüsse, Reservierungen (DUID/IAID), Optionen, Snapshot |
-| `internal/lease6` | DHCPv6-Bindungen (IA_NA, IA_PD): Allokation, Expiry, Persistenz |
-| `internal/dhcpopt6` | DHCPv6-Optionskatalog und typisierte Werte |
-| `internal/ip6` | 128-Bit-Arithmetik für Bereiche und Präfixe |
+| `cmd/leasorixd` | Daemon: flags, config, logger, signal handling; offline commands (`ha certs`, `leases`, `backup`, `restore`, `healthcheck`) |
+| `cmd/leasorixctl` | REST CLI based on the generated API client |
+| `internal/app` | Wiring of all components, lifecycle |
+| `internal/config` | Bootstrap configuration (YAML + env) |
+| `internal/logging` | `slog` logger (JSON/text) |
+| `internal/store` | SQLite access, migrations, transactions |
+| `internal/health` | Liveness/readiness with registrable checks |
+| `internal/metrics` | Prometheus registry |
+| `internal/api` | HTTP management server |
+| `internal/dhcp4` | DHCPv4 engine (Phase 2) |
+| `internal/scope` | Scopes, pools, exclusions, reservations, policies |
+| `internal/lease` | Lease store, allocation, conflict detection, expiry |
+| `internal/auth` | Users, roles, sessions, API tokens, setup |
+| `internal/audit` | Audit log (write within the transaction, query, purge) |
+| `internal/dhcpopt` | Option catalog and typed values |
+| `internal/api/gen` | Code generated from OpenAPI (server interface, models, client) |
+| `internal/configio` | Configuration export/import (`leasorix-config/v1`), netsh importer |
+| `internal/backup` | Backup (VACUUM INTO) and logical restore |
+| `web` | React UI, embedded via `go:embed` |
+| `internal/ha` | HA partnership: state machine, pool split, gRPC peer protocol (`pb`), lease/config replication, certificates |
+| `internal/dnsupdate` | DNS updates: option 81 (RFC 4702), DHCID (RFC 4701), RFC 2136 client with TSIG, updater worker |
+| `internal/dhcp6` | DHCPv6 engine (RFC 8415): handler, per-interface sockets, server DUID |
+| `internal/scope6` | IPv6 scopes, exclusions, reservations (DUID/IAID), options, snapshot |
+| `internal/lease6` | DHCPv6 bindings (IA_NA, IA_PD): allocation, expiry, persistence |
+| `internal/dhcpopt6` | DHCPv6 option catalog and typed values |
+| `internal/ip6` | 128-bit arithmetic for ranges and prefixes |
 
-## Konfiguration
+## Configuration
 
-Zwei Ebenen (siehe DECISIONS D-003):
+Two levels (see DECISIONS D-003):
 
-1. **Bootstrap** – YAML-Datei + `LEASORIX_*`-Env: Listener, Datenverzeichnis,
-   Logging, Interfaces, HA-Peers.
-2. **DHCP-Konfiguration** – in der Datenbank, verwaltet über API/UI.
+1. **Bootstrap** — YAML file + `LEASORIX_*` env: listeners, data directory,
+   logging, interfaces, HA peers.
+2. **DHCP configuration** — in the database, managed via API/UI.
 
-## DHCPv4-Pfad
+## DHCPv4 path
 
 ```
 socket(s0) --> Server.readLoop --> worker (max N) --> Handler.Handle
-                                                        |  per-Client-Lock
+                                                        |  per-client lock
                                                         v
-              scope.Store.Snapshot()  <-- Link-Auswahl (giaddr/82.5/118/Interface-IP,
-                                                        + Superscope-Mitglieder)
-                                                        |  ha.Node.Accept (wer antwortet)
+            scope.Store.Snapshot()  <-- link selection (giaddr/82.5/118/interface IP,
+                                                        + superscope members)
+                                                        |  ha.Node.Accept (who responds)
                                                         |
                                     lease.Manager.Offer/Request/Release/Decline
-                                         |  (Mutex, In-Memory-Index)
-                                         |-- ICMPProber (Konflikt-Ping, außerhalb des Locks)
-                                         `-- DBStore.Apply --> Group-Commit-Writer --> SQLite
+                                         |  (mutex, in-memory index)
+                                         |-- ICMPProber (conflict ping, outside the lock)
+                                         `-- DBStore.Apply --> group-commit writer --> SQLite
                                                         |
-Response (Ziel nach RFC 2131 4.1) <---------------------+
-   |-- UDP an giaddr:67 / ciaddr:68 / 255.255.255.255:68
-   `-- L2-Unicast an chaddr (AF_PACKET), Fallback Broadcast
+Response (destination per RFC 2131 4.1) <---------------+
+   |-- UDP to giaddr:67 / ciaddr:68 / 255.255.255.255:68
+   `-- L2 unicast to chaddr (AF_PACKET), fallback broadcast
 ```
 
-- **Scopes** liegen als unveränderlicher Snapshot vor (`atomic.Pointer`),
-  jede Änderung über `scope.Store` baut ihn neu und benachrichtigt Listener
-  (z. B. den Lease-Manager bei gelöschten Scopes).
-- **Leases**: Der Lease-Manager ist die Autorität. Entscheidungen erfolgen im
-  Speicher, Persistenz über den Group-Commit-Writer; ein ACK wird erst nach
-  erfolgreichem Commit gesendet.
-- **BOOTP**: Anfragen ohne DHCP-Nachrichtentyp laufen durch denselben Pfad
-  (Offer + Request in einem Schritt) und erhalten eine BOOTREPLY.
-- **Expiry-Worker**: alle `expiry_interval` → `active`→`expired`,
-  Löschen nach Grace-Period bzw. Decline-Zeit, abgelaufene Angebote räumen.
+- **Scopes** are held as an immutable snapshot (`atomic.Pointer`); every
+  change via `scope.Store` rebuilds it and notifies listeners (e.g., the
+  lease manager when scopes are deleted).
+- **Leases**: the lease manager is the authority. Decisions are made in
+  memory, persistence goes through the group-commit writer; an ACK is sent
+  only after a successful commit.
+- **BOOTP**: requests without a DHCP message type go through the same path
+  (offer + request in one step) and receive a BOOTREPLY.
+- **Expiry worker**: every `expiry_interval` → `active`→`expired`,
+  deletion after the grace period or decline time, cleanup of expired offers.
 
-## Management-API und Web-UI
+## Management API and web UI
 
 ```
 Browser ──HTTPS──> api.Server (chi)
                      ├─ /healthz /readyz /metrics
                      ├─ /api/v1/*  ── authenticate (Cookie | Bearer)
-                     │                └─ authorize (RBAC-Tabelle, CSRF, Origin, Content-Type)
-                     │                   └─ gen.ServerInterface (aus openapi.yaml generiert)
+                     │                └─ authorize (RBAC table, CSRF, Origin, Content-Type)
+                     │                   └─ gen.ServerInterface (generated from openapi.yaml)
                      │                      └─ handlers → scope.Store / lease.Manager / auth.Service / audit.Log
-                     └─ /*  ── eingebettete SPA (web/dist, Build-Tag ui), Fallback index.html
+                     └─ /*  ── embedded SPA (web/dist, build tag ui), fallback index.html
 ```
 
-- **Spec first:** `internal/api/openapi.yaml` ist die Quelle für Go-Typen und
-  Router (`internal/api/gen`) sowie für die TypeScript-Typen der UI
+- **Spec first:** `internal/api/openapi.yaml` is the source for the Go types
+  and router (`internal/api/gen`) as well as for the UI's TypeScript types
   (`web/src/api/schema.d.ts`).
-- **Audit-Actor:** Die Authentifizierungs-Middleware legt Benutzer und
-  Client-IP in den Context; alle Domänenoperationen schreiben ihn in ihre
-  Audit-Einträge.
-- **UI:** React + TanStack Query; jede Seite liest über den typisierten
-  Client, Mutationen invalidieren die betroffenen Queries. Rollen steuern,
-  welche Aktionen angezeigt werden – die Durchsetzung passiert im Backend.
+- **Audit actor:** the authentication middleware puts the user and client
+  IP into the context; all domain operations write it into their audit
+  entries.
+- **UI:** React + TanStack Query; every page reads via the typed client,
+  mutations invalidate the affected queries. Roles control which actions
+  are shown — enforcement happens in the backend.
 
-## Persistenz
+## Persistence
 
-SQLite im WAL-Modus unter `<data_dir>/leasorix.db`. Schreibzugriffe laufen
-über einen Pool mit genau einer Verbindung (`BEGIN IMMEDIATE`), Lesezugriffe
-über einen separaten Read-only-Pool. Das Schema wird über eingebettete
-goose-Migrationen (`internal/store/migrations`) beim Start aktualisiert.
+SQLite in WAL mode at `<data_dir>/leasorix.db`. Writes go through a pool
+with exactly one connection (`BEGIN IMMEDIATE`), reads through a separate
+read-only pool. The schema is updated at startup via embedded goose
+migrations (`internal/store/migrations`).
 
-Migrationen: 00001 Grundschema, 00002 Policies/Optionen/Filter, 00003
-Sessions/API-Tokens, 00004 HA (Lease-Zeitstempel in ms + `origin`,
-`ha_state`, Trigger-gepflegter `config_version`-Zähler), 00005 Superscopes
-und BOOTP.
+Migrations: 00001 base schema, 00002 policies/options/filters, 00003
+sessions/API tokens, 00004 HA (lease timestamps in ms + `origin`,
+`ha_state`, trigger-maintained `config_version` counter), 00005 superscopes
+and BOOTP.
 
-`store.ReplaceTables` ersetzt eine Gruppe von Tabellen transaktional mit
-abgeschalteten Fremdschlüsseln und anschließendem `foreign_key_check`; es
-ist die gemeinsame Basis für HA-Config-Sync, Konfigurations-Import und
-Restore. Danach ordnet `store.RemapLeases` jede Lease dem Scope zu, dessen
-Subnetz ihre Adresse enthält (IDs können sich ändern). Ein `flock` auf
-`<data_dir>/leasorixd.lock` verhindert parallele Prozesse auf derselben
-Datenbank.
+`store.ReplaceTables` replaces a group of tables transactionally with
+foreign keys disabled, followed by a `foreign_key_check`; it is the common
+basis for HA config sync, configuration import, and restore. Afterwards,
+`store.RemapLeases` assigns each lease to the scope whose subnet contains
+its address (IDs may change). A `flock` on `<data_dir>/leasorixd.lock`
+prevents parallel processes on the same database.
 
-## Hochverfügbarkeit
+## High availability
 
-Details und Bedienung: [HA.md](HA.md); Entscheidungen D-043 bis D-052.
+Details and operation: [HA.md](HA.md); decisions D-043 to D-052.
 
 ```
-  Server A (primary, Config-Leader)            Server B (secondary)
+  Server A (primary, config leader)            Server B (secondary)
   +--------------------------------+   gRPC   +--------------------------------+
   | dhcp4 --Accept()--> ha.Node     |  mTLS /  | ha.Node <--Accept()-- dhcp4     |
   |   |                  |  ^       |  Secret  |  ^   |                  |      |
@@ -150,88 +149,90 @@ Details und Bedienung: [HA.md](HA.md); Entscheidungen D-043 bis D-052.
   +--------------------------------+          +--------------------------------+
 ```
 
-- **Hot Path ohne Sperren:** `ha.Node` veröffentlicht Zustand und
-  Übernahmezeit atomar; `Accept` (wer antwortet), `CanAllocate` (eigener
-  Pool-Anteil) und `LeaseLimit` (MCLT) lesen nur diesen Schnappschuss.
-- **Lease-Replikation:** der Lease-Manager trägt Änderungen in eine Outbox
-  ein; ein Sender bündelt sie zu `PushLeases`. Bei `sync` wartet der Request
-  auf die Bestätigung, bevor er lokal speichert und das ACK rausgeht.
-  Empfangene Änderungen laufen durch `lease.Wins` (deterministisches
-  Zusammenführen), ebenso der Abgleich per `DumpLeases`.
-- **Zustandsautomat** (`internal/ha/machine.go`) ist rein ereignisgetrieben
-  und mit simulierter Zeit getestet; `node.go` verbindet ihn mit gRPC,
-  Persistenz (`ha_state`), Audit und Metriken.
-- **Konfiguration:** Trigger erhöhen `config_version`; der Leader schickt
-  bei Änderung einen Snapshot aller Konfigurationstabellen, der Partner
-  ersetzt seine Tabellen in einer Transaktion und lädt den Scope-Snapshot
-  neu. Die API des Partners lehnt Konfigurationsänderungen ab.
+- **Lock-free hot path:** `ha.Node` publishes the state and takeover time
+  atomically; `Accept` (who responds), `CanAllocate` (own pool share), and
+  `LeaseLimit` (MCLT) only read this snapshot.
+- **Lease replication:** the lease manager adds changes to an outbox; a
+  sender batches them into `PushLeases`. With `sync`, the request waits for
+  the acknowledgment before it stores locally and the ACK goes out.
+  Received changes go through `lease.Wins` (deterministic merging), as does
+  reconciliation via `DumpLeases`.
+- **State machine** (`internal/ha/machine.go`) is purely event-driven and
+  tested with simulated time; `node.go` connects it to gRPC, persistence
+  (`ha_state`), audit, and metrics.
+- **Configuration:** triggers increment `config_version`; on a change, the
+  leader sends a snapshot of all configuration tables, and the partner
+  replaces its tables in one transaction and reloads the scope snapshot.
+  The partner's API rejects configuration changes.
 
-## Deployment (Container)
+## Deployment (containers)
 
-Details: [DOCKER.md](DOCKER.md); Entscheidungen D-060 bis D-063.
+Details: [DOCKER.md](DOCKER.md); decisions D-060 to D-063.
 
 ```
  deploy/Dockerfile
    ui     (Node, $BUILDPLATFORM)  npm ci + vite build ------------+
    build  (Go,   $BUILDPLATFORM)  go build -tags ui (cross) <-----+
-                                  setcap-Helfer: File-Capabilities
+                                  setcap helper: file capabilities
    final  distroless/static:nonroot  /usr/local/bin/{leasorixd,leasorixctl}
                                      /etc/leasorix/leasorix.yml, VOLUME /data
                                      HEALTHCHECK leasorixd healthcheck
 
- Compose:  host  ── network_mode: host, DHCP auf Host-Interfaces
-           macvlan ─ eigene MAC/IP im LAN (Parent-Interface/VLAN)
-           ha    ── certs (Einmal-Dienst) -> dhcp-a + dhcp-b im macvlan-Netz
+ Compose:  host  ── network_mode: host, DHCP on host interfaces
+           macvlan ─ own MAC/IP on the LAN (parent interface/VLAN)
+           ha    ── certs (one-shot service) -> dhcp-a + dhcp-b on the macvlan network
 ```
 
-- Ein Container = ein Server-Prozess; Konfiguration über die Datei im Image
-  plus `LEASORIX_*`-Variablen, Zustand ausschließlich im Volume `/data`.
-- Läuft als UID 65532 mit read-only Root-FS; die einzigen Rechte sind die
-  File-Capabilities `NET_BIND_SERVICE` und `NET_RAW` des Binaries.
+- One container = one server process; configuration via the file in the
+  image plus `LEASORIX_*` variables, state exclusively in the `/data`
+  volume.
+- Runs as UID 65532 with a read-only root FS; the only privileges are the
+  binary's file capabilities `NET_BIND_SERVICE` and `NET_RAW`.
 
-## DNS-Updates
+## DNS updates
 
-Details: [ADMIN.md](ADMIN.md#11-dns-updates); Entscheidungen D-064 bis D-067.
+Details: [ADMIN.md](ADMIN.md#11-dns-updates); decisions D-064 to D-067.
 
 ```
- dhcp4.Handler (ACK) ── dnsupdate.Decide(scope.DNS, Option 81, Option 12, Option 15)
-        │                      └─> Antwort-Option 81 (S/O/N)
-        └─ Updater.Bound(lease, Entscheidung)      (nur Speicher, kein I/O)
+ dhcp4.Handler (ACK) ── dnsupdate.Decide(scope.DNS, option 81, option 12, option 15)
+        │                      └─> response option 81 (S/O/N)
+        └─ Updater.Bound(lease, decision)          (memory only, no I/O)
 
- dnsupdate.Updater (Goroutine)
-   ├─ Abgleich alle 15 s: Lease beendet? → gewollter Zustand = nichts
-   ├─ fällige Registrierungen → Client.Add/Remove{Forward,Reverse}
-   │        └─ miekg/dns: UPDATE + Prerequisites (DHCID) + TSIG → Zone aus Snapshot
-   └─ dns_registrations (gewollt / eingetragen, Wiederholung, Fehler)
+ dnsupdate.Updater (goroutine)
+   ├─ reconcile every 15 s: lease ended? → desired state = nothing
+   ├─ due registrations → Client.Add/Remove{Forward,Reverse}
+   │        └─ miekg/dns: UPDATE + prerequisites (DHCID) + TSIG → zone from snapshot
+   └─ dns_registrations (desired / registered, retry, error)
 ```
 
-- Zonen und Schlüssel sind Konfiguration (Snapshot, HA-repliziert), die
-  Registrierungen lokaler Zustand jedes Servers.
-- Name Protection ist reine DNS-Logik (Prerequisites auf den DHCID-Record);
-  Leasorix muss dafür nichts über fremde Records wissen.
+- Zones and keys are configuration (snapshot, HA-replicated); registrations
+  are local state of each server.
+- Name protection is pure DNS logic (prerequisites on the DHCID record);
+  Leasorix does not need to know anything about records it does not own.
 
 ## DHCPv6
 
-Details: [ADMIN.md](ADMIN.md#12-dhcpv6); Entscheidungen D-069 bis D-073.
+Details: [ADMIN.md](ADMIN.md#12-dhcpv6); decisions D-069 to D-073.
 
 ```
- UDP [::]:547 pro Interface (SO_BINDTODEVICE, ff02::1:2)
+ UDP [::]:547 per interface (SO_BINDTODEVICE, ff02::1:2)
         │
- dhcp6.Server ── Worker ──> dhcp6.Handler
-                              ├─ Server-ID-Regeln, Unicast → UseMulticast
-                              ├─ MAC-Filter (DUID-LL/-LLT, Option 79), HA: Accept(DUID)
-                              ├─ Scope: link-address des Relays bzw. Interface-Adressen
-                              │        └─ scope6.Snapshot (atomar, OnChange)
+ dhcp6.Server ── worker ──> dhcp6.Handler
+                              ├─ server ID rules, unicast → UseMulticast
+                              ├─ MAC filter (DUID-LL/-LLT, option 79), HA: Accept(DUID)
+                              ├─ scope: relay's link-address or interface addresses
+                              │        └─ scope6.Snapshot (atomic, OnChange)
                               └─ lease6.Manager.Assign/Extend/Release/Decline
-                                       ├─ In-Memory-Tabelle + leases6 (SQLite)
-                                       └─ HA: CanAllocate6 (eigener Anteil)
+                                       ├─ in-memory table + leases6 (SQLite)
+                                       └─ HA: CanAllocate6 (own share)
 ```
 
-- Getrennt vom IPv4-Pfad (eigene Tabellen und Pakete, D-070), aber nach
-  demselben Muster: Konfiguration im Snapshot, Bindungen im Speicher und vor
-  der Antwort persistiert, Expiry-Goroutine, Audit, Metriken
-  (`leasorix_dhcp6_*`).
-- Adressen werden deterministisch aus DUID/IAID gesucht (Scan bis 65 536,
-  sonst Hash-Kandidaten), damit auch ein /64 als Bereich funktioniert (D-071).
-- HA: Konfiguration wird repliziert, Bindungen nicht; jeder Server vergibt
-  nur aus seinem Anteil (D-073).
+- Separate from the IPv4 path (own tables and packages, D-070), but
+  following the same pattern: configuration in the snapshot, bindings in
+  memory and persisted before the response, expiry goroutine, audit,
+  metrics (`leasorix_dhcp6_*`).
+- Addresses are searched deterministically from DUID/IAID (scan up to
+  65,536, otherwise hash candidates), so that even a /64 works as a range
+  (D-071).
+- HA: configuration is replicated, bindings are not; each server allocates
+  only from its own share (D-073).

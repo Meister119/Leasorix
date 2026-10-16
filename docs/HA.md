@@ -1,213 +1,213 @@
-# HA-Handbuch
+# HA guide
 
-Zwei Leasorix-Server im selben Netz teilen sich die Scopes, replizieren
-Leases und Konfiguration und übernehmen füreinander, wenn einer ausfällt.
-Hintergründe zu den Entscheidungen: [DECISIONS.md](DECISIONS.md) D-043 bis
+Two Leasorix servers on the same network share the scopes, replicate
+leases and configuration, and take over for each other when one fails.
+Background on the decisions: [DECISIONS.md](DECISIONS.md) D-043 to
 D-052.
 
-## Modi
+## Modes
 
-| Modus | Wer antwortet im Normalbetrieb | Freie Adressen |
+| Mode | Who answers in normal operation | Free addresses |
 |---|---|---|
-| `load-balance` | Primary für `load_balance_percent` der Clients (Hash der MAC), Secondary für den Rest | im selben Verhältnis geteilt |
-| `hot-standby` | nur der Primary | Standby hält `standby_reserve_percent` (Default 5 %) als Reserve |
+| `load-balance` | Primary for `load_balance_percent` of the clients (hash of the MAC), secondary for the rest | Split in the same ratio |
+| `hot-standby` | Only the primary | Standby keeps `standby_reserve_percent` (default 5%) as a reserve |
 
-Jede freie Adresse gehört fest einem Server. Neue Leases vergibt ein Server
-nur aus seinem Anteil; bestehende Leases verlängert jeder.
+Each free address is owned by exactly one server. A server assigns new
+leases only from its own share; existing leases are renewed by either server.
 
-## Einrichtung
+## Setup
 
-Mit Docker: `deploy/docker-compose.ha.yml` startet ein fertiges Paar
-inklusive Zertifikaten, die Verteilung auf zwei Hosts beschreibt
-[DOCKER.md](DOCKER.md#ha-auf-zwei-docker-hosts). Ohne Container:
+With Docker: `deploy/docker-compose.ha.yml` starts a ready-made pair
+including certificates; running it on two hosts is described in
+[DOCKER.md](DOCKER.md#ha-on-two-docker-hosts). Without containers:
 
-1. **Zertifikate** (mTLS, empfohlen): in der UI unter
-   *Hochverfügbarkeit → mTLS-Zertifikate erzeugen* oder per CLI
+1. **Certificates** (mTLS, recommended): in the UI under
+   *High availability → Generate mTLS certificates* or via the CLI
    ```sh
    leasorixd ha certs --out ./ha-certs dhcp-a dhcp-b
    ```
-   Auf jeden Knoten `ca.pem`, `<node>.pem` und `<node>-key.pem` kopieren
-   (Schlüssel nur über sichere Wege). Alternativ `tls.mode: secret` mit einem
-   gemeinsamen Geheimnis (≥ 16 Zeichen, besser ≥ 32, per
-   `shared_secret_file`).
-2. **Konfiguration** auf beiden Servern (Werte für `mode`, Prozente, `mclt`
-   und `config_leader` müssen übereinstimmen, sonst verbinden sie sich nicht):
+   Copy `ca.pem`, `<node>.pem` and `<node>-key.pem` to each node
+   (transfer keys only over secure channels). Alternatively, use
+   `tls.mode: secret` with a shared secret (≥ 16 characters, preferably ≥ 32,
+   via `shared_secret_file`).
+2. **Configuration** on both servers (the values of `mode`, the percentages,
+   `mclt` and `config_leader` must match, otherwise the servers will not
+   connect):
    ```yaml
    # Server A                              # Server B: node_id dhcp-b,
    ha:                                     # role secondary, peer dhcp-a
-     mode: load-balance                    # bzw. hot-standby
+     mode: load-balance                    # or hot-standby
      node_id: dhcp-a
      role: primary
      listen: "10.99.0.1:8068"
      peer: { id: dhcp-b, address: "10.99.0.2:8068" }
      # load_balance_percent: 50
      # standby_reserve_percent: 5
-     # replication: sync                   # oder async
+     # replication: sync                   # or async
      # mclt: 1h
-     # auto_partner_down: 0                # 0 = nur manuell
+     # auto_partner_down: 0                # 0 = manual only
      tls:
        mode: mtls
        ca_file: /etc/leasorix/ha/ca.pem
        cert_file: /etc/leasorix/ha/dhcp-a.pem
        key_file: /etc/leasorix/ha/dhcp-a-key.pem
    ```
-   Alle Werte lassen sich auch per Umgebungsvariable setzen
+   All values can also be set via environment variables
    (`LEASORIX_HA_PEER_ADDRESS`, `LEASORIX_HA_TLS_SHARED_SECRET_FILE`, …).
-3. **Starten**: zuerst den Config-Leader (Default: Primary) einrichten
-   (Setup-Token, Scopes), dann den Partner starten. Der Partner übernimmt
-   Konfiguration und Benutzer automatisch; die Anmeldung funktioniert danach
-   auf beiden Servern mit denselben Zugangsdaten.
-4. Den Peer-Port (Default 8068/TCP) nur zwischen den beiden Servern
-   freigeben. Eine eigene Verbindung (VLAN/Kabel) für die Replikation ist
-   gut, aber nicht nötig.
+3. **Start**: first set up the config leader (default: the primary)
+   (setup token, scopes), then start the partner. The partner takes over the
+   configuration and users automatically; afterwards, signing in works on
+   both servers with the same credentials.
+4. Open the peer port (default 8068/TCP) only between the two servers. A
+   dedicated link (VLAN/cable) for replication is good, but not required.
 
-Ein Server mit HA-Konfiguration vergibt erst Adressen, wenn er sich mit dem
-Partner abgeglichen hat. Wird nur ein Server in Betrieb genommen, muss der
-Partner-Ausfall einmal bestätigt werden (siehe unten) – oder HA erst
-aktivieren, wenn beide bereitstehen.
+A server with an HA configuration only starts assigning addresses once it
+has synchronized with its partner. If only one server is put into
+operation, the partner failure must be confirmed once (see below) – or
+enable HA only when both servers are ready.
 
-## Zustände
+## States
 
-| Zustand | Bedeutung | DHCP |
+| State | Meaning | DHCP |
 |---|---|---|
-| `NORMAL` | Partner verbunden, alles abgeglichen | Aufteilung laut Modus; Leases werden vor dem ACK zum Partner repliziert |
-| `COMMUNICATION_INTERRUPTED` | Partner nicht erreichbar (Ausfall oder Netztrennung) | beantwortet alle Clients, neue Adressen nur aus dem eigenen Anteil, Lease-Zeit höchstens MCLT |
-| `PARTNER_DOWN` | Partner als ausgefallen bestätigt | alle Clients; nach Ablauf der MCLT der ganze Pool |
-| `RECOVER` | Abgleich mit dem Partner läuft (nach Start oder Wiederverbindung) | keine Antworten |
-| `RECOVER_DONE` | eigener Abgleich fertig, wartet auf den Partner | keine Antworten |
+| `NORMAL` | Partner connected, everything synchronized | Split according to the mode; leases are replicated to the partner before the ACK |
+| `COMMUNICATION_INTERRUPTED` | Partner unreachable (failure or network partition) | Answers all clients; new addresses only from its own share, lease time at most MCLT |
+| `PARTNER_DOWN` | Partner confirmed as down | All clients; after the MCLT has elapsed, the entire pool |
+| `RECOVER` | Synchronization with the partner in progress (after startup or reconnect) | No replies |
+| `RECOVER_DONE` | Own synchronization finished, waiting for the partner | No replies |
 
-Der Abgleich zieht die komplette Lease-Tabelle des Partners und führt sie
-zusammen (neuere Änderung gewinnt; bei echten Konflikten das spätere
-Lease-Ende, dann die höhere Node-ID). Er dauert typischerweise unter einer
-Sekunde; Clients wiederholen ihre Anfragen ohnehin.
+Synchronization pulls the partner's complete lease table and merges it
+(the newer change wins; for true conflicts, the later lease end wins, then
+the higher node ID). It typically takes less than a second; clients retry
+their requests anyway.
 
-## Betrieb
+## Operation
 
-**Ein Server fällt aus.** Der andere geht nach `communication_timeout`
-(Default 10 s) in `COMMUNICATION_INTERRUPTED`: bestehende Clients werden
-weiter verlängert (höchstens um die MCLT), neue Clients bekommen Adressen aus
-dem eigenen Anteil (im Hot Standby aus der Reserve).
+**A server fails.** After `communication_timeout` (default 10 s), the
+other server goes to `COMMUNICATION_INTERRUPTED`: existing clients continue
+to be renewed (by at most the MCLT), and new clients get addresses from its
+own share (in hot standby, from the reserve).
 
-**Partner-Ausfall bestätigen.** Ist der Partner sicher dauerhaft weg (nicht
-nur die Verbindung gestört!), in der UI *Partner-Ausfall bestätigen* oder
-`POST /api/v1/ha/partner-down` (Admin). Nach Ablauf der MCLT nutzt der
-Server den ganzen Pool. Mit `auto_partner_down: 30m` geschieht das
-automatisch nach dieser Zeit – Vorsicht: bei einer reinen Netztrennung
-zwischen den Servern würden dann beide den ganzen Pool nutzen; die
-ICMP-Konflikterkennung bleibt als Sicherheitsnetz aktiv.
+**Confirm partner down.** If the partner is definitely gone for good (not
+just a disrupted connection!), use *Confirm partner down* in the UI or
+`POST /api/v1/ha/partner-down` (admin). Once the MCLT has elapsed, the
+server uses the entire pool. With `auto_partner_down: 30m`, this happens
+automatically after that time – caution: in a pure network partition
+between the servers, both would then use the entire pool; ICMP conflict
+detection remains active as a safety net.
 
-**Rückkehr.** Der zurückkommende Server startet in `RECOVER`, gleicht ab und
-beide gehen nach `NORMAL`. Ein Server, der länger als `auto_partner_down`
-weg war, wartet in jedem Fall auf den Partner.
+**Return.** The returning server starts in `RECOVER`, synchronizes, and
+both go to `NORMAL`. A server that was gone for longer than
+`auto_partner_down` always waits for the partner.
 
-**Konfiguration ändern.** Nur auf dem Config-Leader; der Partner zeigt ein
-Banner und lehnt Änderungen ab (API: 409). Änderungen sind nach Sekunden
-(im Test < 1 s) auf dem Partner. Fällt der Leader länger aus, auf dem
-verbliebenen Server `config_leader` auf dessen Rolle umstellen und neu
-starten; beim Zurückholen des alten Leaders beide Konfigurationen wieder
-angleichen.
+**Changing the configuration.** Only on the config leader; the partner
+shows a banner and rejects changes (API: 409). Changes reach the partner
+within seconds (< 1 s in testing). If the leader is down for an extended
+period, set `config_leader` on the remaining server to that server's role
+and restart it; when bringing the old leader back, align both
+configurations again.
 
-**Wartung / Updates.** Server nacheinander neu starten. Ein neu gestarteter
-Server gleicht sofort mit dem laufenden Partner ab.
+**Maintenance / updates.** Restart the servers one at a time. A freshly
+restarted server synchronizes with the running partner immediately.
 
-**DNS-Updates.** DNS-Zonen und TSIG-Schlüssel werden wie die übrige
-Konfiguration repliziert. Jeder Server registriert die Leases, die er
-vergibt oder verlängert; übernimmt der Partner einen Client, aktualisiert er
-dessen Records (gleiche DHCID, kein Konflikt). Die Registrierungsliste
-(*DNS-Updates → Registrierungen*) zeigt jeweils den Stand des eigenen
-Servers.
+**DNS updates.** DNS zones and TSIG keys are replicated like the rest of
+the configuration. Each server registers the leases it assigns or renews;
+if the partner takes over a client, it updates that client's records (same
+DHCID, no conflict). The registration list
+(*DNS updates → Registrations*) always shows the state of the local
+server.
 
 ## DHCPv6
 
-Die DHCPv6-Konfiguration (IPv6-Scopes, Ausschlüsse, Reservierungen,
-Optionen) wird wie die IPv4-Konfiguration vom Config-Leader repliziert.
-DHCPv6-**Bindungen** werden dagegen nicht repliziert (D-073):
+The DHCPv6 configuration (IPv6 scopes, exclusions, reservations, options)
+is replicated by the config leader just like the IPv4 configuration.
+DHCPv6 **bindings**, however, are not replicated (D-073):
 
-- Clients werden über einen Hash der DUID aufgeteilt, Adressen und
-  delegierte Präfixe über einen Hash der Adresse – im selben Verhältnis wie
-  bei IPv4 (Load Balance bzw. Hot Standby mit Reserve). Jeder Server vergibt
-  nur aus seinem Anteil, daher entstehen auch ohne Replikation keine
-  doppelten Bindungen.
-- Nachrichten mit der Server-ID eines Servers (REQUEST, RENEW, RELEASE,
-  DECLINE) beantwortet nur dieser Server.
-- Ist der Partner nicht erreichbar (`COMMUNICATION_INTERRUPTED`,
-  `PARTNER_DOWN`), beantwortet ein Server alle Clients, vergibt aber auch dann
-  nur aus seinem Anteil (der ganze Pool nach MCLT wie bei IPv4 entfällt, weil
-  der Server die Bindungen des Partners nicht kennt). Clients des ausgefallenen
-  Servers erhalten beim REBIND eine neue Adresse bzw. ein neues Präfix aus
-  diesem Anteil; die alte Bindung wird mit Lebensdauer 0 beendet. Bei
-  delegierten Präfixen ändern sich damit die Präfixe hinter dem Router.
-- Im Hot-Standby gehört dem Standby nur die Reserve (`standby_reserve_percent`)
-  – bei einem /64 als Bereich mehr als genug, bei kleinen Bereichen oder
-  Delegations-Pools ggf. größer wählen.
+- Clients are split by a hash of the DUID, addresses and delegated
+  prefixes by a hash of the address – in the same ratio as with IPv4 (load
+  balance, or hot standby with a reserve). Each server assigns only from
+  its own share, so no duplicate bindings occur even without replication.
+- Messages carrying a server's server ID (REQUEST, RENEW, RELEASE,
+  DECLINE) are answered only by that server.
+- If the partner is unreachable (`COMMUNICATION_INTERRUPTED`,
+  `PARTNER_DOWN`), a server answers all clients, but even then assigns only
+  from its own share (taking over the entire pool after the MCLT, as with
+  IPv4, does not apply because the server does not know the partner's
+  bindings). Clients of the failed server receive a new address or a new
+  prefix from this share at REBIND; the old binding is ended with a
+  lifetime of 0. For delegated prefixes, this means the prefixes behind the
+  router change.
+- In hot standby, the standby owns only the reserve (`standby_reserve_percent`)
+  – more than enough with a /64 as the range; for small ranges or
+  delegation pools, choose a larger value if necessary.
 
-## Fallback: Split Scope (ohne Replikation)
+## Fallback: split scope (without replication)
 
-Für zwei unabhängige Server ohne HA-Partnerschaft: Scope öffnen →
-*Split-Scope…* → Anteil wählen (üblich 80/20) → *Aufteilen*. Dieser Server
-schließt den Bereich des zweiten aus; die heruntergeladene Datei auf dem
-zweiten Server unter *Scopes → Importieren…* einspielen (dort ist der Teil
-des ersten Servers ausgeschlossen). API: `POST /scopes/{id}/split`,
+For two independent servers without an HA partnership: open the scope →
+*Split scope…* → choose the share (typically 80/20) → *Split*. This server
+excludes the second server's range; load the downloaded file on the
+second server under *Scopes → Import…* (there, the first server's part is
+excluded). API: `POST /scopes/{id}/split`,
 `POST /scopes/import`.
 
-## Notfall: Lease-Datenbank sichern und einspielen
+## Emergency: back up and restore the lease database
 
-- UI: *Hochverfügbarkeit → Notfall* bzw. *Leases → Exportieren*; Import nur
-  für Admins.
+- UI: *High availability → Emergency* or *Leases → Export*; import is
+  admin-only.
 - API: `GET /api/v1/leases/export`, `POST /api/v1/leases/import`.
-- CLI: `leasorixd leases export --config … [--out datei.json]` (auch im
-  laufenden Betrieb), `leasorixd leases import --config … datei.json` (nur bei
-  gestopptem Dienst).
+- CLI: `leasorixd leases export --config … [--out file.json]` (also while
+  the server is running), `leasorixd leases import --config … file.json`
+  (only with the service stopped).
 
-Der Import führt die Datensätze mit dem Bestand zusammen und ist
-wiederholbar. Datensätze außerhalb aller Scopes werden übersprungen.
+The import merges the records with the existing data and can be
+repeated. Records outside all scopes are skipped.
 
-## Überwachung
+## Monitoring
 
 Prometheus (`/metrics`):
 
-| Metrik | Bedeutung |
+| Metric | Meaning |
 |---|---|
-| `leasorix_ha_state{state}` | 1 für den aktuellen Zustand |
-| `leasorix_ha_partner_connected` | Heartbeats erfolgreich |
-| `leasorix_ha_lease_updates_total{direction}` | replizierte Lease-Änderungen |
-| `leasorix_ha_replication_errors_total` | nicht zugestellte Update-Pakete |
-| `leasorix_ha_replication_duration_seconds` | Laufzeit der Updates |
-| `leasorix_ha_lease_conflicts_total` | aufgelöste Konflikte |
-| `leasorix_ha_resyncs_total{result}` | Abgleiche |
-| `leasorix_ha_config_version` | Konfigurationsversion |
-| `leasorix_ha_certificate_expiry_timestamp_seconds` | Ablauf des Knotenzertifikats |
+| `leasorix_ha_state{state}` | 1 for the current state |
+| `leasorix_ha_partner_connected` | Heartbeats succeeding |
+| `leasorix_ha_lease_updates_total{direction}` | Replicated lease changes |
+| `leasorix_ha_replication_errors_total` | Undelivered update packets |
+| `leasorix_ha_replication_duration_seconds` | Duration of the updates |
+| `leasorix_ha_lease_conflicts_total` | Resolved conflicts |
+| `leasorix_ha_resyncs_total{result}` | Synchronizations |
+| `leasorix_ha_config_version` | Configuration version |
+| `leasorix_ha_certificate_expiry_timestamp_seconds` | Expiry of the node certificate |
 
-Empfohlene Alarme: Zustand ≠ NORMAL länger als einige Minuten,
-`replication_errors_total` steigt, Zertifikat läuft in < 30 Tagen ab.
-Zustandswechsel stehen zusätzlich im Audit-Log (`ha.state`,
+Recommended alerts: state ≠ NORMAL for longer than a few minutes,
+`replication_errors_total` increasing, certificate expiring in < 30 days.
+State changes are also recorded in the audit log (`ha.state`,
 `ha.partner_down`, `ha.config_applied`, `lease.ha_conflict`).
 
-## Fehlersuche
+## Troubleshooting
 
-| Meldung (UI/Log) | Ursache |
+| Message (UI/log) | Cause |
 |---|---|
-| `partner reports node id …` / `both servers are configured as primary` / `… differs` | Einstellungen der beiden Server passen nicht zusammen |
-| `peer certificate does not belong to …` | Zertifikat gehört nicht zur konfigurierten `peer.id` |
-| `peer authentication failed` | Shared Secret oder Node-ID falsch |
-| `connection refused` / `network is unreachable` | Partner aus, Port 8068 gesperrt oder falsche `peer.address` |
-| Server bleibt in `RECOVER` | Partner nie erreicht (erster Start) – Partner starten oder Ausfall bestätigen |
+| `partner reports node id …` / `both servers are configured as primary` / `… differs` | The settings of the two servers do not match |
+| `peer certificate does not belong to …` | The certificate does not belong to the configured `peer.id` |
+| `peer authentication failed` | Wrong shared secret or node ID |
+| `connection refused` / `network is unreachable` | Partner is off, port 8068 is blocked or `peer.address` is wrong |
+| Server stays in `RECOVER` | Partner never reached (first start) – start the partner or confirm partner down |
 
-## Test
+## Testing
 
-`make test-ha` (root) startet zwei echte `leasorixd` in Network Namespaces
-und prüft: 5000 Clients im Load Balance ohne doppelte Adressen, harten
-Ausfall des Primary im Hot Standby (Verlängerung beim Standby, Übernahme,
-Abgleich bei Rückkehr), Netztrennung mit anschließender Zusammenführung und
-die Konfigurations-Replikation.
+`make test-ha` (as root) starts two real `leasorixd` instances in network
+namespaces and checks: 5,000 clients in load balance without duplicate
+addresses, a hard failure of the primary in hot standby (renewal by the
+standby, takeover, synchronization on return), a network partition with
+subsequent merge, and configuration replication.
 
-## Grenzen
+## Limitations
 
-- Genau zwei Server pro Partnerschaft und eine Partnerschaft pro Server
-  (alle Scopes); kein Raft-Cluster (D-052).
-- Die Uhren beider Server sollten per NTP synchron sein (Lease-Zeiten und
-  die Reihenfolge von Änderungen basieren auf Zeitstempeln).
-- Admin-Löschungen während einer Netztrennung können beim Abgleich
-  zurückkommen (D-048).
-- DHCPv6-Bindungen werden nicht repliziert; bei Ausfall eines Servers
-  wechseln dessen DHCPv6-Clients die Adresse (siehe [DHCPv6](#dhcpv6)).
+- Exactly two servers per partnership and one partnership per server
+  (all scopes); no Raft cluster (D-052).
+- The clocks of both servers should be kept in sync via NTP (lease times
+  and the ordering of changes are based on timestamps).
+- Admin deletions made during a network partition can reappear during
+  synchronization (D-048).
+- DHCPv6 bindings are not replicated; if a server fails, its DHCPv6
+  clients change their address (see [DHCPv6](#dhcpv6)).
