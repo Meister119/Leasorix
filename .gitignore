@@ -12,5 +12,7 @@ coverage.out
 /web/test-results/
 /web/playwright-report/
 
-# stray local builds of helper commands
+# stray local builds (go build ./cmd/... in the repository root)
 /setcap
+/leasorixd
+/leasorixctl

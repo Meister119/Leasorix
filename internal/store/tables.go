@@ -248,10 +248,11 @@ func RemapLeases(ctx context.Context, tx *sql.Tx) error {
 var DHCPConfigTables = []string{
 	"scopes", "superscopes", "superscope_members", "classes", "option_definitions",
 	"exclusions", "reservations", "policies", "policy_conditions", "policy_ranges",
-	"options", "mac_filters", "settings",
+	"options", "mac_filters", "settings", "dns_zones",
 }
 
 // ConfigTables are all replicated configuration tables: the DHCP
-// configuration plus users and API tokens. Leases, audit log, sessions and
-// HA state are local to each server.
-var ConfigTables = append(append([]string{}, DHCPConfigTables...), "users", "api_tokens")
+// configuration plus the secrets that are not part of exports (users, API
+// tokens, TSIG keys). Leases, audit log, sessions, HA state and DNS
+// registrations are local to each server.
+var ConfigTables = append(append([]string{}, DHCPConfigTables...), "users", "api_tokens", "dns_keys")

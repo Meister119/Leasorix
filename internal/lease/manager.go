@@ -684,6 +684,9 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 	out := *l
 	m.mu.Unlock()
 
+	// shortened: the partner may hold the longer lease (it can store a
+	// change it did not confirm in time) and must get the final one.
+	shortened := false
 	if m.coord != nil {
 		changes := make([]Change, 0, 1+len(superseded))
 		changes = append(changes, Change{Lease: out})
@@ -692,11 +695,17 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 		}
 		if !m.coord.Replicate(ctx, changes, true) {
 			if short := limitLease(leaseTime, m.coord.LeaseLimit()); short != leaseTime {
-				leaseTime = short
+				leaseTime, shortened = short, true
 				m.mu.Lock()
-				out.Expires = now.Add(short)
+				// A strictly newer change stamp, so that the shortened
+				// record replaces the original one on the partner.
+				_, upd2 := m.stamps()
+				if !upd2.After(out.Updated) {
+					upd2 = out.Updated.Add(time.Millisecond)
+				}
+				out.Expires, out.Updated = now.Add(short), upd2
 				if m.leases[ip] == l {
-					l.Expires = out.Expires
+					l.Expires, l.Updated = out.Expires, out.Updated
 				}
 				m.mu.Unlock()
 			}
@@ -715,6 +724,9 @@ func (m *Manager) Request(ctx context.Context, c Client, cand Candidate, ip uint
 	}
 	if err := m.db.Apply(ctx, ops...); err != nil {
 		return Result{}, err
+	}
+	if shortened {
+		m.replicate(ctx, false, Change{Lease: out})
 	}
 	return Result{Ack: true, Lease: out, LeaseTime: leaseTime}, nil
 }

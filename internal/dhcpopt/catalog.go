@@ -75,6 +75,7 @@ var Managed = map[uint8]string{
 	58:  "renewal time T1 (derived from the lease time)",
 	59:  "rebinding time T2 (derived from the lease time)",
 	61:  "client identifier (client only)",
+	81:  "client FQDN (answered according to the scope's DNS update settings)",
 	82:  "relay agent information (relay only)",
 	118: "subnet selection (client only)",
 	255: "end",

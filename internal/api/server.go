@@ -20,6 +20,7 @@ import (
 	"github.com/meister119/leasorix/internal/api/gen"
 	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/auth"
+	"github.com/meister119/leasorix/internal/dnsupdate"
 	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
@@ -44,6 +45,11 @@ type HA interface {
 
 // Deps are the collaborators of the HTTP server. Only Log, Health and
 // Metrics are mandatory; without Auth the REST API is not mounted.
+// DNS is the dynamic DNS updater as seen by the API.
+type DNS interface {
+	Registrations() []dnsupdate.Registration
+}
+
 type Deps struct {
 	Log     *slog.Logger
 	Health  *health.Checker
@@ -58,6 +64,8 @@ type Deps struct {
 	Info   SystemInfo
 	// HA is the high availability node (nil = not configured).
 	HA HA
+	// DNS reports the dynamic DNS registrations (nil = none).
+	DNS DNS
 	// UI serves the embedded web interface (nil = placeholder page).
 	UI http.Handler
 	// TLS enables HTTPS when set.

@@ -67,6 +67,9 @@ func TestHAReadOnlyPartner(t *testing.T) {
 	a.must(409, "PUT", fmt.Sprintf("/scopes/%d", sc.Id), scopeInput("x", "10.0.0.0/24", "10.0.0.100", "10.0.0.200"))
 	a.must(409, "POST", "/users", gen.UserCreate{Username: "op", Password: "operator-pass", Role: gen.Operator})
 	a.must(409, "POST", "/leases/"+ip4.String(o.IP)+"/reservation", map[string]any{})
+	a.must(409, "POST", "/dns/zones", gen.DnsZoneInput{Name: "example.lan", Server: "192.0.2.53"})
+	a.must(409, "POST", "/dns/keys", gen.DnsKeyInput{Name: "k", Secret: ptr(testSecret)})
+	a.must(200, "GET", "/dns/registrations", nil)
 	// Reading and lease operations stay possible.
 	a.must(200, "GET", "/scopes", nil)
 	a.must(204, "DELETE", "/leases/"+ip4.String(o.IP), nil)

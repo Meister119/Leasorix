@@ -45,7 +45,17 @@ type Document struct {
 	ServerPolicies    []scope.BundlePolicy `json:"server_policies,omitempty" yaml:"server_policies,omitempty"`
 	MACFilters        []MACFilter          `json:"mac_filters,omitempty" yaml:"mac_filters,omitempty"`
 	Superscopes       []Superscope         `json:"superscopes,omitempty" yaml:"superscopes,omitempty"`
+	DNSZones          []DNSZone            `json:"dns_zones,omitempty" yaml:"dns_zones,omitempty"`
 	Scopes            []scope.Bundle       `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+}
+
+// DNSZone is a zone for dynamic DNS updates. The TSIG key is referenced by
+// name; keys are secrets and not part of the document (like users), so the
+// key must exist on the importing server.
+type DNSZone struct {
+	Name    string `json:"name" yaml:"name"`
+	Server  string `json:"server" yaml:"server"`
+	TSIGKey string `json:"tsig_key,omitempty" yaml:"tsig_key,omitempty"`
 }
 
 // Settings are the server wide switches.
@@ -137,6 +147,13 @@ func Export(ctx context.Context, s *scope.Store, now time.Time) (*Document, erro
 	}
 	for _, ss := range sss {
 		d.Superscopes = append(d.Superscopes, Superscope{Name: ss.Name, Description: ss.Description})
+	}
+	zones, err := s.ListDNSZones(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, z := range zones {
+		d.DNSZones = append(d.DNSZones, DNSZone{Name: z.Name, Server: z.Server, TSIGKey: z.KeyName})
 	}
 	scopes, err := s.ListScopes(ctx)
 	if err != nil {
@@ -232,11 +249,15 @@ type Summary struct {
 	Options           int  `json:"options"`
 	MACFilters        int  `json:"mac_filters"`
 	Superscopes       int  `json:"superscopes"`
+	DNSZones          int  `json:"dns_zones"`
 }
 
 // importTables are the configuration tables an import replaces (users and
 // API tokens stay untouched).
 var importTables = store.DHCPConfigTables
+
+// keyTables are copied into the import database as reference data.
+var keyTables = []string{"dns_keys"}
 
 // Import applies a document to the live database and reloads the scope
 // store. The context actor is recorded in one audit entry.
@@ -258,6 +279,14 @@ func Import(ctx context.Context, db *store.DB, live *scope.Store, d *Document, o
 	}
 	defer tmp.Close()
 	if err := tmp.Migrate(ctx, slog.New(slog.DiscardHandler)); err != nil {
+		return nil, err
+	}
+	// TSIG keys are not imported but zones refer to them.
+	keys, err := store.DumpTables(ctx, db.R, keyTables)
+	if err != nil {
+		return nil, err
+	}
+	if err := tmp.ReplaceTables(ctx, keyTables, keys, store.ReplaceOptions{}); err != nil {
 		return nil, err
 	}
 	if opt.Mode == ModeMerge {
@@ -287,7 +316,7 @@ func Import(ctx context.Context, db *store.DB, live *scope.Store, d *Document, o
 	}
 	entry := audit.New(ctx, "config.import", "config", string(opt.Mode), map[string]any{
 		"mode": string(opt.Mode), "scopes": sum.Scopes, "reservations": sum.Reservations, "policies": sum.Policies,
-		"classes": sum.Classes, "options": sum.Options, "mac_filters": sum.MACFilters,
+		"classes": sum.Classes, "options": sum.Options, "mac_filters": sum.MACFilters, "dns_zones": sum.DNSZones,
 	})
 	err = db.ReplaceTables(ctx, importTables, result, store.ReplaceOptions{
 		After: func(ctx context.Context, tx *sql.Tx) error {
@@ -377,6 +406,31 @@ func apply(ctx context.Context, s *scope.Store, d *Document) (*Summary, error) {
 			return nil, wrap(fmt.Sprintf("superscope %q", ss.Name), err)
 		}
 		sum.Superscopes++
+	}
+	if len(d.DNSZones) > 0 {
+		keys, err := s.ListDNSKeys(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, dz := range d.DNSZones {
+			z := scope.DNSZone{Name: dz.Name, Server: dz.Server}
+			if dz.TSIGKey != "" {
+				for _, k := range keys {
+					if strings.EqualFold(k.Name, scope.NormalizeDNSName(dz.TSIGKey)) {
+						z.KeyID = k.ID
+					}
+				}
+				if z.KeyID == 0 {
+					var v apperr.Validator
+					v.Add("document", "DNS zone %q: TSIG key %q does not exist on this server; create it first (keys are not exported)", dz.Name, dz.TSIGKey)
+					return nil, v.Err()
+				}
+			}
+			if _, err := s.CreateDNSZone(ctx, z); err != nil {
+				return nil, wrap(fmt.Sprintf("DNS zone %q", dz.Name), err)
+			}
+			sum.DNSZones++
+		}
 	}
 	for i := range d.Scopes {
 		b := d.Scopes[i]

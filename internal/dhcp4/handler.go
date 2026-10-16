@@ -10,6 +10,7 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv4"
 
 	"github.com/meister119/leasorix/internal/audit"
+	"github.com/meister119/leasorix/internal/dnsupdate"
 	"github.com/meister119/leasorix/internal/ip4"
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/macaddr"
@@ -64,6 +65,11 @@ type Partner interface {
 	Accept(mac string, directed bool) (bool, string)
 }
 
+// DNSUpdater registers acknowledged leases in DNS (asynchronously).
+type DNSUpdater interface {
+	Bound(l lease.Lease, s scope.DNSSettings, d dnsupdate.Decision, leaseTime time.Duration)
+}
+
 // Handler implements the DHCPv4 server state machine (RFC 2131). It is
 // independent of sockets and can be driven directly in tests.
 type Handler struct {
@@ -72,6 +78,7 @@ type Handler struct {
 	leases  *lease.Manager
 	metrics *metrics.DHCP4
 	partner Partner
+	dns     DNSUpdater
 	// bootpLease is the lease duration of BOOTP clients.
 	bootpLease time.Duration
 }
@@ -88,6 +95,15 @@ func (h *Handler) SetMetrics(m *metrics.DHCP4) { h.metrics = m }
 
 // SetPartner enables HA client distribution.
 func (h *Handler) SetPartner(p Partner) { h.partner = p }
+
+// SetDNS enables dynamic DNS updates.
+func (h *Handler) SetDNS(d DNSUpdater) { h.dns = d }
+
+// dnsDecision applies the scope's DNS settings to the client's name
+// options; opts are the resolved options of the reply (for option 15).
+func dnsDecision(m *dhcpv4.DHCPv4, p *scope.Pool, hostname string, opts map[uint8][]byte) dnsupdate.Decision {
+	return dnsupdate.Decide(p.DNS, m.Options.Get(dhcpv4.OptionFQDN), hostname, string(opts[dhcpv4.OptionDomainName.Code()]))
+}
 
 // directed reports whether the message is explicitly addressed to this
 // server: it carries one of our server identifiers, or it is a renewal
@@ -197,10 +213,17 @@ func (t *txn) drop(reason string) *Response {
 }
 
 func clientOf(m *dhcpv4.DHCPv4) lease.Client {
+	host := sanitizeHostname(m.HostName())
+	if host == "" {
+		// Clients that only send the Client FQDN option (81).
+		if f, err := dnsupdate.ParseClientFQDN(m.Options.Get(dhcpv4.OptionFQDN)); err == nil {
+			host = dnsupdate.HostLabel(f.Name)
+		}
+	}
 	return lease.Client{
 		MAC:      macaddr.FromHW(m.ClientHWAddr),
 		ClientID: macaddr.ClientIDFromBytes(m.Options.Get(dhcpv4.OptionClientIdentifier)),
-		Hostname: sanitizeHostname(m.HostName()),
+		Hostname: host,
 	}
 }
 
@@ -350,8 +373,12 @@ func (h *Handler) discover(ctx context.Context, t *txn) *Response {
 		return nil
 	}
 	ev := evals[o.Pool.ID]
+	opts := snap.Options(ev, o.Reservation)
 	h.addLeaseOptions(reply, o.Pool, sid, o.LeaseTime)
-	addConfiguredOptions(log, reply, req.Msg, snap.Options(ev, o.Reservation))
+	if d := dnsDecision(req.Msg, o.Pool, t.client.Hostname, opts); d.Reply != nil {
+		reply.UpdateOption(dhcpv4.OptGeneric(dhcpv4.OptionFQDN, d.Reply))
+	}
+	addConfiguredOptions(log, reply, req.Msg, opts)
 	log.Debug("offer", "ip", ip4.String(o.IP), "scope", o.Pool.Name, "policies", ev.PolicyNames())
 	return h.addressed(req, reply, sid)
 }
@@ -464,9 +491,17 @@ func (h *Handler) request(ctx context.Context, t *txn) *Response {
 		log.Error("building ack", "err", err)
 		return nil
 	}
+	opts := snap.Options(&ev, pool.ReservationFor(c.MAC, c.ClientID))
 	h.addLeaseOptions(reply, pool, sidAddr, res.LeaseTime)
-	addConfiguredOptions(log, reply, m, snap.Options(&ev, pool.ReservationFor(c.MAC, c.ClientID)))
-	log.Info("lease acknowledged", "expires", res.Lease.Expires, "hostname", res.Lease.Hostname, "policies", ev.PolicyNames())
+	d := dnsDecision(m, pool, res.Lease.Hostname, opts)
+	if d.Reply != nil {
+		reply.UpdateOption(dhcpv4.OptGeneric(dhcpv4.OptionFQDN, d.Reply))
+	}
+	addConfiguredOptions(log, reply, m, opts)
+	if h.dns != nil {
+		h.dns.Bound(res.Lease, pool.DNS, d, res.LeaseTime)
+	}
+	log.Info("lease acknowledged", "expires", res.Lease.Expires, "hostname", res.Lease.Hostname, "dns_name", d.FQDN, "policies", ev.PolicyNames())
 	return h.addressed(req, reply, sidAddr)
 }
 

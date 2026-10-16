@@ -243,7 +243,7 @@ func TestNetshImport(t *testing.T) {
 		for _, w := range warnings {
 			reasons += w.Reason + "\n"
 		}
-		for _, want := range []string{"class-specific option values", "managed by Leasorix", "multicast", "DHCPv6", "dynamic DNS", "vendor-specific option definitions"} {
+		for _, want := range []string{"class-specific option values", "managed by Leasorix", "multicast", "DHCPv6", "create the DNS zones", "vendor-specific option definitions"} {
 			if !strings.Contains(reasons, want) {
 				t.Errorf("missing warning %q in\n%s", want, reasons)
 			}
@@ -269,6 +269,14 @@ func TestNetshImport(t *testing.T) {
 		}
 		if office.SuperscopeID == 0 || office.SuperscopeID != lab.SuperscopeID {
 			t.Fatal("superscope not imported")
+		}
+		// Server "set dnsconfig 1 0 1 0" is the default, the lab scope has
+		// its own "1 1 0 0".
+		if office.DNS.Mode != scope.DNSClient || !office.DNS.Cleanup || !office.DNS.Protect {
+			t.Fatalf("office dns %+v", office.DNS)
+		}
+		if lab.DNS.Mode != scope.DNSAlways || lab.DNS.Cleanup {
+			t.Fatalf("lab dns %+v", lab.DNS)
 		}
 		res := office.ReservationFor("00:15:5d:0a:0b:0c", "")
 		if res == nil || res.Hostname != "printer01.example.local" || res.Description != "Printer 1st floor" {

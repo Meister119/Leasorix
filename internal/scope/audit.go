@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/meister119/leasorix/internal/audit"
 )
@@ -32,6 +33,8 @@ func scopeDetails(sc Scope) map[string]any {
 		"name": sc.Name, "description": sc.Description, "subnet": sc.Subnet.String(),
 		"start": sc.Start.String(), "end": sc.End.String(), "lease_time": leaseSeconds(sc), "enabled": sc.Enabled,
 		"bootp": sc.BOOTP, "superscope_id": sc.SuperscopeID,
+		"dns": map[string]any{"mode": string(sc.DNS.Mode), "domain": sc.DNS.Domain, "ttl": int64(sc.DNS.TTL / time.Second),
+			"cleanup": sc.DNS.Cleanup, "protect": sc.DNS.Protect},
 	}
 }
 

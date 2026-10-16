@@ -35,6 +35,7 @@ tags:
   - name: audit
   - name: users
   - name: system
+  - name: dns
 
 paths:
   /setup:
@@ -286,6 +287,129 @@ paths:
       responses:
         "204": { description: Deleted; the member scopes are kept. }
         "404": { $ref: "#/components/responses/NotFound" }
+  /dns/keys:
+    get:
+      tags: [dns]
+      operationId: listDnsKeys
+      description: TSIG keys (the secrets are never returned).
+      responses:
+        "200":
+          description: All keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsKey" }
+    post:
+      tags: [dns]
+      operationId: createDnsKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsKeyInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [dns]
+      operationId: updateDnsKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsKeyInput" }
+      responses:
+        "200":
+          description: Updated (an empty secret keeps the stored one).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [dns]
+      operationId: deleteDnsKey
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/zones:
+    get:
+      tags: [dns]
+      operationId: listDnsZones
+      responses:
+        "200":
+          description: Zones that receive dynamic updates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsZone" }
+    post:
+      tags: [dns]
+      operationId: createDnsZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsZoneInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsZone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /dns/zones/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [dns]
+      operationId: updateDnsZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DnsZoneInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsZone" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [dns]
+      operationId: deleteDnsZone
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /dns/registrations:
+    get:
+      tags: [dns]
+      operationId: listDnsRegistrations
+      description: DNS registrations of this server (local state, not replicated).
+      responses:
+        "200":
+          description: Registrations ordered by address.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DnsRegistration" }
   /config/export:
     get:
       tags: [system]
@@ -1319,7 +1443,7 @@ components:
 
     Scope:
       type: object
-      required: [id, name, description, subnet, start, end, lease_time, enabled, bootp, superscope_id, created_at, updated_at]
+      required: [id, name, description, subnet, start, end, lease_time, enabled, bootp, superscope_id, dns, created_at, updated_at]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -1331,6 +1455,7 @@ components:
         enabled: { type: boolean }
         bootp: { type: boolean, description: Dynamic BOOTP for this scope. }
         superscope_id: { type: integer, format: int64, description: 0 = no superscope. }
+        dns: { $ref: "#/components/schemas/DnsSettings" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     ScopeInput:
@@ -1346,6 +1471,74 @@ components:
         enabled: { type: boolean }
         bootp: { type: boolean }
         superscope_id: { type: integer, format: int64, description: 0 or absent = no superscope. }
+        dns:
+          $ref: "#/components/schemas/DnsSettings"
+          description: Absent = defaults on creation, unchanged on update.
+    DnsSettings:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [never, client, always]
+          x-enum-varnames: [DnsModeNever, DnsModeClient, DnsModeAlways]
+          description: |
+            never: no updates. client: as requested by the client in the
+            Client FQDN option 81 (A and PTR, or only PTR). always: A and PTR
+            for every client that sends a name (option 81 or 12).
+        domain: { type: string, description: "Domain for the client names; empty = domain name option 15." }
+        ttl: { type: integer, minimum: 0, maximum: 604800, description: "Record TTL in seconds; 0 = a third of the lease time (1 min .. 1 day)." }
+        cleanup: { type: boolean, description: "Remove the records when the lease ends (default true)." }
+        protect: { type: boolean, description: "Name protection with DHCID records, RFC 4701/4703 (default true)." }
+    DnsKey:
+      type: object
+      required: [id, name, algorithm]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: leasorix-key }
+        algorithm: { type: string, example: hmac-sha256 }
+    DnsKeyInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        algorithm:
+          type: string
+          enum: [hmac-sha256, hmac-sha384, hmac-sha512, hmac-sha224, hmac-sha1, hmac-md5]
+          description: Default hmac-sha256.
+        secret: { type: string, description: "Base64 key (at least 16 bytes); required on creation, empty on update = unchanged." }
+    DnsZone:
+      type: object
+      required: [id, name, server, key_id, key_name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: example.lan }
+        server: { type: string, example: "192.168.1.53" }
+        key_id: { type: integer, format: int64, description: 0 = unsigned updates. }
+        key_name: { type: string }
+    DnsZoneInput:
+      type: object
+      required: [name, server]
+      properties:
+        name: { type: string, description: "Zone apex, e.g. example.lan or 1.168.192.in-addr.arpa." }
+        server: { type: string, description: "Primary name server: IP or host name, optionally :port." }
+        key_id: { type: integer, format: int64, description: TSIG key; 0 or absent = unsigned updates. }
+    DnsRegistration:
+      type: object
+      required: [ip, fqdn, forward, reverse, a_record, ptr_record, state, attempts, last_error]
+      properties:
+        ip: { type: string }
+        fqdn: { type: string, description: Wanted name ("" while records are being removed). }
+        forward: { type: boolean, description: The A record is wanted. }
+        reverse: { type: boolean, description: The PTR record is wanted. }
+        protected: { type: boolean, description: Name protection (DHCID). }
+        a_record: { type: string, description: Name of the registered A record ("" = none). }
+        ptr_record: { type: string, description: Name the registered PTR record points to ("" = none). }
+        state: { type: string, enum: [registered, pending, conflict, error] }
+        attempts: { type: integer }
+        next_attempt: { type: string, format: date-time }
+        last_error: { type: string }
+        updated_at: { type: string, format: date-time }
     Superscope:
       type: object
       required: [id, name, description, scope_ids]
@@ -1364,7 +1557,7 @@ components:
         description: { type: string }
     ConfigImportResult:
       type: object
-      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes]
+      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes, dns_zones]
       properties:
         mode: { type: string, enum: [merge, replace] }
         dry_run: { type: boolean }
@@ -1376,6 +1569,7 @@ components:
         options: { type: integer }
         mac_filters: { type: integer }
         superscopes: { type: integer }
+        dns_zones: { type: integer }
     NetshImportResult:
       type: object
       required: [result, warnings]
@@ -1777,6 +1971,21 @@ components:
             end: { type: string }
             lease_time: { type: integer, format: int64 }
             enabled: { type: boolean }
+            bootp: { type: boolean }
+            superscope: { type: string, description: Name of the superscope (created if missing). }
+            dns:
+              type: object
+              description: DNS update settings (absent = no updates).
+              required: [mode, cleanup, protect]
+              properties:
+                mode:
+                  type: string
+                  enum: [never, client, always]
+                  x-enum-varnames: [BundleDnsNever, BundleDnsClient, BundleDnsAlways]
+                domain: { type: string }
+                ttl: { type: integer, format: int64 }
+                cleanup: { type: boolean }
+                protect: { type: boolean }
         exclusions:
           type: array
           items: { $ref: "#/components/schemas/BundleRange" }

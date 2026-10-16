@@ -35,6 +35,7 @@ function ImportSummary({ r }: { r: S["ConfigImportResult"] }) {
     [r.options, "Optionswerte"],
     [r.mac_filters, "MAC-Filter"],
     [r.superscopes, "Superscopes"],
+    [r.dns_zones, "DNS-Zonen"],
   ];
   return (
     <Alert kind="success">

@@ -86,6 +86,9 @@ func (s *Store) Load(ctx context.Context) error {
 	if d.filterCfg, err = s.readFilterSettings(ctx); err != nil {
 		return err
 	}
+	if d.dnsTargets, err = s.loadDNSTargets(ctx); err != nil {
+		return err
+	}
 	s.version++
 	snap := buildSnapshot(s.version, &d)
 	s.snap.Store(snap)
@@ -109,7 +112,8 @@ func (s *Store) mutate(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // ---- scopes ---------------------------------------------------------------
 
 const scopeCols = `id, name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, created_at, updated_at, bootp,
-	IFNULL((SELECT m.superscope_id FROM superscope_members m WHERE m.scope_id = scopes.id), 0)`
+	IFNULL((SELECT m.superscope_id FROM superscope_members m WHERE m.scope_id = scopes.id), 0),
+	dns_mode, dns_domain, dns_ttl, dns_cleanup, dns_protect`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -119,11 +123,13 @@ func scanScope(r rowScanner) (Scope, error) {
 		network, start, end, leaseSec int64
 		bits                          int
 		enabled                       bool
-		created, updated              int64
+		created, updated, dnsTTL      int64
 	)
-	if err := r.Scan(&sc.ID, &sc.Name, &sc.Description, &network, &bits, &start, &end, &leaseSec, &enabled, &created, &updated, &sc.BOOTP, &sc.SuperscopeID); err != nil {
+	if err := r.Scan(&sc.ID, &sc.Name, &sc.Description, &network, &bits, &start, &end, &leaseSec, &enabled, &created, &updated, &sc.BOOTP, &sc.SuperscopeID,
+		&sc.DNS.Mode, &sc.DNS.Domain, &dnsTTL, &sc.DNS.Cleanup, &sc.DNS.Protect); err != nil {
 		return sc, err
 	}
+	sc.DNS.TTL = time.Duration(dnsTTL) * time.Second
 	sc.Subnet = netip.PrefixFrom(ip4.ToAddr(uint32(network)), bits)
 	sc.Start = ip4.ToAddr(uint32(start))
 	sc.End = ip4.ToAddr(uint32(end))
@@ -199,11 +205,13 @@ func (s *Store) CreateScope(ctx context.Context, sc Scope) (Scope, error) {
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO scopes (name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, bootp, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO scopes (name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, bootp, created_at, updated_at,
+				dns_mode, dns_domain, dns_ttl, dns_cleanup, dns_protect)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sc.Name, sc.Description, ip4.MustFromAddr(sc.Subnet.Addr()), sc.Subnet.Bits(),
 			ip4.MustFromAddr(sc.Start), ip4.MustFromAddr(sc.End), int64(sc.LeaseTime/time.Second),
-			sc.Enabled, sc.BOOTP, now.Unix(), now.Unix())
+			sc.Enabled, sc.BOOTP, now.Unix(), now.Unix(),
+			sc.DNS.Mode, sc.DNS.Domain, int64(sc.DNS.TTL/time.Second), sc.DNS.Cleanup, sc.DNS.Protect)
 		if err != nil {
 			return err
 		}
@@ -263,9 +271,11 @@ func (s *Store) UpdateScope(ctx context.Context, sc Scope) (Scope, error) {
 		sc.CreatedAt = old.CreatedAt
 		sc.UpdatedAt = s.now().UTC().Truncate(time.Second)
 		_, err = tx.ExecContext(ctx, `
-			UPDATE scopes SET name = ?, description = ?, start_ip = ?, end_ip = ?, lease_time = ?, enabled = ?, bootp = ?, updated_at = ?
+			UPDATE scopes SET name = ?, description = ?, start_ip = ?, end_ip = ?, lease_time = ?, enabled = ?, bootp = ?, updated_at = ?,
+				dns_mode = ?, dns_domain = ?, dns_ttl = ?, dns_cleanup = ?, dns_protect = ?
 			WHERE id = ?`,
-			sc.Name, sc.Description, r.Start, r.End, int64(sc.LeaseTime/time.Second), sc.Enabled, sc.BOOTP, sc.UpdatedAt.Unix(), sc.ID)
+			sc.Name, sc.Description, r.Start, r.End, int64(sc.LeaseTime/time.Second), sc.Enabled, sc.BOOTP, sc.UpdatedAt.Unix(),
+			sc.DNS.Mode, sc.DNS.Domain, int64(sc.DNS.TTL/time.Second), sc.DNS.Cleanup, sc.DNS.Protect, sc.ID)
 		if err != nil {
 			return err
 		}

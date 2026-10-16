@@ -18,6 +18,7 @@ import (
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/dhcp4"
+	"github.com/meister119/leasorix/internal/dnsupdate"
 	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
@@ -42,6 +43,7 @@ type App struct {
 	audit  *audit.Log
 	auth   *auth.Service
 	ha     *ha.Node
+	dns    *dnsupdate.Updater
 	lock   *store.Lock
 	// UI is the embedded web UI handler (set by main when built with it).
 	ui http.Handler
@@ -139,6 +141,9 @@ func (a *App) init(ctx context.Context) error {
 		a.scopes.OnChange(func(*scope.Snapshot) { n.Kick() })
 	}
 
+	a.dns = dnsupdate.NewUpdater(a.log.With("component", "dns"), a.db, a.scopes, a.leases, dnsupdate.NewClient())
+	a.dns.SetMetrics(a.metrics.NewDNS())
+
 	if len(d.Interfaces) > 0 {
 		dm := a.metrics.NewDHCP4()
 		h := dhcp4.NewHandler(a.log.With("component", "dhcp4"), a.scopes, a.leases)
@@ -147,6 +152,7 @@ func (a *App) init(ctx context.Context) error {
 		if a.ha != nil {
 			h.SetPartner(a.ha)
 		}
+		h.SetDNS(a.dns)
 		a.dhcp4 = dhcp4.NewServer(a.log.With("component", "dhcp4"), h, d.Interfaces, d.Workers)
 		a.dhcp4.SetMetrics(dm)
 		a.health.Add("dhcp4", a.dhcp4.Ready)
@@ -188,6 +194,7 @@ func (a *App) init(ctx context.Context) error {
 			ConflictDetection: a.prober != nil,
 		},
 		HA:               haDep,
+		DNS:              a.dns,
 		UI:               a.ui,
 		TLS:              tlsCfg,
 		LoginMaxFailures: a.cfg.Auth.LoginMaxFailures,
@@ -261,6 +268,7 @@ func (a *App) Run(ctx context.Context) error {
 	g.Go(func() error { return a.http.Run(gctx) })
 	g.Go(func() error { return a.leases.Run(gctx) })
 	g.Go(func() error { return a.purgeAudit(gctx) })
+	g.Go(func() error { return a.dns.Run(gctx) })
 	if a.prober != nil {
 		g.Go(func() error { return a.prober.Run(gctx) })
 	}

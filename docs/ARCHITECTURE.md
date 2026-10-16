@@ -45,7 +45,7 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 | `internal/backup` | Backup (VACUUM INTO) und logischer Restore |
 | `web` | React-UI, per `go:embed` eingebettet |
 | `internal/ha` | HA-Partnerschaft: Zustandsautomat, Pool-Aufteilung, gRPC-Peer-Protokoll (`pb`), Lease-/Config-Replikation, Zertifikate |
-| `internal/dnsupdate` | RFC-2136-Updates (Phase 9) |
+| `internal/dnsupdate` | DNS-Updates: Option 81 (RFC 4702), DHCID (RFC 4701), RFC-2136-Client mit TSIG, Updater-Worker |
 | `internal/dhcp6` | DHCPv6 (Phase 10) |
 
 ## Konfiguration
@@ -184,3 +184,25 @@ Details: [DOCKER.md](DOCKER.md); Entscheidungen D-060 bis D-063.
   plus `LEASORIX_*`-Variablen, Zustand ausschließlich im Volume `/data`.
 - Läuft als UID 65532 mit read-only Root-FS; die einzigen Rechte sind die
   File-Capabilities `NET_BIND_SERVICE` und `NET_RAW` des Binaries.
+
+## DNS-Updates
+
+Details: [ADMIN.md](ADMIN.md#11-dns-updates); Entscheidungen D-064 bis D-067.
+
+```
+ dhcp4.Handler (ACK) ── dnsupdate.Decide(scope.DNS, Option 81, Option 12, Option 15)
+        │                      └─> Antwort-Option 81 (S/O/N)
+        └─ Updater.Bound(lease, Entscheidung)      (nur Speicher, kein I/O)
+
+ dnsupdate.Updater (Goroutine)
+   ├─ Abgleich alle 15 s: Lease beendet? → gewollter Zustand = nichts
+   ├─ fällige Registrierungen → Client.Add/Remove{Forward,Reverse}
+   │        └─ miekg/dns: UPDATE + Prerequisites (DHCID) + TSIG → Zone aus Snapshot
+   └─ dns_registrations (gewollt / eingetragen, Wiederholung, Fehler)
+```
+
+- Zonen und Schlüssel sind Konfiguration (Snapshot, HA-repliziert), die
+  Registrierungen lokaler Zustand jedes Servers.
+- Name Protection ist reine DNS-Logik (Prerequisites auf den DHCID-Record);
+  Leasorix muss dafür nichts über fremde Records wissen.
+

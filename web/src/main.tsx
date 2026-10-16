@@ -14,6 +14,7 @@ import { ReservationsPage } from "./pages/Reservations";
 import { LeasesPage } from "./pages/Leases";
 import { PoliciesPage } from "./pages/Policies";
 import { HAPage } from "./pages/HA";
+import { DNSPage } from "./pages/DNS";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 
@@ -36,6 +37,7 @@ function Gate() {
         <Route path="leases" element={<LeasesPage />} />
         <Route path="policies" element={<PoliciesPage />} />
         <Route path="ha" element={<HAPage />} />
+        <Route path="dns" element={<DNSPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

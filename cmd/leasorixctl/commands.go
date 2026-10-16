@@ -73,6 +73,13 @@ func (c *ctl) dispatch(ctx context.Context, args []string) error {
 		case "partner-down":
 			return c.partnerDown(ctx, rest[1:])
 		}
+	case "dns":
+		switch sub {
+		case "zones":
+			return c.dnsZones(ctx)
+		case "registrations", "":
+			return c.dnsRegistrations(ctx)
+		}
 	case "config":
 		switch sub {
 		case "export":
@@ -488,8 +495,8 @@ func (c *ctl) configImport(ctx context.Context, args []string) error {
 	if sum.DryRun {
 		verb = "valid (dry run, nothing changed)"
 	}
-	fmt.Fprintf(c.out, "%s (%s): %d scopes, %d reservations, %d policies, %d classes, %d option definitions, %d options, %d MAC filters, %d superscopes\n",
-		verb, sum.Mode, sum.Scopes, sum.Reservations, sum.Policies, sum.Classes, sum.OptionDefinitions, sum.Options, sum.MacFilters, sum.Superscopes)
+	fmt.Fprintf(c.out, "%s (%s): %d scopes, %d reservations, %d policies, %d classes, %d option definitions, %d options, %d MAC filters, %d superscopes, %d DNS zones\n",
+		verb, sum.Mode, sum.Scopes, sum.Reservations, sum.Policies, sum.Classes, sum.OptionDefinitions, sum.Options, sum.MacFilters, sum.Superscopes, sum.DnsZones)
 	return nil
 }
 
@@ -541,5 +548,47 @@ func (c *ctl) restore(ctx context.Context, args []string) error {
 	}
 	x := r.JSON200
 	fmt.Fprintf(c.out, "restored %d scopes, %d reservations, %d users, %d leases (backup schema %d)\n", x.Scopes, x.Reservations, x.Users, x.Leases, x.SchemaVersion)
+	return nil
+}
+
+func (c *ctl) dnsZones(ctx context.Context) error {
+	r, err := c.c.ListDnsZonesWithResponse(ctx)
+	if err := check(r, err); err != nil {
+		return err
+	}
+	if c.json {
+		return c.printJSON(r.JSON200)
+	}
+	rows := make([][]string, 0, len(*r.JSON200))
+	for _, z := range *r.JSON200 {
+		key := z.KeyName
+		if key == "" {
+			key = "(unsigned)"
+		}
+		rows = append(rows, []string{z.Name, z.Server, key})
+	}
+	c.table("ZONE\tSERVER\tTSIG KEY", rows)
+	return nil
+}
+
+func (c *ctl) dnsRegistrations(ctx context.Context) error {
+	r, err := c.c.ListDnsRegistrationsWithResponse(ctx)
+	if err := check(r, err); err != nil {
+		return err
+	}
+	if c.json {
+		return c.printJSON(r.JSON200)
+	}
+	dash := func(s string) string {
+		if s == "" {
+			return "-"
+		}
+		return s
+	}
+	rows := make([][]string, 0, len(*r.JSON200))
+	for _, g := range *r.JSON200 {
+		rows = append(rows, []string{g.Ip, dash(g.Fqdn), dash(g.ARecord), dash(g.PtrRecord), string(g.State), g.LastError})
+	}
+	c.table("IP\tNAME\tA\tPTR\tSTATE\tNOTE", rows)
 	return nil
 }
