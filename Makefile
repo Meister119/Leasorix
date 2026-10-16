@@ -15,6 +15,8 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/buildinfo.Date=$(DATE)
 
 NPM ?= npm
+IMAGE ?= leasorix
+DOCKER_BUILD_ARGS ?=
 
 .PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e fuzz lint vuln fmt tidy clean
 
@@ -35,6 +37,12 @@ build-go:
 build-noui:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixd ./cmd/leasorixd
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixctl ./cmd/leasorixctl
+
+## docker: build the container image $(IMAGE):$(VERSION) and :latest
+## (DOCKER_BUILD_ARGS e.g. "--build-arg GO_IMAGE=mirror.gcr.io/library/golang:1.27-bookworm")
+docker:
+	docker build -f deploy/Dockerfile $(DOCKER_BUILD_ARGS) --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
 ## ui: install frontend dependencies and build web/dist
 ui:
@@ -59,6 +67,10 @@ test:
 ## dhclient, udhcpc, dnsmasq)
 test-integration:
 	$(GO) test -tags integration -count=1 -v -timeout 20m ./test/integration/...
+
+## test-docker: test the image and the compose files (host, macvlan, HA; root, docker)
+test-docker:
+	IMAGE=$(IMAGE):latest ./test/docker/run.sh
 
 ## test-ha: two-node HA tests: load balance with 5000 clients, failover,
 ## partition and configuration sync (requires root, iproute2)

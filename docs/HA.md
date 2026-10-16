@@ -17,6 +17,10 @@ nur aus seinem Anteil; bestehende Leases verlängert jeder.
 
 ## Einrichtung
 
+Mit Docker: `deploy/docker-compose.ha.yml` startet ein fertiges Paar
+inklusive Zertifikaten, die Verteilung auf zwei Hosts beschreibt
+[DOCKER.md](DOCKER.md#ha-auf-zwei-docker-hosts). Ohne Container:
+
 1. **Zertifikate** (mTLS, empfohlen): in der UI unter
    *Hochverfügbarkeit → mTLS-Zertifikate erzeugen* oder per CLI
    ```sh

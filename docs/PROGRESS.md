@@ -12,7 +12,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 5 – REST-API, Auth, Web-UI | ✅ abgeschlossen |
 | 6 – Hochverfügbarkeit | ✅ abgeschlossen |
 | 7 – Komfort & Kompatibilität | ✅ abgeschlossen |
-| 8 – Docker & Compose | offen |
+| 8 – Docker & Compose | ✅ abgeschlossen |
 | 9 – DNS-Integration | offen |
 | 10 – DHCPv6 (optional) | offen |
 
@@ -263,7 +263,7 @@ mTLS mit per CLI erzeugten Zertifikaten)
 **Offene Punkte / Hinweise**
 - Kein Raft-/Cluster-Modus für mehr als zwei Knoten (optional laut Plan,
   D-052).
-- Die HA-Compose-Variante folgt in Phase 8.
+- Die HA-Compose-Variante ist mit Phase 8 umgesetzt (`deploy/docker-compose.ha.yml`).
 
 ## Phase 7 – Komfort & Kompatibilität
 
@@ -302,3 +302,47 @@ mTLS mit per CLI erzeugten Zertifikaten)
   Freigabe ✅
 - Playwright-E2E 7/7 (neu: Superscope anlegen/zuordnen, YAML-Export,
   netsh-Dry-Run mit Warnungen, Backup-Download) ✅
+
+## Phase 8 – Docker & Compose
+
+**Umgesetzt**
+- **Image** (`deploy/Dockerfile`): Multi-Stage Node → Go → distroless
+  `static-debian12:nonroot`, ca. 50 MB, läuft als UID 65532; File-
+  Capabilities `NET_BIND_SERVICE` + `NET_RAW` (kein `NET_ADMIN`), gesetzt
+  von einem eigenen Go-Helfer; `HEALTHCHECK` über `leasorixd healthcheck`;
+  `/data`-Volume, Config im Image + `LEASORIX_*`-Env oder Bind-Mount;
+  `leasorixctl` enthalten; Cross-Build für amd64/arm64 ohne Emulation;
+  Mirror-Build-Argumente und optionales Proxy-CA-Secret.
+- **Compose:** `docker-compose.yml` (Host-Netzwerk),
+  `docker-compose.macvlan.yml`, `docker-compose.ha.yml` (zwei Container im
+  macvlan-Netz, Einmal-Dienst erzeugt die mTLS-Zertifikate). Gehärtet mit
+  `cap_drop: [ALL]`, read-only Root-FS, `no-new-privileges`,
+  `restart: unless-stopped`.
+- `make docker` (Tags `<version>` und `latest`), `make test-docker`.
+- **CI:** Job `docker` (Image bauen + Compose-Tests);
+  `release.yml` veröffentlicht Multi-Arch-Images in der GitHub Container
+  Registry (Versionstag, `latest`, `edge`).
+- `leasorixd version`; unbekannte Argumente brechen jetzt mit Fehler ab.
+- Doku: [DOCKER.md](DOCKER.md) (Varianten, warum kein Bridge-Netz, Rechte,
+  macvlan-Shim/VLAN/VM-Hinweise, HA auf einem oder zwei Hosts, Betrieb,
+  Build, Fehlersuche), README-Schnellstart mit Compose, DECISIONS
+  D-060…D-063.
+
+**Tests** (`sudo make test-docker`, isolierte veth/netns-Netze)
+- Host-Netzwerk: `docker compose up -d` → `healthy`, UID 65532, read-only,
+  `CapEff` = genau die zwei Capabilities, UI erreichbar, Setup + Scope per
+  API, echter DHCP-Client (`udhcpc`) bekommt eine Adresse, Backup per
+  `docker exec`, `leasorixctl` im Image ✅
+- macvlan: Client bekommt eine Adresse vom Container mit eigener IP ✅
+- HA-Compose mit zwei Containern: beide `NORMAL`, Admin + Scope vom Leader
+  auf den Partner repliziert, Partner read-only, Clients auf beide Server
+  verteilt, Lease auf dem Partner sichtbar; nach `docker kill dhcp-a`
+  bekommt der Client von `dhcp-a` seine Adresse vom Partner ✅
+- arm64-Cross-Build geprüft (AArch64-Binary, Capabilities im Layer);
+  Offline-Restore im read-only-Container geprüft ✅
+
+**Offene Punkte / Hinweise**
+- Das Veröffentlichen in GHCR ist nur als Workflow umgesetzt; ein Push war
+  aus der Entwicklungsumgebung nicht möglich und passiert beim ersten
+  Versionstag auf GitHub.
+- Bridge-Netz + DHCP-Relay ist nicht getestet und nicht unterstützt (D-062).

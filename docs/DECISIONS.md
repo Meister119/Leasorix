@@ -737,3 +737,68 @@ Eigenes Binary auf Basis des aus der OpenAPI-Spec generierten Go-Clients
 `LEASORIX_TOKEN`, `LEASORIX_CA`/`LEASORIX_INSECURE`, Ausgabe als Tabelle
 oder JSON (`-o json`). Destruktive Befehle (`ha partner-down`, `restore`)
 verlangen `--yes`.
+
+## D-060 – Container-Image
+
+- Multi-Stage-Build: UI mit Node, beide Binaries mit Go (statisch,
+  `CGO_ENABLED=0`, `-trimpath`), Laufzeit-Image
+  `gcr.io/distroless/static-debian12:nonroot` (keine Shell, kein
+  Paketmanager, ca. 50 MB). Alpine wäre die Alternative gewesen; distroless
+  hat die kleinere Angriffsfläche und reicht, weil nichts im Image eine Shell
+  braucht.
+- Die Build-Stages laufen auf `$BUILDPLATFORM` und kompilieren für
+  `$TARGETARCH` – Multi-Arch (amd64/arm64) ohne QEMU.
+- Der Healthcheck ist ein Unterkommando (`leasorixd healthcheck`, fragt
+  `/readyz`), weil distroless kein `curl` hat. `leasorixctl` ist im Image
+  enthalten.
+- Basis-Images sind Build-Argumente (Registry-Mirror), eine Proxy-CA kann als
+  optionales BuildKit-Secret übergeben werden und landet nicht im Image.
+- Unbekannte Argumente an `leasorixd` sind jetzt ein Fehler, statt
+  stillschweigend den Server zu starten (`leasorixd version` war vorher
+  ein Serverstart); `version` gibt es zusätzlich zu `--version`.
+
+## D-061 – Rechte über File-Capabilities, nonroot
+
+Docker vererbt einem nicht-root-Benutzer keine Capabilities (keine
+Ambient-Capabilities). Damit `leasorixd` als UID 65532 Port 67 binden und
+`AF_PACKET`/ICMP nutzen kann, bekommt das Binary die File-Capabilities
+`cap_net_bind_service,cap_net_raw=ep`. Gesetzt werden sie von einem kleinen
+Go-Helfer (`deploy/docker/setcap`, schreibt `security.capability` direkt),
+damit die Build-Stage weder `libcap` noch Paketquellen braucht. `NET_ADMIN`
+ist nicht nötig. Folgen (verifiziert, in DOCKER.md dokumentiert):
+
+- Beide Capabilities müssen im Bounding-Set des Containers bleiben, sonst
+  verweigert der Kernel `execve` – auch für Einmal-Kommandos.
+- `no-new-privileges` ist verträglich: der Kernel begrenzt File-Capabilities
+  dann auf das bisherige Permitted-Set, das Docker aus `cap_add` füllt.
+- Root im Container ist keine Alternative: mit `cap_drop: [ALL]` fehlt root
+  der Schreibzugriff auf `/data` (UID 65532).
+
+## D-062 – Compose-Varianten und Defaults
+
+- Drei Dateien statt Profilen: `docker-compose.yml` (Host-Netzwerk, die
+  einfachste funktionierende Variante), `docker-compose.macvlan.yml` und
+  `docker-compose.ha.yml` (macvlan, zwei Container). Ein Bridge-Netz wird
+  nicht angeboten: ohne L2-Zugang erreichen Broadcast-DISCOVERs den
+  Container nicht; Bridge + Relay ist nicht getestet und daher nicht
+  dokumentiert als unterstützt.
+- Sichere Defaults: `cap_drop: [ALL]` + die zwei nötigen Capabilities,
+  `read_only` mit `tmpfs: /tmp`, `no-new-privileges`, `restart:
+  unless-stopped`. Im Host-Modus lauscht die UI per Default nur auf
+  `127.0.0.1` – die Management-Adresse muss bewusst gesetzt werden.
+- Das HA-Compose erzeugt die mTLS-Zertifikate mit einem Einmal-Dienst
+  (`ha certs --if-missing`) in einem gemeinsamen Volume; beide Server warten
+  per `service_completed_successfully` darauf. Beide Container auf einem
+  Host sind als Test-/Einstiegsvariante gedacht, die Verteilung auf zwei
+  Hosts ist dokumentiert.
+- Der Test (`make test-docker`) nutzt veth-Paare und Network Namespaces als
+  Client-LAN, nie das echte Netz (PLAN-Regel).
+
+## D-063 – Image-Veröffentlichung
+
+`release.yml` baut mit Buildx für `linux/amd64` und `linux/arm64` und
+veröffentlicht mit dem `GITHUB_TOKEN` in der GitHub Container Registry
+(`ghcr.io/<owner>/leasorix`): Tags `v1.2.3` → `1.2.3`, `1.2`, `latest`;
+`main` → `edge`; Pull Requests bauen nur. Kein Docker Hub (eigener
+Account/Secret nötig, Rate-Limits). Der CI-Workflow hat zusätzlich einen
+Job, der das Image baut und `make test-docker` ausführt.
