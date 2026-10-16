@@ -143,6 +143,7 @@ func (a *App) init(ctx context.Context) error {
 		dm := a.metrics.NewDHCP4()
 		h := dhcp4.NewHandler(a.log.With("component", "dhcp4"), a.scopes, a.leases)
 		h.SetMetrics(dm)
+		h.SetBOOTPLeaseTime(d.BOOTPLeaseTime)
 		if a.ha != nil {
 			h.SetPartner(a.ha)
 		}
@@ -177,6 +178,7 @@ func (a *App) init(ctx context.Context) error {
 		Health:  a.health,
 		Metrics: a.metrics,
 		Auth:    a.auth,
+		DB:      a.db,
 		Scopes:  a.scopes,
 		Leases:  a.leases,
 		Audit:   a.audit,

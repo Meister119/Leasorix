@@ -31,8 +31,13 @@ type Scope struct {
 	// LeaseTime is the lease duration; 0 means unlimited.
 	LeaseTime time.Duration
 	Enabled   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// BOOTP enables dynamic BOOTP for this scope (reservations always
+	// answer BOOTP clients).
+	BOOTP bool
+	// SuperscopeID is the superscope the scope belongs to (0 = none).
+	SuperscopeID int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Exclusion removes an address range from dynamic allocation.

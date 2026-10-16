@@ -64,6 +64,18 @@ func (h *handlers) UpdateScope(w http.ResponseWriter, r *http.Request, id gen.Id
 		return
 	}
 	sc, err := fromScopeInput(in)
+	if err == nil && (in.Bootp == nil || in.SuperscopeId == nil) {
+		// Optional fields that are absent keep their current value.
+		var cur scope.Scope
+		if cur, err = h.s.deps.Scopes.GetScope(r.Context(), id); err == nil {
+			if in.Bootp == nil {
+				sc.BOOTP = cur.BOOTP
+			}
+			if in.SuperscopeId == nil {
+				sc.SuperscopeID = cur.SuperscopeID
+			}
+		}
+	}
 	if err == nil {
 		sc.ID = id
 		sc, err = h.s.deps.Scopes.UpdateScope(r.Context(), sc)

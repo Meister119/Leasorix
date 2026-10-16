@@ -61,7 +61,7 @@ func newStackWith(t *testing.T, mod func(*Deps)) *stack {
 	authSvc := auth.NewService(db, auth.Config{SetupToken: setupToken})
 	deps := Deps{
 		Log: log, Health: health.NewChecker(), Metrics: metrics.New(),
-		Auth: authSvc, Scopes: scopes, Leases: leases, Audit: audit.NewLog(db),
+		Auth: authSvc, DB: db, Scopes: scopes, Leases: leases, Audit: audit.NewLog(db),
 		Info: SystemInfo{StartedAt: time.Now(), Interfaces: []string{"eth0"}}, LoginMaxFailures: 5, LoginWindow: time.Minute,
 	}
 	if mod != nil {

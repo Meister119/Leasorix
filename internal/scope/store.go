@@ -108,7 +108,8 @@ func (s *Store) mutate(ctx context.Context, fn func(tx *sql.Tx) error) error {
 
 // ---- scopes ---------------------------------------------------------------
 
-const scopeCols = `id, name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, created_at, updated_at`
+const scopeCols = `id, name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, created_at, updated_at, bootp,
+	IFNULL((SELECT m.superscope_id FROM superscope_members m WHERE m.scope_id = scopes.id), 0)`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -120,7 +121,7 @@ func scanScope(r rowScanner) (Scope, error) {
 		enabled                       bool
 		created, updated              int64
 	)
-	if err := r.Scan(&sc.ID, &sc.Name, &sc.Description, &network, &bits, &start, &end, &leaseSec, &enabled, &created, &updated); err != nil {
+	if err := r.Scan(&sc.ID, &sc.Name, &sc.Description, &network, &bits, &start, &end, &leaseSec, &enabled, &created, &updated, &sc.BOOTP, &sc.SuperscopeID); err != nil {
 		return sc, err
 	}
 	sc.Subnet = netip.PrefixFrom(ip4.ToAddr(uint32(network)), bits)
@@ -198,15 +199,18 @@ func (s *Store) CreateScope(ctx context.Context, sc Scope) (Scope, error) {
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO scopes (name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO scopes (name, description, network, prefix_len, start_ip, end_ip, lease_time, enabled, bootp, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sc.Name, sc.Description, ip4.MustFromAddr(sc.Subnet.Addr()), sc.Subnet.Bits(),
 			ip4.MustFromAddr(sc.Start), ip4.MustFromAddr(sc.End), int64(sc.LeaseTime/time.Second),
-			sc.Enabled, now.Unix(), now.Unix())
+			sc.Enabled, sc.BOOTP, now.Unix(), now.Unix())
 		if err != nil {
 			return err
 		}
 		if sc.ID, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		if err := setMembership(ctx, tx, sc.ID, sc.SuperscopeID); err != nil {
 			return err
 		}
 		return s.rec(ctx, tx, "scope.create", "scope", sc.ID, change(nil, scopeDetails(sc)))
@@ -259,10 +263,13 @@ func (s *Store) UpdateScope(ctx context.Context, sc Scope) (Scope, error) {
 		sc.CreatedAt = old.CreatedAt
 		sc.UpdatedAt = s.now().UTC().Truncate(time.Second)
 		_, err = tx.ExecContext(ctx, `
-			UPDATE scopes SET name = ?, description = ?, start_ip = ?, end_ip = ?, lease_time = ?, enabled = ?, updated_at = ?
+			UPDATE scopes SET name = ?, description = ?, start_ip = ?, end_ip = ?, lease_time = ?, enabled = ?, bootp = ?, updated_at = ?
 			WHERE id = ?`,
-			sc.Name, sc.Description, r.Start, r.End, int64(sc.LeaseTime/time.Second), sc.Enabled, sc.UpdatedAt.Unix(), sc.ID)
+			sc.Name, sc.Description, r.Start, r.End, int64(sc.LeaseTime/time.Second), sc.Enabled, sc.BOOTP, sc.UpdatedAt.Unix(), sc.ID)
 		if err != nil {
+			return err
+		}
+		if err := setMembership(ctx, tx, sc.ID, sc.SuperscopeID); err != nil {
 			return err
 		}
 		return s.rec(ctx, tx, "scope.update", "scope", sc.ID, change(scopeDetails(old), scopeDetails(sc)))

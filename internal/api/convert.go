@@ -37,7 +37,7 @@ func toScope(sc scope.Scope) gen.Scope {
 	return gen.Scope{
 		Id: sc.ID, Name: sc.Name, Description: sc.Description, Subnet: sc.Subnet.String(),
 		Start: sc.Start.String(), End: sc.End.String(), LeaseTime: int(sc.LeaseTime / time.Second),
-		Enabled: sc.Enabled, CreatedAt: sc.CreatedAt, UpdatedAt: sc.UpdatedAt,
+		Enabled: sc.Enabled, Bootp: sc.BOOTP, SuperscopeId: sc.SuperscopeID, CreatedAt: sc.CreatedAt, UpdatedAt: sc.UpdatedAt,
 	}
 }
 
@@ -46,6 +46,12 @@ func fromScopeInput(in gen.ScopeInput) (scope.Scope, error) {
 	sc := scope.Scope{
 		Name: in.Name, Description: str(in.Description), Enabled: in.Enabled,
 		LeaseTime: time.Duration(in.LeaseTime) * time.Second,
+	}
+	if in.Bootp != nil {
+		sc.BOOTP = *in.Bootp
+	}
+	if in.SuperscopeId != nil {
+		sc.SuperscopeID = *in.SuperscopeId
 	}
 	p, err := netip.ParsePrefix(strings.TrimSpace(in.Subnet))
 	if err != nil || !p.Addr().Is4() {

@@ -140,6 +140,36 @@ test("split scope wizard, HA page and emergency export", async ({ page }) => {
   expect(leases.leases.length).toBeGreaterThan(0);
 });
 
+test("superscopes, configuration export, netsh dry run and backup", async ({ page }) => {
+  test.skip(!clientNS, "E2E_CLIENT_NS not set");
+  await login(page, "admin", adminPassword);
+  await page.getByRole("link", { name: "Scopes" }).click();
+  await page.getByLabel("Neuer Superscope").fill("Gebäude A");
+  await page.getByRole("button", { name: "Anlegen" }).click();
+  await expect(page.getByRole("cell", { name: "Gebäude A" })).toBeVisible();
+  await page.getByRole("link", { name: "E2E-LAN" }).click();
+  await page.getByLabel("Superscope").selectOption({ label: "Gebäude A" });
+  await page.getByRole("button", { name: "Speichern" }).click();
+  await expect(page.getByText("Scope gespeichert")).toBeVisible();
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Scopes" }).click();
+  await expect(page.getByRole("row", { name: /E2E-LAN/ }).getByText("Gebäude A")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Gebäude A/ }).getByRole("link", { name: "10.77.0.0/16" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();
+  await page.getByRole("tab", { name: "Sicherung & Import" }).click();
+  const [yaml] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "YAML" }).click()]);
+  const doc = readFileSync(await yaml.path(), "utf8");
+  expect(doc).toContain("format: leasorix-config/v1");
+  expect(doc).toContain("superscope: Gebäude A");
+
+  await page.getByTestId("netsh-import").setInputFiles("../internal/configio/testdata/netsh_dump.txt");
+  await expect(page.getByText("Prüfung erfolgreich")).toBeVisible();
+  await expect(page.getByText(/Zeilen nicht übernommen/)).toBeVisible();
+
+  const [db] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Backup herunterladen" }).click()]);
+  expect(readFileSync(await db.path()).subarray(0, 15).toString()).toBe("SQLite format 3");
+});
+
 test("roles: a read-only user cannot change anything", async ({ page }) => {
   await login(page, "admin", adminPassword);
   await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();
@@ -153,7 +183,8 @@ test("roles: a read-only user cannot change anything", async ({ page }) => {
 
   await login(page, "viewer", "viewer-password");
   await page.getByRole("link", { name: "Scopes" }).click();
-  await expect(page.getByRole("heading", { name: "Scopes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scopes", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Superscopes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Neuer Scope" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Löschen" })).toHaveCount(0);
   await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();

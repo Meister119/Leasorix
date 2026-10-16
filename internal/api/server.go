@@ -25,6 +25,7 @@ import (
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
+	"github.com/meister119/leasorix/internal/store"
 )
 
 // SystemInfo is static runtime information shown in the UI.
@@ -48,7 +49,9 @@ type Deps struct {
 	Health  *health.Checker
 	Metrics *metrics.Registry
 
-	Auth   *auth.Service
+	Auth *auth.Service
+	// DB is needed for configuration import and backup/restore.
+	DB     *store.DB
 	Scopes *scope.Store
 	Leases *lease.Manager
 	Audit  *audit.Log

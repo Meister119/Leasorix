@@ -25,7 +25,8 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 
 | Paket | Aufgabe |
 |---|---|
-| `cmd/leasorixd` | Einstiegspunkt: Flags, Config laden, Logger, Signal-Handling |
+| `cmd/leasorixd` | Daemon: Flags, Config, Logger, Signal-Handling; Offline-Kommandos (`ha certs`, `leases`, `backup`, `restore`) |
+| `cmd/leasorixctl` | REST-CLI auf Basis des generierten API-Clients |
 | `internal/app` | Verdrahtung aller Komponenten, Lifecycle |
 | `internal/config` | Bootstrap-Konfiguration (YAML + Env) |
 | `internal/logging` | `slog`-Logger (JSON/Text) |
@@ -39,7 +40,9 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 | `internal/auth` | Benutzer, Rollen, Sessions, API-Tokens, Setup |
 | `internal/audit` | Audit-Log (Schreiben im Tx, Abfrage, Purge) |
 | `internal/dhcpopt` | Options-Katalog und typisierte Werte |
-| `internal/api/gen` | aus OpenAPI generierter Code |
+| `internal/api/gen` | aus OpenAPI generierter Code (Server-Interface, Modelle, Client) |
+| `internal/configio` | Konfigurations-Export/-Import (`leasorix-config/v1`), netsh-Importer |
+| `internal/backup` | Backup (VACUUM INTO) und logischer Restore |
 | `web` | React-UI, per `go:embed` eingebettet |
 | `internal/ha` | HA-Partnerschaft: Zustandsautomat, Pool-Aufteilung, gRPC-Peer-Protokoll (`pb`), Lease-/Config-Replikation, Zertifikate |
 | `internal/dnsupdate` | RFC-2136-Updates (Phase 9) |
@@ -59,7 +62,9 @@ Zwei Ebenen (siehe DECISIONS D-003):
 socket(s0) --> Server.readLoop --> worker (max N) --> Handler.Handle
                                                         |  per-Client-Lock
                                                         v
-              scope.Store.Snapshot()  <-- Link-Auswahl (giaddr/82.5/118/Interface-IP)
+              scope.Store.Snapshot()  <-- Link-Auswahl (giaddr/82.5/118/Interface-IP,
+                                                        + Superscope-Mitglieder)
+                                                        |  ha.Node.Accept (wer antwortet)
                                                         |
                                     lease.Manager.Offer/Request/Release/Decline
                                          |  (Mutex, In-Memory-Index)
@@ -77,6 +82,8 @@ Response (Ziel nach RFC 2131 4.1) <---------------------+
 - **Leases**: Der Lease-Manager ist die Autorität. Entscheidungen erfolgen im
   Speicher, Persistenz über den Group-Commit-Writer; ein ACK wird erst nach
   erfolgreichem Commit gesendet.
+- **BOOTP**: Anfragen ohne DHCP-Nachrichtentyp laufen durch denselben Pfad
+  (Offer + Request in einem Schritt) und erhalten eine BOOTREPLY.
 - **Expiry-Worker**: alle `expiry_interval` → `active`→`expired`,
   Löschen nach Grace-Period bzw. Decline-Zeit, abgelaufene Angebote räumen.
 
@@ -111,7 +118,14 @@ goose-Migrationen (`internal/store/migrations`) beim Start aktualisiert.
 
 Migrationen: 00001 Grundschema, 00002 Policies/Optionen/Filter, 00003
 Sessions/API-Tokens, 00004 HA (Lease-Zeitstempel in ms + `origin`,
-`ha_state`, Trigger-gepflegter `config_version`-Zähler). Ein `flock` auf
+`ha_state`, Trigger-gepflegter `config_version`-Zähler), 00005 Superscopes
+und BOOTP.
+
+`store.ReplaceTables` ersetzt eine Gruppe von Tabellen transaktional mit
+abgeschalteten Fremdschlüsseln und anschließendem `foreign_key_check`; es
+ist die gemeinsame Basis für HA-Config-Sync, Konfigurations-Import und
+Restore. Danach ordnet `store.RemapLeases` jede Lease dem Scope zu, dessen
+Subnetz ihre Adresse enthält (IDs können sich ändern). Ein `flock` auf
 `<data_dir>/leasorixd.lock` verhindert parallele Prozesse auf derselben
 Datenbank.
 

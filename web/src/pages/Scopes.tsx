@@ -20,6 +20,10 @@ export function useScopes() {
   return useQuery({ queryKey: ["scopes"], queryFn: () => unwrap(api.GET("/scopes")) });
 }
 
+export function useSuperscopes() {
+  return useQuery({ queryKey: ["superscopes"], queryFn: () => unwrap(api.GET("/superscopes")) });
+}
+
 export function ScopesPage() {
   const { canWrite } = useAuth();
   const scopes = useScopes();
@@ -48,6 +52,8 @@ export function ScopesPage() {
     onError: (e) => toast(errorMessage(e), "error"),
   });
   const util = useMemo(() => new Map(stats.data?.scopes.map((s) => [s.scope_id, s.utilization_percent])), [stats.data]);
+  const superscopes = useSuperscopes();
+  const ssName = useMemo(() => new Map(superscopes.data?.map((s) => [s.id, s.name])), [superscopes.data]);
 
   return (
     <>
@@ -89,6 +95,16 @@ export function ScopesPage() {
                   <Link to={`/scopes/${s.id}`} className="font-medium text-teal-700 hover:underline dark:text-teal-400">
                     {s.name}
                   </Link>
+                  {s.superscope_id !== 0 && (
+                    <span className="ml-2">
+                      <Badge color="blue">{ssName.get(s.superscope_id) ?? "Superscope"}</Badge>
+                    </span>
+                  )}
+                  {s.bootp && (
+                    <span className="ml-1">
+                      <Badge>BOOTP</Badge>
+                    </span>
+                  )}
                 </Td>
                 <Td mono>{s.subnet}</Td>
                 <Td mono>
@@ -118,8 +134,108 @@ export function ScopesPage() {
           </Table>
         </div>
       )}
+      <Superscopes scopes={scopes.data ?? []} util={stats.data?.scopes ?? []} />
       {wizard && <ScopeWizard existing={scopes.data ?? []} onClose={() => setWizard(false)} />}
     </>
+  );
+}
+
+/** Superscopes group scopes that serve the same physical network (multinet). */
+function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeStats"][] }) {
+  const { canWrite } = useAuth();
+  const list = useSuperscopes();
+  const qc = useQueryClient();
+  const { toast, confirm } = useFeedback();
+  const [name, setName] = useState("");
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["superscopes"] });
+    qc.invalidateQueries({ queryKey: ["scopes"] });
+  };
+  const add = useMutation({
+    mutationFn: () => unwrap(api.POST("/superscopes", { body: { name } })),
+    onSuccess: () => {
+      setName("");
+      refresh();
+      toast("Superscope angelegt – Scopes im Scope unter „Einstellungen“ zuordnen");
+    },
+    onError: (e) => toast(errorMessage(e), "error"),
+  });
+  const del = useMutation({
+    mutationFn: (id: number) => unwrap(api.DELETE("/superscopes/{id}", { params: { path: { id } } })),
+    onSuccess: () => {
+      refresh();
+      toast("Superscope gelöscht");
+    },
+    onError: (e) => toast(errorMessage(e), "error"),
+  });
+  const byId = new Map(scopes.map((s) => [s.id, s]));
+  const stat = new Map(util.map((u) => [u.scope_id, u]));
+  if (!canWrite && (list.data?.length ?? 0) === 0) return null;
+  return (
+    <div className="mt-8">
+      <h2 className="mb-1 text-lg font-semibold">Superscopes</h2>
+      <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
+        Ein Superscope fasst Scopes zusammen, die dasselbe physische Netz versorgen (mehrere IP-Netze auf einem Segment). Ist ein Scope erschöpft,
+        erhalten Clients Adressen aus den anderen Mitgliedern.
+      </p>
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <Table head={["Name", "Scopes", "Auslastung", ""]} empty={list.data?.length === 0}>
+          {list.data?.map((ss) => {
+            const members = ss.scope_ids.map((id) => byId.get(id)).filter((s): s is S["Scope"] => !!s);
+            const usable = ss.scope_ids.reduce((a, id) => a + (stat.get(id)?.usable ?? 0), 0);
+            const avail = ss.scope_ids.reduce((a, id) => a + (stat.get(id)?.available ?? 0), 0);
+            return (
+              <tr key={ss.id}>
+                <Td className="font-medium">{ss.name}</Td>
+                <Td>
+                  {members.length === 0 ? (
+                    <span className="text-slate-500">keine</span>
+                  ) : (
+                    members.map((m) => (
+                      <Link key={m.id} to={`/scopes/${m.id}`} className="mr-3 font-mono text-xs text-teal-700 hover:underline dark:text-teal-400">
+                        {m.subnet}
+                      </Link>
+                    ))
+                  )}
+                </Td>
+                <Td className="w-44">
+                  <Progress percent={usable ? ((usable - avail) / usable) * 100 : 0} />
+                </Td>
+                <Td className="text-right">
+                  {canWrite && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () =>
+                        (await confirm(`Superscope „${ss.name}“ löschen? Die Scopes bleiben erhalten.`, { danger: true, confirmLabel: "Löschen" })) && del.mutate(ss.id)
+                      }
+                    >
+                      Löschen
+                    </Button>
+                  )}
+                </Td>
+              </tr>
+            );
+          })}
+        </Table>
+      </div>
+      {canWrite && (
+        <form
+          className="mt-3 flex flex-wrap items-end gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim()) add.mutate();
+          }}
+        >
+          <div className="w-64">
+            <Input label="Neuer Superscope" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Gebäude A" />
+          </div>
+          <Button type="submit" disabled={!name.trim() || add.isPending}>
+            Anlegen
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }
 

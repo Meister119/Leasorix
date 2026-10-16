@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/meister119/leasorix/internal/audit"
+	"github.com/meister119/leasorix/internal/backup"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/lease"
 	"github.com/meister119/leasorix/internal/scope"
@@ -74,4 +76,35 @@ func ImportLeases(ctx context.Context, cfg *config.Config, log *slog.Logger, r i
 		err = rerr
 	}
 	return len(recs), changed, conflicts, err
+}
+
+// Backup writes a consistent copy of the database to w; it works while the
+// daemon is running.
+func Backup(ctx context.Context, cfg *config.Config, w io.Writer) (int64, error) {
+	db, err := store.Open(ctx, filepath.Join(cfg.DataDir, store.FileName))
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	return backup.Create(ctx, db, w)
+}
+
+// Restore takes over configuration, users, API tokens and leases from a
+// backup. The daemon must be stopped (the data directory lock is taken); on
+// a running server use the web UI or POST /api/v1/system/restore.
+func Restore(ctx context.Context, cfg *config.Config, log *slog.Logger, r io.Reader) (*backup.Summary, error) {
+	lock, err := store.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("%w (stop leasorixd or restore through the web UI / API)", err)
+	}
+	defer func() { _ = lock.Release() }()
+	db, err := store.Open(ctx, filepath.Join(cfg.DataDir, store.FileName))
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	if err := db.Migrate(ctx, log); err != nil {
+		return nil, err
+	}
+	return backup.Restore(audit.WithActor(ctx, "cli", ""), db, r)
 }

@@ -222,6 +222,135 @@ paths:
       responses:
         "204": { description: Deleted together with exclusions, reservations, policies, options and leases. }
         "404": { $ref: "#/components/responses/NotFound" }
+  /superscopes:
+    get:
+      tags: [scopes]
+      operationId: listSuperscopes
+      responses:
+        "200":
+          description: All superscopes with their member scopes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Superscope" }
+    post:
+      tags: [scopes]
+      operationId: createSuperscope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuperscopeInput" }
+      responses:
+        "201":
+          description: Created. Members are assigned via the scope (superscope_id).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /superscopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [scopes]
+      operationId: getSuperscope
+      responses:
+        "200":
+          description: The superscope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [scopes]
+      operationId: updateSuperscope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SuperscopeInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Superscope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [scopes]
+      operationId: deleteSuperscope
+      responses:
+        "204": { description: Deleted; the member scopes are kept. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /config/export:
+    get:
+      tags: [system]
+      operationId: exportConfig
+      description: Complete DHCP configuration (format leasorix-config/v1, see docs/ADMIN.md); users and API tokens are not included.
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [yaml, json], default: yaml }
+      responses:
+        "200":
+          description: Configuration document.
+          content:
+            application/yaml:
+              schema: { type: string }
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /config/import:
+    post:
+      tags: [system]
+      operationId: importConfig
+      description: |
+        Imports a configuration document (YAML or JSON). `merge` adds it to
+        the existing configuration (existing objects are conflicts), `replace`
+        replaces the whole DHCP configuration (leases inside the new scopes
+        are kept). Either everything is applied or nothing.
+      parameters:
+        - $ref: "#/components/parameters/ImportMode"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema: { type: string }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Import result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /config/import/netsh:
+    post:
+      tags: [system]
+      operationId: importNetsh
+      description: Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server).
+      parameters:
+        - $ref: "#/components/parameters/ImportMode"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Import result and lines that were not imported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetshImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /scopes/import:
     post:
       tags: [scopes]
@@ -921,6 +1050,36 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SystemInfo" }
 
+  /system/backup:
+    get:
+      tags: [system]
+      operationId: downloadBackup
+      description: Complete backup (SQLite database copy, contains password hashes).
+      responses:
+        "200":
+          description: Backup file.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /system/restore:
+    post:
+      tags: [system]
+      operationId: restoreBackup
+      description: |
+        Restores configuration, users, API tokens and leases from a backup
+        (also of older versions). All sessions end; log in again afterwards.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Restored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RestoreResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /ha/status:
     get:
       tags: [system]
@@ -987,6 +1146,14 @@ components:
       scheme: bearer
 
   parameters:
+    ImportMode:
+      name: mode
+      in: query
+      schema: { type: string, enum: [merge, replace], default: merge }
+    DryRun:
+      name: dry_run
+      in: query
+      schema: { type: boolean, default: false }
     Id:
       name: id
       in: path
@@ -1152,7 +1319,7 @@ components:
 
     Scope:
       type: object
-      required: [id, name, description, subnet, start, end, lease_time, enabled, created_at, updated_at]
+      required: [id, name, description, subnet, start, end, lease_time, enabled, bootp, superscope_id, created_at, updated_at]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -1162,6 +1329,8 @@ components:
         end: { type: string, example: 192.168.1.200 }
         lease_time: { type: integer, description: Seconds, 0 = unlimited. }
         enabled: { type: boolean }
+        bootp: { type: boolean, description: Dynamic BOOTP for this scope. }
+        superscope_id: { type: integer, format: int64, description: 0 = no superscope. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     ScopeInput:
@@ -1175,6 +1344,61 @@ components:
         end: { type: string }
         lease_time: { type: integer, minimum: 0 }
         enabled: { type: boolean }
+        bootp: { type: boolean }
+        superscope_id: { type: integer, format: int64, description: 0 or absent = no superscope. }
+    Superscope:
+      type: object
+      required: [id, name, description, scope_ids]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        scope_ids:
+          type: array
+          items: { type: integer, format: int64 }
+    SuperscopeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    ConfigImportResult:
+      type: object
+      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes]
+      properties:
+        mode: { type: string, enum: [merge, replace] }
+        dry_run: { type: boolean }
+        scopes: { type: integer }
+        reservations: { type: integer }
+        policies: { type: integer }
+        classes: { type: integer }
+        option_definitions: { type: integer }
+        options: { type: integer }
+        mac_filters: { type: integer }
+        superscopes: { type: integer }
+    NetshImportResult:
+      type: object
+      required: [result, warnings]
+      properties:
+        result: { $ref: "#/components/schemas/ConfigImportResult" }
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [line, text, reason]
+            properties:
+              line: { type: integer }
+              text: { type: string }
+              reason: { type: string }
+    RestoreResult:
+      type: object
+      required: [schema_version, scopes, reservations, users, leases]
+      properties:
+        schema_version: { type: integer, format: int64 }
+        scopes: { type: integer }
+        reservations: { type: integer }
+        users: { type: integer }
+        leases: { type: integer }
     AddrRange:
       type: object
       required: [start, end]

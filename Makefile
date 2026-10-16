@@ -26,13 +26,15 @@ ci: lint test ui-test build vuln
 ## build: build the web UI and the static binary with the UI embedded
 build: ui build-go
 
-## build-go: build the binary with the UI from web/dist (run `make ui` first)
+## build-go: build leasorixd with the UI from web/dist (run `make ui` first) and leasorixctl
 build-go:
 	CGO_ENABLED=0 $(GO) build -tags ui -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixd ./cmd/leasorixd
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixctl ./cmd/leasorixctl
 
 ## build-noui: binary without web UI (no Node.js needed)
 build-noui:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixd ./cmd/leasorixd
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixctl ./cmd/leasorixctl
 
 ## ui: install frontend dependencies and build web/dist
 ui:

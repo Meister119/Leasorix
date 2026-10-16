@@ -60,11 +60,27 @@ Weitere Kommandos:
 leasorixd ha certs --out ./ha-certs dhcp-a dhcp-b   # mTLS-Zertifikate erzeugen
 leasorixd leases export --config … --out leases.json   # Notfall-Export
 leasorixd leases import --config … leases.json          # Import (Dienst gestoppt)
+leasorixd backup --config … --out backup.db             # Backup (auch im Betrieb)
+leasorixd restore --config … backup.db                  # Restore (Dienst gestoppt)
+```
+
+## Verwaltung per Kommandozeile
+
+`make build` erzeugt zusätzlich `bin/leasorixctl`, das den Server über die
+REST-API steuert (API-Token unter *Benutzer & Einstellungen* anlegen):
+
+```sh
+export LEASORIX_URL=https://127.0.0.1:8067 LEASORIX_TOKEN=lxt_… LEASORIX_INSECURE=1
+leasorixctl status
+leasorixctl scopes list
+leasorixctl config export -f config.yaml
+leasorixctl config import --netsh dhcp-dump.txt --dry-run   # Umzug von Windows
 ```
 
 ## Dokumentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/ADMIN.md](docs/ADMIN.md) – Admin-Handbuch
 - [docs/HA.md](docs/HA.md) – HA-Handbuch
 - [docs/DECISIONS.md](docs/DECISIONS.md)
 - [docs/PROGRESS.md](docs/PROGRESS.md)

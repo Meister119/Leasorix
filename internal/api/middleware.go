@@ -71,8 +71,10 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 		switch r.URL.Path {
 		case apiPrefix + "/reservations/import", apiPrefix + "/scopes/import":
 			limit = 8 << 20
-		case apiPrefix + "/leases/import":
+		case apiPrefix + "/leases/import", apiPrefix + "/config/import", apiPrefix + "/config/import/netsh":
 			limit = 64 << 20
+		case apiPrefix + "/system/restore":
+			limit = 1 << 30
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
@@ -123,7 +125,8 @@ func requiredRole(method, path string) (role auth.Role, public bool) {
 		return auth.RoleAdmin, false
 	case p == "/settings" && !read:
 		return auth.RoleAdmin, false
-	case strings.HasPrefix(p, "/ha/") && !read, p == "/leases/import":
+	case strings.HasPrefix(p, "/ha/") && !read, p == "/leases/import", strings.HasPrefix(p, "/config/import"),
+		p == "/system/backup", p == "/system/restore":
 		return auth.RoleAdmin, false
 	case p == "/auth/logout" || p == "/auth/me" || p == "/auth/password" || strings.HasPrefix(p, "/tokens"):
 		return auth.RoleReadonly, false
@@ -204,8 +207,17 @@ func (s *Server) contentTypeOK(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	if r.URL.Path == apiPrefix+"/reservations/import" {
+	switch r.URL.Path {
+	case apiPrefix + "/reservations/import", apiPrefix + "/config/import/netsh":
 		return mt == "text/csv" || mt == "text/plain"
+	case apiPrefix + "/config/import":
+		switch mt {
+		case "application/json", "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml", "text/plain":
+			return true
+		}
+		return false
+	case apiPrefix + "/system/restore":
+		return mt == "application/octet-stream" || mt == "application/x-sqlite3" || mt == "application/vnd.sqlite3"
 	}
 	return mt == "application/json"
 }
