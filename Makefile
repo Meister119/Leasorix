@@ -18,7 +18,7 @@ NPM ?= npm
 IMAGE ?= leasorix
 DOCKER_BUILD_ARGS ?=
 
-.PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e test-dns fuzz lint vuln fmt tidy clean
+.PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e test-dns screenshots fuzz lint vuln fmt tidy clean
 
 all: ci
 
@@ -85,6 +85,12 @@ test-dns:
 ## namespaces (requires root, a built binary and the web UI)
 test-e2e: build
 	./test/e2e/run.sh
+
+## screenshots: regenerate the README screenshots in docs/images (root,
+## like test-e2e; demo data from test/screenshots/demo.yaml)
+screenshots: build
+	mkdir -p docs/images
+	SCREENSHOTS=1 ./test/e2e/run.sh e2e/screenshots.spec.ts
 
 ## fuzz: fuzz the DHCPv4 and DHCPv6 packet paths and the FQDN option parser
 FUZZTIME ?= 60s
