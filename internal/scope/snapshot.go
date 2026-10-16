@@ -83,6 +83,8 @@ type Snapshot struct {
 	Version uint64
 	pools   []*Pool // sorted by network
 	byID    map[int64]*Pool
+	// members of each superscope, sorted by network
+	superscopes map[int64][]*Pool
 
 	serverOptions      map[uint8][]byte
 	reservationOptions map[int64]map[uint8][]byte
@@ -97,6 +99,7 @@ type Snapshot struct {
 func emptySnapshot() *Snapshot {
 	return &Snapshot{
 		byID:               map[int64]*Pool{},
+		superscopes:        map[int64][]*Pool{},
 		serverOptions:      map[uint8][]byte{},
 		reservationOptions: map[int64]map[uint8][]byte{},
 		classes:            map[string]*Class{},
@@ -122,6 +125,10 @@ func (s *Snapshot) Pools() []*Pool { return s.pools }
 
 // ByID returns the scope with the given id or nil.
 func (s *Snapshot) ByID(id int64) *Pool { return s.byID[id] }
+
+// SuperscopePools returns the member scopes of a superscope, sorted by
+// network.
+func (s *Snapshot) SuperscopePools(id int64) []*Pool { return s.superscopes[id] }
 
 // ForAddr returns the scope whose subnet contains ip, or nil. Subnets never
 // overlap, so the result is unique.
@@ -160,6 +167,11 @@ func buildSnapshot(version uint64, d *snapshotData) *Snapshot {
 		snap.byID[sc.ID] = p
 	}
 	sort.Slice(snap.pools, func(i, j int) bool { return snap.pools[i].Network < snap.pools[j].Network })
+	for _, p := range snap.pools {
+		if p.SuperscopeID != 0 {
+			snap.superscopes[p.SuperscopeID] = append(snap.superscopes[p.SuperscopeID], p)
+		}
+	}
 	for _, e := range excl {
 		if p := snap.byID[e.ScopeID]; p != nil {
 			p.Exclusions = append(p.Exclusions, ip4.Range{Start: ip4.MustFromAddr(e.Start), End: ip4.MustFromAddr(e.End)})

@@ -72,7 +72,16 @@ type Handler struct {
 	leases  *lease.Manager
 	metrics *metrics.DHCP4
 	partner Partner
+	// bootpLease is the lease duration of BOOTP clients.
+	bootpLease time.Duration
 }
+
+// DefaultBOOTPLeaseTime is the lease duration for BOOTP clients (Windows
+// default: 30 days).
+const DefaultBOOTPLeaseTime = 30 * 24 * time.Hour
+
+// SetBOOTPLeaseTime sets the lease duration of BOOTP clients.
+func (h *Handler) SetBOOTPLeaseTime(d time.Duration) { h.bootpLease = d }
 
 // SetMetrics enables packet metrics.
 func (h *Handler) SetMetrics(m *metrics.DHCP4) { h.metrics = m }
@@ -101,7 +110,7 @@ func (h *Handler) directed(req *Request) bool {
 
 // NewHandler creates a handler.
 func NewHandler(log *slog.Logger, scopes ScopeSource, leases *lease.Manager) *Handler {
-	return &Handler{log: log, scopes: scopes, leases: leases}
+	return &Handler{log: log, scopes: scopes, leases: leases, bootpLease: DefaultBOOTPLeaseTime}
 }
 
 // Handle processes one request and returns the response or nil.
@@ -112,15 +121,13 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 		return nil
 	}
 	mt := m.MessageType()
+	kind := mt.String()
 	if mt == dhcpv4.MessageTypeNone {
-		// BOOTP is not supported (optional, phase 7).
-		h.metrics.Received("BOOTP")
-		h.metrics.Dropped("bootp")
-		return nil
+		kind = "BOOTP"
 	}
 	start := time.Now()
-	h.metrics.Received(mt.String())
-	defer func() { h.metrics.Observe(mt.String(), time.Since(start)) }()
+	h.metrics.Received(kind)
+	defer func() { h.metrics.Observe(kind, time.Since(start)) }()
 	if len(m.ClientHWAddr) == 0 || len(m.ClientHWAddr) > 16 {
 		h.metrics.Dropped("invalid")
 		return nil
@@ -131,7 +138,7 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 		source += " via " + m.GatewayIPAddr.String()
 	}
 	ctx = audit.WithActor(ctx, audit.ActorDHCP, source)
-	log := h.log.With("type", mt.String(), "mac", c.MAC, "xid", m.TransactionID.String(), "if", req.IfName)
+	log := h.log.With("type", kind, "mac", c.MAC, "xid", m.TransactionID.String(), "if", req.IfName)
 	if !isZero(m.GatewayIPAddr) {
 		log = log.With("giaddr", m.GatewayIPAddr.String())
 	}
@@ -155,6 +162,8 @@ func (h *Handler) Handle(ctx context.Context, req *Request) *Response {
 	defer unlock()
 
 	switch mt {
+	case dhcpv4.MessageTypeNone:
+		return h.bootp(ctx, tx)
 	case dhcpv4.MessageTypeDiscover:
 		return h.discover(ctx, tx)
 	case dhcpv4.MessageTypeRequest:
@@ -228,7 +237,9 @@ func selectionAddr(m *dhcpv4.DHCPv4) uint32 {
 	return u32(m.GatewayIPAddr)
 }
 
-// linkPools returns the enabled scopes serving the client's link.
+// linkPools returns the scopes serving the client's link: the scope of the
+// relay/selection address or of the receiving interface's addresses,
+// followed by the other members of their superscopes (multinet).
 func (h *Handler) linkPools(snap *scope.Snapshot, req *Request) []*scope.Pool {
 	var out []*scope.Pool
 	add := func(p *scope.Pool) {
@@ -244,10 +255,17 @@ func (h *Handler) linkPools(snap *scope.Snapshot, req *Request) []*scope.Pool {
 	}
 	if sel := selectionAddr(req.Msg); sel != 0 {
 		add(snap.ForAddr(sel))
-		return out
+	} else {
+		for _, a := range req.IfAddrs {
+			add(snap.ForAddr(ip4.MustFromAddr(a.Addr())))
+		}
 	}
-	for _, a := range req.IfAddrs {
-		add(snap.ForAddr(ip4.MustFromAddr(a.Addr())))
+	for _, p := range append([]*scope.Pool(nil), out...) {
+		if p.SuperscopeID != 0 {
+			for _, q := range snap.SuperscopePools(p.SuperscopeID) {
+				add(q)
+			}
+		}
 	}
 	return out
 }

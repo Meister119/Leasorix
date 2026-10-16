@@ -49,6 +49,9 @@ dhcp4:
   workers: 256
   # How long an offered address is held for the client's REQUEST.
   offer_timeout: 60s
+  # Lease duration for BOOTP clients (reservations and scopes with BOOTP
+  # enabled); BOOTP clients never renew.
+  bootp_lease_time: 720h
   # How long declined / conflicting addresses stay blocked.
   decline_time: 24h
   # How long expired/released leases are kept so the client gets its

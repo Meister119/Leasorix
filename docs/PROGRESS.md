@@ -11,7 +11,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 4 – Audit, Statistiken, Metriken | ✅ abgeschlossen |
 | 5 – REST-API, Auth, Web-UI | ✅ abgeschlossen |
 | 6 – Hochverfügbarkeit | ✅ abgeschlossen |
-| 7 – Komfort & Kompatibilität | offen |
+| 7 – Komfort & Kompatibilität | ✅ abgeschlossen |
 | 8 – Docker & Compose | offen |
 | 9 – DNS-Integration | offen |
 | 10 – DHCPv6 (optional) | offen |
@@ -264,3 +264,41 @@ mTLS mit per CLI erzeugten Zertifikaten)
 - Kein Raft-/Cluster-Modus für mehr als zwei Knoten (optional laut Plan,
   D-052).
 - Die HA-Compose-Variante folgt in Phase 8.
+
+## Phase 7 – Komfort & Kompatibilität
+
+**Umgesetzt**
+- **Superscopes** (Multinet): Migration 00005, CRUD in API/UI, Zuordnung
+  im Scope, der DHCP-Handler bezieht alle Mitglieder des Links ein;
+  Teil von HA-Replikation und Export/Import.
+- **BOOTP** (optional): Antworten für reservierte BOOTP-Clients, dynamisches
+  BOOTP pro Scope, eigene Lease-Dauer, 64-Byte-Vendor-Bereich, Bootserver/
+  -datei im Header.
+- **Konfigurations-Export/-Import** (YAML/JSON, `leasorix-config/v1`) in
+  UI, API und `leasorixctl`: Modi Ergänzen/Ersetzen, Dry-Run, vollständige
+  Validierung über eine temporäre Datenbank, alles-oder-nichts, Leases
+  bleiben bei Ersetzen erhalten (Zuordnung per Adresse).
+- **Importer für `netsh dhcp server dump`** (Windows): Scopes, Bereiche,
+  Ausschlüsse, Reservierungen, Optionswerte, Optionsdefinitionen, Klassen,
+  Superscopes, MAC-Filter; Warnungen für nicht übernommene Zeilen; UTF-16.
+- **Backup/Restore** per UI, API, `leasorixd backup|restore` und
+  `leasorixctl backup|restore`: konsistente Datenbank-Kopie im laufenden
+  Betrieb, logischer Restore ohne Neustart inkl. Migration älterer Backups.
+- **`leasorixctl`**: REST-CLI (generierter Client) für Status, Scopes,
+  Leases, HA, Konfiguration, Backup; Tabellen- oder JSON-Ausgabe.
+- Multicast-Scopes (MADCAP) bewusst nicht umgesetzt (optional, D-055).
+- Doku: [ADMIN.md](ADMIN.md) (Admin-Handbuch), DECISIONS D-053…D-059.
+
+**Tests**
+- Unit: Superscope-Store, Snapshot, Handler (Superscope-Erweiterung,
+  BOOTP-Antworten), Bundle/Export-Import-Roundtrip (YAML und JSON
+  identisch), Merge-Konflikt ohne Teiländerung, Dry-Run, Replace mit
+  Lease-Erhalt, netsh-Import (UTF-8 und UTF-16), Backup/Restore inkl.
+  fremder/neuerer Dateien, API (Rollen, Content-Types, Session-Ende nach
+  Restore), `leasorixctl` gegen einen echten In-Process-Server.
+- Integration (netns, echte Pakete): Multinet über Superscope (dritter
+  Client bekommt eine Adresse des zweiten Subnetzes mit dessen Router),
+  BOOTP mit Reservierung und Lease-Dauer, kein dynamisches BOOTP ohne
+  Freigabe ✅
+- Playwright-E2E 7/7 (neu: Superscope anlegen/zuordnen, YAML-Export,
+  netsh-Dry-Run mit Warnungen, Backup-Download) ✅

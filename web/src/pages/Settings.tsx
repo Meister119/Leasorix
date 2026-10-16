@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
+import { BackupImport } from "./Backup";
 import { OptionsEditor, useOptionDefinitions } from "../components/OptionsEditor";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Select, Table, Tabs, Td, Toggle, useFeedback } from "../components/ui";
 import { formatDateTime, roleLabel } from "../lib/format";
 
-type Tab = "account" | "users" | "options" | "system";
+type Tab = "account" | "users" | "options" | "backup" | "system";
 
 export function SettingsPage() {
   const { isAdmin } = useAuth();
@@ -15,6 +16,7 @@ export function SettingsPage() {
     { id: "account", label: "Mein Konto & API-Tokens" },
     ...(isAdmin ? [{ id: "users" as Tab, label: "Benutzer" }] : []),
     { id: "options", label: "Server-Optionen" },
+    { id: "backup", label: "Sicherung & Import" },
     { id: "system", label: "System" },
   ];
   return (
@@ -24,6 +26,7 @@ export function SettingsPage() {
       {tab === "account" && <Account />}
       {tab === "users" && isAdmin && <Users />}
       {tab === "options" && <ServerOptions />}
+      {tab === "backup" && <BackupImport />}
       {tab === "system" && <SystemInfo />}
     </>
   );

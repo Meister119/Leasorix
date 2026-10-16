@@ -219,6 +219,10 @@ func (p *Policy) normalize() error {
 }
 
 // normalizeMACPattern canonicalises a MAC address or wildcard pattern.
+// NormalizeMACPattern validates a MAC filter pattern (MAC address or prefix
+// with wildcards) and returns its canonical form.
+func NormalizeMACPattern(s string) (string, error) { return normalizeMACPattern(s) }
+
 func normalizeMACPattern(s string) (string, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if !strings.ContainsAny(s, "*?") {

@@ -12,7 +12,7 @@ import { hasErrors, validateRange, validateScope, type Errors } from "../lib/val
 import { LeasesTable } from "./Leases";
 import { PoliciesList } from "./Policies";
 import { ReservationsTable } from "./Reservations";
-import { leaseTimes, useScopes } from "./Scopes";
+import { leaseTimes, useScopes, useSuperscopes } from "./Scopes";
 
 type Tab = "overview" | "exclusions" | "options" | "reservations" | "policies" | "leases";
 
@@ -181,6 +181,7 @@ function Overview({ scope }: { scope: S["Scope"] }) {
     refetchInterval: 5000,
   });
   const scopes = useScopes();
+  const superscopes = useSuperscopes();
   const qc = useQueryClient();
   const { toast } = useFeedback();
   const [f, setF] = useState(scope);
@@ -192,12 +193,23 @@ function Overview({ scope }: { scope: S["Scope"] }) {
       unwrap(
         api.PUT("/scopes/{id}", {
           params: { path: { id: scope.id } },
-          body: { name: f.name, description: f.description, subnet: f.subnet, start: f.start, end: f.end, lease_time: f.lease_time, enabled: f.enabled },
+          body: {
+            name: f.name,
+            description: f.description,
+            subnet: f.subnet,
+            start: f.start,
+            end: f.end,
+            lease_time: f.lease_time,
+            enabled: f.enabled,
+            bootp: f.bootp,
+            superscope_id: f.superscope_id,
+          },
         }),
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["scope", scope.id] });
       qc.invalidateQueries({ queryKey: ["scopes"] });
+      qc.invalidateQueries({ queryKey: ["superscopes"] });
       toast("Scope gespeichert");
     },
     onError: (e) => {
@@ -267,6 +279,23 @@ function Overview({ scope }: { scope: S["Scope"] }) {
           </Select>
           <div className="flex items-end pb-2">
             <Toggle label="Scope aktiv" checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} disabled={!canWrite} />
+          </div>
+          <Select
+            label="Superscope"
+            value={String(f.superscope_id)}
+            onChange={(e) => setF({ ...f, superscope_id: Number(e.target.value) })}
+            disabled={!canWrite}
+            hint="Scopes eines Superscopes versorgen gemeinsam ein physisches Netz"
+          >
+            <option value="0">– keiner –</option>
+            {superscopes.data?.map((ss) => (
+              <option key={ss.id} value={ss.id}>
+                {ss.name}
+              </option>
+            ))}
+          </Select>
+          <div className="flex items-end pb-2">
+            <Toggle label="BOOTP-Clients dynamisch bedienen" checked={f.bootp} onChange={(v) => setF({ ...f, bootp: v })} disabled={!canWrite} />
           </div>
           <div className="sm:col-span-2">
             <TextArea label="Beschreibung" rows={2} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canWrite} />

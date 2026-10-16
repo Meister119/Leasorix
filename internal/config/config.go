@@ -121,6 +121,9 @@ type DHCP4Config struct {
 	ExpiryInterval time.Duration `yaml:"expiry_interval"`
 	// ConflictDetection pings addresses before offering them.
 	ConflictDetection ConflictDetectionConfig `yaml:"conflict_detection"`
+	// BOOTPLeaseTime is the lease duration of BOOTP clients (reservations
+	// and scopes with BOOTP enabled).
+	BOOTPLeaseTime time.Duration `yaml:"bootp_lease_time"`
 }
 
 // ConflictDetectionConfig configures ICMP conflict detection.
@@ -263,6 +266,7 @@ func Default() Config {
 			DeclineTime:    24 * time.Hour,
 			ExpiredGrace:   4 * time.Hour,
 			ExpiryInterval: 10 * time.Second,
+			BOOTPLeaseTime: 30 * 24 * time.Hour,
 			ConflictDetection: ConflictDetectionConfig{
 				Enabled:  true,
 				Timeout:  500 * time.Millisecond,
@@ -452,10 +456,11 @@ func (d *DHCP4Config) validate() []error {
 		errs = append(errs, errors.New("dhcp4.workers must be at least 1"))
 	}
 	for name, v := range map[string]time.Duration{
-		"offer_timeout":   d.OfferTimeout,
-		"decline_time":    d.DeclineTime,
-		"expired_grace":   d.ExpiredGrace,
-		"expiry_interval": d.ExpiryInterval,
+		"offer_timeout":    d.OfferTimeout,
+		"decline_time":     d.DeclineTime,
+		"expired_grace":    d.ExpiredGrace,
+		"expiry_interval":  d.ExpiryInterval,
+		"bootp_lease_time": d.BOOTPLeaseTime,
 	} {
 		if v <= 0 {
 			errs = append(errs, fmt.Errorf("dhcp4.%s must be positive", name))

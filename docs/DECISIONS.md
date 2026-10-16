@@ -649,3 +649,91 @@ erst nach dem Paar-Modus. Er ist nicht umgesetzt: der Paar-Modus deckt die
 Windows-Failover-Parität ab, ein Raft-Log für Leases würde jede Vergabe an
 ein Quorum binden (mehr Latenz, ein dritter Knoten nötig). Bei Bedarf als
 eigenes Vorhaben nach Phase 9.
+
+## D-053 – Superscopes
+
+Eigene Tabelle `superscope_members` (Scope gehört höchstens einem
+Superscope; Löschen auf beiden Seiten kaskadiert sauber, keine Spalte mit
+Fremdschlüssel in `scopes`, damit die Down-Migration ohne Tabellenneubau
+auskommt). Der DHCP-Handler ermittelt die Scopes des Links wie bisher
+(Interface-Adressen bzw. giaddr/118/82.5) und hängt die übrigen Mitglieder
+ihrer Superscopes an (Reihenfolge: gefundener Scope zuerst, dann nach
+Netzadresse). Als Server-Identifier dient weiter eine Adresse des Interfaces.
+Superscopes werden wie alle Konfigurationstabellen per HA repliziert und
+sind Teil von Export/Import (Bezug über den Namen).
+
+## D-054 – BOOTP
+
+Optional laut Plan, umgesetzt wie bei Windows: Clients mit Reservierung
+bekommen immer eine BOOTREPLY, dynamisches BOOTP aus dem Pool nur bei
+Scopes mit `bootp`. Lease-Dauer global `dhcp4.bootp_lease_time` (Default 30
+Tage wie Windows); der Lease wird normal gespeichert, repliziert und läuft
+ab (BOOTP-Clients erneuern nicht). Antworten enthalten keine DHCP-Optionen
+(53, 51, 54 …); der 64-Byte-Vendor-Bereich (RFC 951/1497) wird nach Priorität
+gefüllt (Maske, Router, DNS, Hostname, Domäne, …), Option 66/67 landen in
+`sname`/`file`/`siaddr`. Policies und HA-Zuständigkeit gelten wie bei DHCP.
+
+## D-055 – Keine Multicast-Scopes (MADCAP)
+
+Multicast-Scopes sind laut Plan optional. MADCAP (RFC 2730) ist ein eigenes
+Protokoll (UDP 2535) mit sehr geringer Verbreitung; nicht umgesetzt. Der
+netsh-Importer meldet solche Zeilen als nicht übernommen.
+
+## D-056 – Konfigurations-Export/-Import
+
+- Format `leasorix-config/v1`, YAML (Default) oder JSON mit identischen
+  Schlüsseln; Bezüge über Namen statt IDs, damit Dateien zwischen Servern
+  übertragbar sind. Die Scope-Einträge sind Scope-Bundles (D-050).
+- Benutzer und API-Tokens gehören nicht dazu (Geheimnisse); dafür gibt es
+  Backup/Restore.
+- Import über eine temporäre Datenbank: aktuelle Konfiguration hineinkopieren
+  (`merge`) oder leer starten (`replace`), Dokument über die normalen
+  Store-Methoden anwenden (alle Validierungen), Ergebnis in einer
+  Transaktion in die echte Datenbank übernehmen. So ist der Import
+  alles-oder-nichts, ohne jede Validierung doppelt zu implementieren. Ein
+  Audit-Eintrag `config.import` statt Tausender Einzeleinträge.
+- Leases werden danach dem Scope zugeordnet, dessen Subnetz ihre Adresse
+  enthält (IDs können sich ändern); das gilt jetzt allgemein auch im
+  Lease-Manager (`ScopesChanged`) und beim HA-Config-Sync.
+- Dry-Run validiert gegen den aktuellen Stand ohne Änderung. Import nur für
+  Admins, auf einem HA-Partner gesperrt (read-only).
+
+## D-057 – Importer für `netsh dhcp server dump`
+
+Der Plan nennt netsh oder ISC-dhcpd.conf als optionalen Importer; gewählt
+wurde netsh (Windows-Parität ist das Ziel des Projekts, Umsteiger kommen
+typischerweise von Windows). Der Konverter erzeugt ein
+`leasorix-config/v1`-Dokument, das wie jeder Import geprüft wird. UTF-16
+(PowerShell-Umleitung) wird erkannt. Standard-Optionsdefinitionen und die
+eingebauten Windows-Klassen werden übersprungen; Optionswerte werden gegen
+den Optionstyp validiert und bei Fehlern mit Warnung ausgelassen statt den
+Import abzubrechen. Nicht übernommene Zeilen (klassenspezifische Werte,
+DNS-Updates, Multicast, DHCPv6, Server-Einstellungen ohne Gegenstück)
+werden mit Zeilennummer bzw. zusammengefasst gemeldet.
+
+## D-058 – Backup und Restore
+
+- Backup = vollständige SQLite-Kopie per `VACUUM INTO` über eine eigene
+  Verbindung (konsistent, blockiert keine Schreiber). Enthält
+  Passwort-Hashes → nur Admins.
+- Restore ist logisch: das hochgeladene Backup wird in eine temporäre Datei
+  geschrieben, geprüft (SQLite-Header, Leasorix-Tabellen, Schemaversion –
+  neuere Versionen werden abgelehnt), Trigger/Views daraus entfernt (eine
+  präparierte Datei soll beim Lesen nichts ausführen), auf das aktuelle
+  Schema migriert und Konfiguration, Benutzer, API-Tokens und Leases in einer
+  Transaktion übernommen. Audit-Log und HA-Zustand bleiben lokal, alle
+  Sitzungen enden. Danach werden Scope-Snapshot und Lease-Manager neu
+  geladen – kein Neustart nötig.
+- Der Plan nennt `leasorix backup/restore`; umgesetzt als
+  `leasorixd backup|restore` (das Daemon-Binary besitzt die Datenbank;
+  `restore` offline mit Datenverzeichnis-Lock) und `leasorixctl
+  backup|restore` über die API.
+
+## D-059 – `leasorixctl`
+
+Eigenes Binary auf Basis des aus der OpenAPI-Spec generierten Go-Clients
+(`client: true` im oapi-codegen-Config). Authentifizierung nur per API-Token
+(keine Sessions/CSRF), Konfiguration über Flags oder `LEASORIX_URL`,
+`LEASORIX_TOKEN`, `LEASORIX_CA`/`LEASORIX_INSECURE`, Ausgabe als Tabelle
+oder JSON (`-o json`). Destruktive Befehle (`ha partner-down`, `restore`)
+verlangen `--yes`.

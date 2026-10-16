@@ -29,6 +29,8 @@ const usage = `Usage:
   leasorixd leases export [--config FILE] [--out FILE]
                                                  export the lease table as JSON (also while running)
   leasorixd leases import [--config FILE] FILE   merge a lease export (server must be stopped)
+  leasorixd backup [--config FILE] --out FILE    write a backup (database copy, also while running)
+  leasorixd restore [--config FILE] FILE         restore configuration, users and leases (server stopped)
 `
 
 func run(args []string) int {
@@ -38,6 +40,8 @@ func run(args []string) int {
 			return runHA(args[1:])
 		case "leases":
 			return runLeases(args[1:])
+		case "backup", "restore":
+			return runBackup(args[0], args[1:])
 		case "help", "-h", "--help":
 			fmt.Print(usage)
 			return 0
@@ -180,5 +184,61 @@ func runLeases(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "imported %d records: %d changed, %d conflicts resolved\n", recs, changed, conflicts)
+	return 0
+}
+
+func runBackup(cmd string, args []string) int {
+	fs := flag.NewFlagSet("leasorixd "+cmd, flag.ContinueOnError)
+	configPath := fs.String("config", os.Getenv("LEASORIX_CONFIG"), "path to the YAML configuration file (env LEASORIX_CONFIG)")
+	outPath := fs.String("out", "", "backup: output file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "leasorixd: %v\n", err)
+		return 1
+	}
+	ctx := context.Background()
+	if cmd == "backup" {
+		if *outPath == "" {
+			fmt.Fprintln(os.Stderr, "leasorixd backup: --out is required")
+			return 2
+		}
+		f, err := os.OpenFile(*outPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // operator-supplied path
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "leasorixd backup: %v\n", err)
+			return 1
+		}
+		n, err := app.Backup(ctx, cfg, f)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			_ = os.Remove(*outPath) //nolint:gosec // operator-supplied path
+			fmt.Fprintf(os.Stderr, "leasorixd backup: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "backup written to %s (%d bytes)\n", *outPath, n)
+		return 0
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "leasorixd restore: exactly one backup file is required")
+		return 2
+	}
+	f, err := os.Open(fs.Arg(0)) //nolint:gosec // operator-supplied path
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "leasorixd restore: %v\n", err)
+		return 1
+	}
+	defer f.Close()
+	log, _ := logging.New(os.Stderr, "warn", "text")
+	sum, err := app.Restore(ctx, cfg, log, f)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "leasorixd restore: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "restored %d scopes, %d reservations, %d users, %d leases (backup schema %d)\n",
+		sum.Scopes, sum.Reservations, sum.Users, sum.Leases, sum.SchemaVersion)
 	return 0
 }

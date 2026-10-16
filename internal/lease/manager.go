@@ -902,26 +902,29 @@ func (m *Manager) Expire(ctx context.Context) {
 	m.log.Debug("lease expiry run", "expired", expired, "purged", purged)
 }
 
-// ScopesChanged drops in-memory state of scopes that no longer exist and
-// of leases outside their scope's subnet (the database removes them via ON
-// DELETE CASCADE, or the HA configuration sync removes them).
+// ScopesChanged adapts the in-memory table to a new configuration: every
+// lease belongs to the scope whose subnet contains its address (scope ids can
+// change through a configuration import or HA sync), leases outside all
+// scopes are dropped (the database removes them via ON DELETE CASCADE or
+// store.RemapLeases). Offers and allocation cursors of removed scopes are
+// discarded.
 func (m *Manager) ScopesChanged(snap *scope.Snapshot) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for id, ls := range m.byScope {
-		p := snap.ByID(id)
-		for ip := range ls {
-			if p == nil || !p.InSubnet(ip) {
-				m.removeLocked(ip)
-			}
+	for ip, l := range m.leases {
+		p := snap.ForAddr(ip)
+		switch {
+		case p == nil:
+			m.removeLocked(ip)
+		case p.ID != l.ScopeID:
+			m.unindexLocked(l)
+			l.ScopeID = p.ID
+			m.putLocked(l)
 		}
-		if p != nil {
-			continue
-		}
-		for k := range m.cursor {
-			if k.scopeID == id {
-				delete(m.cursor, k)
-			}
+	}
+	for k := range m.cursor {
+		if snap.ByID(k.scopeID) == nil {
+			delete(m.cursor, k)
 		}
 	}
 	for k, o := range m.offerBy {
@@ -930,6 +933,29 @@ func (m *Manager) ScopesChanged(snap *scope.Snapshot) {
 			delete(m.offers, o.ip)
 		}
 	}
+}
+
+// Reload replaces the in-memory table with the database content (after a
+// restore). Outstanding offers are dropped.
+func (m *Manager) Reload(ctx context.Context) error {
+	all, err := m.db.LoadAll(ctx)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.leases = map[uint32]*Lease{}
+	m.byClient = map[ClientKey]map[uint32]*Lease{}
+	m.byScope = map[int64]map[uint32]*Lease{}
+	m.offers = map[uint32]*offer{}
+	m.offerBy = map[offerKey]*offer{}
+	m.cursor = map[cursorKey]uint32{}
+	for i := range all {
+		l := all[i]
+		m.putLocked(&l)
+	}
+	m.log.Info("leases reloaded", "count", len(all))
+	return nil
 }
 
 // ---- queries -------------------------------------------------------------------

@@ -154,6 +154,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/superscopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSuperscopes"];
+        put?: never;
+        post: operations["createSuperscope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/superscopes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSuperscope"];
+        put: operations["updateSuperscope"];
+        post?: never;
+        delete: operations["deleteSuperscope"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Complete DHCP configuration (format leasorix-config/v1, see docs/ADMIN.md); users and API tokens are not included. */
+        get: operations["exportConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Imports a configuration document (YAML or JSON). `merge` adds it to
+         *     the existing configuration (existing objects are conflicts), `replace`
+         *     replaces the whole DHCP configuration (leases inside the new scopes
+         *     are kept). Either everything is applied or nothing.
+         */
+        post: operations["importConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/import/netsh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Converts and imports the output of `netsh dhcp server dump` (Windows DHCP server). */
+        post: operations["importNetsh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scopes/import": {
         parameters: {
             query?: never;
@@ -694,6 +784,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Complete backup (SQLite database copy, contains password hashes). */
+        get: operations["downloadBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Restores configuration, users, API tokens and leases from a backup
+         *     (also of older versions). All sessions end; log in again afterwards.
+         */
+        post: operations["restoreBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ha/status": {
         parameters: {
             query?: never;
@@ -848,6 +975,13 @@ export interface components {
             /** @description Seconds */
             lease_time: number;
             enabled: boolean;
+            /** @description Dynamic BOOTP for this scope. */
+            bootp: boolean;
+            /**
+             * Format: int64
+             * @description 0 = no superscope.
+             */
+            superscope_id: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -861,6 +995,52 @@ export interface components {
             end: string;
             lease_time: number;
             enabled: boolean;
+            bootp?: boolean;
+            /**
+             * Format: int64
+             * @description 0 or absent = no superscope.
+             */
+            superscope_id?: number;
+        };
+        Superscope: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            scope_ids: number[];
+        };
+        SuperscopeInput: {
+            name: string;
+            description?: string;
+        };
+        ConfigImportResult: {
+            /** @enum {string} */
+            mode: "merge" | "replace";
+            dry_run: boolean;
+            scopes: number;
+            reservations: number;
+            policies: number;
+            classes: number;
+            option_definitions: number;
+            options: number;
+            mac_filters: number;
+            superscopes: number;
+        };
+        NetshImportResult: {
+            result: components["schemas"]["ConfigImportResult"];
+            warnings: {
+                line: number;
+                text: string;
+                reason: string;
+            }[];
+        };
+        RestoreResult: {
+            /** Format: int64 */
+            schema_version: number;
+            scopes: number;
+            reservations: number;
+            users: number;
+            leases: number;
         };
         AddrRange: {
             start: string;
@@ -1327,6 +1507,8 @@ export interface components {
         };
     };
     parameters: {
+        ImportMode: "merge" | "replace";
+        DryRun: boolean;
         Id: number;
         Code: number;
         Owner: components["schemas"]["OptionOwner"];
@@ -1659,6 +1841,211 @@ export interface operations {
                 content?: never;
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listSuperscopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All superscopes with their member scopes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Superscope"][];
+                };
+            };
+        };
+    };
+    createSuperscope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuperscopeInput"];
+            };
+        };
+        responses: {
+            /** @description Created. Members are assigned via the scope (superscope_id). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Superscope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getSuperscope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The superscope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Superscope"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateSuperscope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuperscopeInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Superscope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteSuperscope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted; the member scopes are kept. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exportConfig: {
+        parameters: {
+            query?: {
+                format?: "yaml" | "json";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/yaml": string;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    importConfig: {
+        parameters: {
+            query?: {
+                mode?: components["parameters"]["ImportMode"];
+                dry_run?: components["parameters"]["DryRun"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/yaml": string;
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Import result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigImportResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    importNetsh: {
+        parameters: {
+            query?: {
+                mode?: components["parameters"]["ImportMode"];
+                dry_run?: components["parameters"]["DryRun"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "text/plain": string;
+            };
+        };
+        responses: {
+            /** @description Import result and lines that were not imported. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetshImportResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
         };
     };
     importScope: {
@@ -2776,6 +3163,51 @@ export interface operations {
                     "application/json": components["schemas"]["SystemInfo"];
                 };
             };
+        };
+    };
+    downloadBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backup file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
+    restoreBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Restored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
     getHAStatus: {

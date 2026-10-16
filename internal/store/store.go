@@ -166,3 +166,38 @@ func (db *DB) WriteTx(ctx context.Context, fn func(tx *sql.Tx) error) (err error
 	}
 	return tx.Commit()
 }
+
+// BackupTo writes a consistent copy of the database to path (which must not
+// exist) using VACUUM INTO on a separate connection; writers are not
+// blocked.
+func (db *DB) BackupTo(ctx context.Context, path string) error {
+	c, err := sql.Open("sqlite", dsn(db.path, []string{"busy_timeout(10000)"}, ""))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if _, err := c.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
+		return fmt.Errorf("backup: %w", err)
+	}
+	return nil
+}
+
+// LatestSchemaVersion is the newest migration known to this binary.
+func LatestSchemaVersion() (int64, error) {
+	sub, err := fs.Sub(migrationsFS, "migrations")
+	if err != nil {
+		return 0, err
+	}
+	entries, err := fs.ReadDir(sub, ".")
+	if err != nil {
+		return 0, err
+	}
+	var v int64
+	for _, e := range entries {
+		var n int64
+		if _, err := fmt.Sscanf(e.Name(), "%05d_", &n); err == nil && n > v {
+			v = n
+		}
+	}
+	return v, nil
+}
