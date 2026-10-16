@@ -1,473 +1,479 @@
-# Fortschritt
+# Progress
 
-Kurze Notiz pro abgeschlossener Phase (siehe PLAN.md). Entscheidungen stehen
-in [DECISIONS.md](DECISIONS.md).
+A short note per completed phase (see PLAN.md). Decisions are recorded in
+[DECISIONS.md](DECISIONS.md).
 
 | Phase | Status |
 |---|---|
-| 1 – Fundament | ✅ abgeschlossen |
-| 2 – DHCPv4-Kern | ✅ abgeschlossen |
-| 3 – Optionen, Klassen, Policies, Filter | ✅ abgeschlossen |
-| 4 – Audit, Statistiken, Metriken | ✅ abgeschlossen |
-| 5 – REST-API, Auth, Web-UI | ✅ abgeschlossen |
-| 6 – Hochverfügbarkeit | ✅ abgeschlossen |
-| 7 – Komfort & Kompatibilität | ✅ abgeschlossen |
-| 8 – Docker & Compose | ✅ abgeschlossen |
-| 9 – DNS-Integration | ✅ abgeschlossen |
-| 10 – DHCPv6 (optional) | ✅ abgeschlossen |
+| 1 – Foundation | ✅ done |
+| 2 – DHCPv4 core | ✅ done |
+| 3 – Options, classes, policies, filters | ✅ done |
+| 4 – Audit, statistics, metrics | ✅ done |
+| 5 – REST API, auth, web UI | ✅ done |
+| 6 – High availability | ✅ done |
+| 7 – Convenience & compatibility | ✅ done |
+| 8 – Docker & Compose | ✅ done |
+| 9 – DNS integration | ✅ done |
+| 10 – DHCPv6 (optional) | ✅ done |
 
 ---
 
-## Phase 1 – Fundament
+## Phase 1 – Foundation
 
-**Umgesetzt**
-- Go-Modul `github.com/meister119/leasorix`, Repo-Struktur laut PLAN.md
-  (Pakete der späteren Phasen als dokumentierte Platzhalter).
-- `Makefile` mit `build`, `test` (Race-Detector), `lint`, `vuln`, `ci`;
-  `.golangci.yml` (v2); GitHub-Actions-Workflow `ci.yml`.
-- Bootstrap-Config: YAML (`--config` bzw. `LEASORIX_CONFIG`) + Env-Overrides
-  `LEASORIX_<SECTION>_<KEY>`, strikte Validierung (unbekannte Keys = Fehler).
-  Beispiel: `deploy/examples/leasorix.yml`.
-- Strukturierte Logs via `slog` (JSON oder Text, Level konfigurierbar).
-- Graceful Shutdown über `SIGINT`/`SIGTERM` (`signal.NotifyContext` +
-  `errgroup`, HTTP-Shutdown mit Timeout, DB wird sauber geschlossen).
-- SQLite-Store (modernc, WAL, FULL sync, Writer-/Reader-Pool), goose-
-  Migrationen eingebettet. Tabellen: `scopes`, `exclusions`, `reservations`,
+**Implemented**
+- Go module `github.com/meister119/leasorix`, repo layout as described in
+  PLAN.md (packages for later phases as documented placeholders).
+- `Makefile` with `build`, `test` (race detector), `lint`, `vuln`, `ci`;
+  `.golangci.yml` (v2); GitHub Actions workflow `ci.yml`.
+- Bootstrap config: YAML (`--config` or `LEASORIX_CONFIG`) + env overrides
+  `LEASORIX_<SECTION>_<KEY>`, strict validation (unknown keys = error).
+  Example: `deploy/examples/leasorix.yml`.
+- Structured logs via `slog` (JSON or text, configurable level).
+- Graceful shutdown on `SIGINT`/`SIGTERM` (`signal.NotifyContext` +
+  `errgroup`, HTTP shutdown with timeout, the DB is closed cleanly).
+- SQLite store (modernc, WAL, FULL sync, writer/reader pool), embedded
+  goose migrations. Tables: `scopes`, `exclusions`, `reservations`,
   `options`, `leases`, `audit_log`, `users`.
-- HTTP-Management-Server (chi) mit `/healthz` (Liveness), `/readyz`
-  (Readiness-Checks, aktuell: Datenbank) und `/metrics` (eigene
-  Prometheus-Registry mit Go-/Prozess-Collector und `leasorix_build_info`).
+- HTTP management server (chi) with `/healthz` (liveness), `/readyz`
+  (readiness checks, currently: database) and `/metrics` (dedicated
+  Prometheus registry with Go/process collectors and `leasorix_build_info`).
 
-**Akzeptanz**
-- `make build` erzeugt `bin/leasorixd` ✅
-- `leasorixd --config x.yml` startet, Endpunkte antworten, `SIGTERM` → Exit 0 ✅
-- Migrationen idempotent (Test `TestMigrateIdempotent` + zweiter Start ohne
-  erneute Migration) ✅
-- Unit-Tests grün (`make test`), `make lint` ohne Findings ✅
+**Acceptance**
+- `make build` produces `bin/leasorixd` ✅
+- `leasorixd --config x.yml` starts, endpoints respond, `SIGTERM` → exit 0 ✅
+- Migrations are idempotent (test `TestMigrateIdempotent` + second start
+  without re-running migrations) ✅
+- Unit tests green (`make test`), `make lint` without findings ✅
 
-**Offene Punkte / Hinweise**
-- `govulncheck` läuft in der CI. In der aktuellen Entwicklungsumgebung blockt
-  die Netzwerk-Policy `vuln.go.dev`, daher lokal nicht ausführbar.
+**Open points / notes**
+- `govulncheck` runs in CI. In the current development environment the
+  network policy blocks `vuln.go.dev`, so it cannot be run locally.
 
-## Phase 2 – DHCPv4-Kern
+## Phase 2 – DHCPv4 core
 
-**Umgesetzt**
-- `internal/scope`: Scopes, Exclusions, Reservierungen mit Validierung
-  (Überlappung, Bereich im Subnetz, Exclusion im Bereich, eindeutige
-  MAC/Client-ID/IP) und unveränderlichem In-Memory-Snapshot für die Engine.
-- `internal/lease`: Lease-Manager (In-Memory-Index, Adressauswahl
-  Reservierung > Angebot > bestehender Lease > Option 50 > frei > released >
-  expired), Offer-Haltezeit, Release/Decline, Expiry-Worker mit
-  Grace-Period, Group-Commit-Writer (ACK erst nach durablem Commit),
-  ICMP-Konflikterkennung mit ARP-Selbstprüfung.
-- `internal/dhcp4`: State Machine nach RFC 2131 (DISCOVER→OFFER, REQUEST in
+**Implemented**
+- `internal/scope`: scopes, exclusions, reservations with validation
+  (overlap, range within the subnet, exclusion within the range, unique
+  MAC/client ID/IP) and an immutable in-memory snapshot for the engine.
+- `internal/lease`: lease manager (in-memory index, address selection
+  reservation > offer > existing lease > option 50 > free > released >
+  expired), offer hold time, release/decline, expiry worker with
+  grace period, group-commit writer (ACK only after a durable commit),
+  ICMP conflict detection with ARP self-check.
+- `internal/dhcp4`: state machine per RFC 2131 (DISCOVER→OFFER, REQUEST in
   SELECTING/INIT-REBOOT/RENEWING/REBINDING → ACK/NAK, DECLINE, RELEASE,
-  INFORM), Antwortadressierung nach RFC 2131 4.1 (Relay, ciaddr, Broadcast,
-  L2-Unicast per AF_PACKET), Relay-Unterstützung (giaddr, Option 82 echo,
-  Link-Selection 82.5, Subnet-Selection 118, Server-ID-Override 82.11),
-  mehrere Scopes pro Server, Scope-Zuordnung per Interface-IP bzw. giaddr.
-- Server: ein Socket pro Interface (`SO_BINDTODEVICE`, `IP_PKTINFO`),
-  begrenzte Parallelität, automatisches Neu-Binden, Readiness-Check `dhcp4`.
-- Config-Sektion `dhcp4` (Interfaces, Zeiten, Konflikterkennung).
-- Test-Infrastruktur: `test/netns` (Namespaces, veth, `setns`),
-  `test/dhcpclient` (Go-Client-Simulator für viele parallele Clients),
-  `test/integration` (`make test-integration`), Fuzz-Test `make fuzz`.
-- CI: zusätzlicher Job für die netns-Integrationstests.
+  INFORM), reply addressing per RFC 2131 4.1 (relay, ciaddr, broadcast,
+  L2 unicast via AF_PACKET), relay support (giaddr, option 82 echo,
+  link selection 82.5, subnet selection 118, server ID override 82.11),
+  multiple scopes per server, scope selection by interface IP or giaddr.
+- Server: one socket per interface (`SO_BINDTODEVICE`, `IP_PKTINFO`),
+  bounded concurrency, automatic rebinding, readiness check `dhcp4`.
+- Config section `dhcp4` (interfaces, timings, conflict detection).
+- Test infrastructure: `test/netns` (namespaces, veth, `setns`),
+  `test/dhcpclient` (Go client simulator for many parallel clients),
+  `test/integration` (`make test-integration`), fuzz test `make fuzz`.
+- CI: additional job for the netns integration tests.
 
-**Akzeptanz** (`make test-integration`, alle grün)
-- dhclient: Lease erhalten, Unicast-Renew verlängert den Lease, INIT-REBOOT
-  nach Neustart bekommt dieselbe Adresse, Release ✅
-- udhcpc: Lease mit Maske/Lease-Zeit/Server-ID, Hostname + Client-ID
-  gespeichert, Release ✅
-- Go-Client: Exclusions, Reservierung bevorzugt, Decline sperrt Adresse,
-  Release, NAK für fremde Adresse und falsches Netz, INFORM, Leases
-  überleben Neustart ✅
-- Konflikterkennung: belegte Adresse wird übersprungen und als `declined`
-  markiert ✅
-- Relay (dnsmasq `--dhcp-relay`): Client im entfernten Subnetz bekommt Lease
-  aus dem passenden Scope, Server-ID = Adresse Richtung Relay ✅
-- 1000 parallele Clients: 1000 eindeutige Adressen, 1000 persistierte
-  aktive Leases, keine Duplikate (≈ 1,5–3 s inkl. Konflikt-Ping) ✅
-- Unit-Tests (Race-Detector) und Lint grün; Fuzzing ~1,2 Mio. Ausführungen
-  ohne Fund.
+**Acceptance** (`make test-integration`, all green)
+- dhclient: obtains a lease, unicast renew extends the lease, INIT-REBOOT
+  after a restart gets the same address, release ✅
+- udhcpc: lease with mask/lease time/server ID, hostname + client ID
+  stored, release ✅
+- Go client: exclusions, reservation preferred, decline blocks the address,
+  release, NAK for a foreign address and the wrong network, INFORM, leases
+  survive a restart ✅
+- Conflict detection: an address in use is skipped and marked as `declined`
+  ✅
+- Relay (dnsmasq `--dhcp-relay`): a client in the remote subnet gets a lease
+  from the matching scope, server ID = the address facing the relay ✅
+- 1000 parallel clients: 1000 unique addresses, 1000 persisted
+  active leases, no duplicates (≈ 1.5–3 s incl. conflict ping) ✅
+- Unit tests (race detector) and lint green; fuzzing ~1.2 million
+  executions without findings.
 
-**Hinweise**
-- DHCP-Optionen außer Subnetzmaske, Lease-Zeit, T1/T2 und Server-ID folgen
-  in Phase 3 (Router, DNS, … aus der `options`-Tabelle).
+**Notes**
+- DHCP options other than subnet mask, lease time, T1/T2 and server ID
+  follow in phase 3 (router, DNS, … from the `options` table).
 
-## Phase 3 – Optionen, Klassen, Policies, Filter
+## Phase 3 – Options, classes, policies, filters
 
-**Umgesetzt**
-- `internal/dhcpopt`: Options-Katalog (u. a. 3, 6, 12, 15, 42, 43, 60, 66,
-  67, 119, 121, 150, 249, 252) und typisierte Werte (IP, IP-Liste, String,
-  uint8/16/32, int32, bool, Hex, Domain-Liste RFC 1035, Routen RFC 3442) mit
-  Validierung, kanonischer Textform und Wire-Kodierung. Eigene
-  Optionsdefinitionen für weitere Codes.
+**Implemented**
+- `internal/dhcpopt`: option catalog (including 3, 6, 12, 15, 42, 43, 60,
+  66, 67, 119, 121, 150, 249, 252) and typed values (IP, IP list, string,
+  uint8/16/32, int32, bool, hex, domain list RFC 1035, routes RFC 3442) with
+  validation, canonical text form and wire encoding. Custom option
+  definitions for additional codes.
 - Migration 00002: `classes`, `policies`, `policy_conditions`,
   `policy_ranges`, `option_definitions`, `mac_filters`, `settings`;
-  `options` um Policy-Owner erweitert (Down-Migration getestet).
-- `internal/scope`: CRUD für Optionswerte (Server/Scope/Policy/
-  Reservierung), Klassen, Policies (inkl. Bedingungen, Bereichen,
-  Lease-Dauer), MAC-Filter und Filter-Schalter; Snapshot enthält alles
-  vorkodiert. Auswertung: Wildcard-Matching, Policy-Evaluierung (UND/ODER,
-  `eq`/`ne`, Option 82, User-Class nach RFC 3004), Bereichsberechnung,
-  Options-Vererbung, Filterentscheidung.
-- Lease-Manager: Allokation über `Candidate` (Policy-Bereiche, Lease-Dauer
-  der Policy), Cursor pro Bereich.
-- DHCP-Handler: MAC-Filter vor jeder Verarbeitung, Policies pro Scope,
-  Optionen nach Parameter Request List, PXE-Header-Felder, Größenlimit nach
-  Option 57; Optionen auch bei INFORM.
+  `options` extended with a policy owner (down migration tested).
+- `internal/scope`: CRUD for option values (server/scope/policy/
+  reservation), classes, policies (incl. conditions, ranges,
+  lease duration), MAC filters and filter toggles; the snapshot contains
+  everything pre-encoded. Evaluation: wildcard matching, policy evaluation
+  (AND/OR, `eq`/`ne`, option 82, user class per RFC 3004), range
+  calculation, option inheritance, filter decision.
+- Lease manager: allocation via `Candidate` (policy ranges, the policy's
+  lease duration), cursor per range.
+- DHCP handler: MAC filter before any processing, policies per scope,
+  options according to the Parameter Request List, PXE header fields, size
+  limit per option 57; options for INFORM as well.
 
-**Akzeptanz**
-- Tabellengetriebene Tests der Options-Auflösung (`TestOptionResolution`:
-  Server < Scope < Server-Policy < Scope-Policy < Reservierung, Processing
-  Order, ODER, `ne`, deaktivierte Policy, Option 82 per Hex) ✅
-- PXE-Client bekommt Boot-Optionen: udhcpc mit `-V PXEClient…` erhält
-  `tftp`, `bootfile`, `siaddr`, `boot_file`; Go-Client im PXE-Stil (Option
-  60/93/97, PRL) erhält 66/67 + Header-Felder; normaler Client nicht ✅
-- Gesperrte MAC bekommt keine Antwort, andere Clients werden bedient ✅
-- Standardoptionen (Router, DNS, Domain, NTP) kommen bei udhcpc an ✅
-- Unit-, Integrationstests und Lint grün.
+**Acceptance**
+- Table-driven tests of option resolution (`TestOptionResolution`:
+  server < scope < server policy < scope policy < reservation, processing
+  order, OR, `ne`, disabled policy, option 82 via hex) ✅
+- A PXE client gets boot options: udhcpc with `-V PXEClient…` receives
+  `tftp`, `bootfile`, `siaddr`, `boot_file`; a PXE-style Go client (options
+  60/93/97, PRL) receives 66/67 + header fields; a regular client does not ✅
+- A blocked MAC gets no reply, other clients are served ✅
+- Standard options (router, DNS, domain, NTP) reach udhcpc ✅
+- Unit tests, integration tests and lint green.
 
-## Phase 4 – Audit, Statistiken, Metriken
+## Phase 4 – Audit, statistics, metrics
 
-**Umgesetzt**
-- `internal/audit`: Einträge (Zeit, Actor, Quelle, Aktion, Objekt, Details
-  als JSON), Actor über `context`, Abfrage mit Filtern (Zeitraum, Actor,
-  Aktions-Präfix, Objekt) und Keyset-Pagination, Purge.
-- Alle Konfig-Mutationen (Scopes, Exclusions, Reservierungen, Optionen,
-  Optionsdefinitionen, Klassen, Policies, Filter, Filter-Schalter) schreiben
-  atomar einen Audit-Eintrag mit before/after.
-- Lease-Events (assign, renew optional, release, decline, conflict, expire)
-  im Audit-Log über den Group-Commit.
-- Scope-Statistik (`lease.Manager.Stats`): Gesamt, ausgeschlossen, nutzbar,
-  belegt, reserviert, gesperrt, frei, Auslastung %, Leases je Zustand.
+**Implemented**
+- `internal/audit`: entries (time, actor, source, action, object, details
+  as JSON), actor via `context`, queries with filters (time range, actor,
+  action prefix, object) and keyset pagination, purge.
+- All config mutations (scopes, exclusions, reservations, options,
+  option definitions, classes, policies, filters, filter toggles) atomically
+  write an audit entry with before/after.
+- Lease events (assign, renew (optional), release, decline, conflict,
+  expire) in the audit log via the group commit.
+- Scope statistics (`lease.Manager.Stats`): total, excluded, usable,
+  in use, reserved, blocked, free, utilization %, leases per state.
 - Prometheus: `leasorix_dhcp4_packets_received_total{type}`,
   `…_packets_sent_total{type}`, `…_packets_dropped_total{reason}`,
   `…_errors_total{kind}`, `…_request_duration_seconds{type}`,
   `leasorix_lease_events_total{event}`, `leasorix_lease_commit_duration_seconds`,
   `leasorix_lease_commit_batch_size`, `leasorix_scope_addresses{kind}`,
   `leasorix_scope_utilization_ratio`, `leasorix_leases{state}`.
-- Retention: `audit.retention` + Purge-Job; optionale Logdatei mit
-  Größenrotation (`log.file`, `max_size_mb`, `max_backups`).
+- Retention: `audit.retention` + purge job; optional log file with
+  size-based rotation (`log.file`, `max_size_mb`, `max_backups`).
 
-**Akzeptanz**
-- Audit-Einträge entstehen bei jeder Mutation: `TestEveryMutationIsAudited`
-  prüft alle 22 Mutationsarten (genau ein Eintrag, Actor/Quelle aus dem
-  Context), abgelehnte Operationen schreiben nichts ✅
-- Metriken erscheinen in `/metrics`: App-Test (Scope-Gauges) und
-  Integrationstest nach echtem DHCP-Verkehr (Paketzähler, Latenz,
-  Lease-Events, Auslastung 0.1 bei 1/10 belegt) ✅
-- Lease-Events landen mit Actor `dhcp` und Quelle `s0` im Audit-Log ✅
+**Acceptance**
+- Audit entries are created for every mutation: `TestEveryMutationIsAudited`
+  checks all 22 mutation types (exactly one entry, actor/source from the
+  context), rejected operations write nothing ✅
+- Metrics appear in `/metrics`: app test (scope gauges) and
+  integration test after real DHCP traffic (packet counters, latency,
+  lease events, utilization 0.1 with 1/10 in use) ✅
+- Lease events end up in the audit log with actor `dhcp` and source `s0` ✅
 
-**Hinweise**
-- Der HA-Status als Metrik kommt mit Phase 6 (HA existiert noch nicht).
-- Audit-Abfrage per API/UI folgt in Phase 5.
+**Notes**
+- HA status as a metric comes with phase 6 (HA does not exist yet).
+- Audit queries via API/UI follow in phase 5.
 
-## Phase 5 – REST-API, Auth, Web-UI
+## Phase 5 – REST API, auth, web UI
 
-**Umgesetzt**
-- OpenAPI-Spec (`internal/api/openapi.yaml`, ~50 Operationen) → generierte
-  Go-Typen + chi-Server-Interface und TS-Typen; CI prüft Aktualität.
-- `internal/auth`: Benutzer (argon2id), serverseitige Sessions mit
-  Idle-/Absolut-Timeout, CSRF-Token, API-Tokens mit Rollen-Deckelung,
-  Setup-Token für den Erststart, Login-Rate-Limit, Schutz des letzten Admins,
-  Audit aller Auth-Ereignisse. Migration 00003 (`sessions`, `api_tokens`).
-- REST-API `/api/v1` für Setup/Login/Logout/Me/Passwort, Tokens, Scopes
-  (+Statistik, Exclusions), Reservierungen (+CSV-Import), Optionen
-  (Server/Scope/Policy/Reservierung) und Definitionen, Klassen, Policies,
-  MAC-Filter, Leases (Suche/Filter/Paging, löschen, in Reservierung
-  umwandeln), Statistik, Audit (Filter, Keyset-Paging), Benutzer,
-  Einstellungen, System-Info, HA-Status (ab Phase 6 vollständig).
-- Middleware: Authentifizierung (Cookie/Bearer), zentrale RBAC-Tabelle,
-  CSRF, Origin- und Content-Type-Prüfung, Body-Limits, Security-Header/CSP.
-- HTTPS: selbstsigniert (Default), eigene Dateien oder aus.
-- Web-UI (Deutsch, hell/dunkel, responsive): Login & Ersteinrichtung,
-  Dashboard (Auslastung, Pakete/s, HA, letzte Ereignisse), Scopes (Liste,
-  Assistent, Detail mit Übersicht/Ausschlüssen/Optionen/Reservierungen/
-  Policies/Leases), Reservierungen (inline anlegen, Bearbeiten mit
-  Optionen, CSV-Import), Leases (Suche/Filter/Paging, umwandeln, löschen),
-  Policies/Klassen/Filter (Policy-Editor mit Bedingungen, Bereichen,
-  Lease-Dauer, Optionen), Hochverfügbarkeit, Audit-Log, Benutzer &
-  Einstellungen (Konto, API-Tokens, Benutzer, Server-Optionen,
-  Optionsdefinitionen, System).
-- Einbettung ins Binary (`make build`, Tag `ui`); `make build-noui` ohne
-  Node.js.
+**Implemented**
+- OpenAPI spec (`internal/api/openapi.yaml`, ~50 operations) → generated
+  Go types + chi server interface and TS types; CI checks they are up to
+  date.
+- `internal/auth`: users (argon2id), server-side sessions with
+  idle/absolute timeout, CSRF token, API tokens capped by role,
+  setup token for the first start, login rate limit, protection of the last
+  admin, audit of all auth events. Migration 00003 (`sessions`,
+  `api_tokens`).
+- REST API `/api/v1` for setup/login/logout/me/password, tokens, scopes
+  (+statistics, exclusions), reservations (+CSV import), options
+  (server/scope/policy/reservation) and definitions, classes, policies,
+  MAC filters, leases (search/filter/paging, delete, convert to a
+  reservation), statistics, audit (filters, keyset paging), users,
+  settings, system info, HA status (complete from phase 6 on).
+- Middleware: authentication (cookie/bearer), central RBAC table,
+  CSRF, origin and content type checks, body limits, security headers/CSP.
+- HTTPS: self-signed (default), custom files, or off.
+- Web UI (German, light/dark, responsive): Sign in & Initial setup,
+  Dashboard (utilization, packets/s, HA, recent events), Scopes (list,
+  wizard, detail view with Overview/Exclusions/Options/Reservations/
+  Policies/Leases), Reservations (inline creation, editing with
+  options, CSV import), Leases (search/filter/paging, convert, delete),
+  Policies & filters (classes, filters, policy editor with conditions,
+  ranges, lease duration, options), High availability, Audit log, Users &
+  settings (account, API tokens, users, server options, option
+  definitions, system).
+- Embedded in the binary (`make build`, tag `ui`); `make build-noui`
+  without Node.js.
 
-**Akzeptanz**
-- Kompletter Workflow nur über die UI (Playwright, `make test-e2e`):
-  Ersteinrichtung → Scope per Assistent (inkl. Frontend-Validierung) →
-  echter `udhcpc` im Client-Namespace bekommt eine Lease → Lease in der UI
-  sichtbar → in Reservierung umgewandelt → im Audit-Log (admin / dhcp) ✅
-- Weitere E2E-Tests: falsches Passwort, Read-only-Benutzer sieht keine
-  Änderungsaktionen, Dark-Mode bleibt erhalten — 5/5 grün ✅
-- Go-API-Tests: Setup, Login + Rate-Limit, Logout, CSRF/Origin/Content-Type,
-  Rollen + API-Tokens, Validierungsfehler mit Feldern, CRUD aller Objekte,
-  Leases, CSV-Import, Statistik, Header, RBAC-Tabelle ✅
-- Frontend-Unit-Tests (Vitest) für die Validierung, Typecheck ✅
+**Acceptance**
+- Complete workflow through the UI only (Playwright, `make test-e2e`):
+  Initial setup → scope via the wizard (incl. frontend validation) →
+  a real `udhcpc` in the client namespace gets a lease → lease visible in
+  the UI → converted to a reservation → in the audit log (admin / dhcp) ✅
+- More E2E tests: wrong password, a Read-only user sees no editing
+  actions, dark mode persists — 5/5 green ✅
+- Go API tests: setup, login + rate limit, logout, CSRF/origin/content type,
+  roles + API tokens, validation errors with fields, CRUD for all objects,
+  leases, CSV import, statistics, headers, RBAC table ✅
+- Frontend unit tests (Vitest) for the validation, typecheck ✅
 
-## Phase 6 – Hochverfügbarkeit
+## Phase 6 – High availability
 
-**Umgesetzt**
-- `internal/ha`: Partnerschaft zweier Server in den Modi Load Balance
-  (Hash(MAC), Prozent einstellbar, Default 50/50) und Hot Standby (Reserve
-  Default 5 %); feste Aufteilung der freien Adressen; Zustandsautomat
+**Implemented**
+- `internal/ha`: partnership of two servers in load balance mode
+  (hash(MAC), configurable percentage, default 50/50) or hot standby mode
+  (reserve default 5%); fixed split of the free addresses; state machine
   NORMAL / COMMUNICATION_INTERRUPTED / PARTNER_DOWN / RECOVER / RECOVER_DONE
-  mit Heartbeats, Timeouts, MCLT (Default 1 h), Auto-Partner-Down
-  (optional), manueller Partner-Down-Bestätigung und Split-Brain-Schutz
-  (erst Abgleich, dann Vergabe).
-- Peer-Protokoll über gRPC/Protobuf, abgesichert per mTLS (Zertifikate per
-  UI oder `leasorixd ha certs`) oder TLS + kanalgebundenem Shared Secret.
-- Lease-Replikation: synchron vor dem ACK (Default) oder asynchron,
-  gebündelt; Abgleich der kompletten Tabelle nach Wiederverbindung mit
-  deterministischer Konfliktauflösung (neuere Änderung; bei echten
-  Konflikten späteres Ende, dann Node-ID). Migration 00004.
-- Konfigurations-Replikation nach dem Single-Writer-Prinzip:
-  Trigger-gepflegte Versionsnummer, Snapshot vom Config-Leader, Partner
-  read-only (API 409, Banner in der UI); Benutzer/API-Tokens werden
-  mitrepliziert.
-- DHCP-Handler: Zuständigkeit je Zustand (gerichtete Renewals werden immer
-  beantwortet), Lease-Manager: eigener Pool-Anteil, MCLT-Begrenzung,
-  Kürzung bei fehlender Partner-Bestätigung.
-- API/UI: HA-Status (Zustand, Partner, Modus, Konfiguration, Fehler,
-  Zertifikatsablauf), Partner-Ausfall bestätigen, Zertifikats-Generator,
-  Notfall-Export/-Import der Lease-DB (auch per CLI), Split-Scope-Wizard
-  (80/20) mit Scope-Export/-Import (`leasorix-scope/v1`).
-- Metriken `leasorix_ha_*`, Audit-Einträge für Zustandswechsel,
-  Partner-Down, Config-Übernahme und Konflikte.
-- `flock` auf das Datenverzeichnis (kein Doppelstart, sicherer Offline-Import).
-- Doku: [HA.md](HA.md) (HA-Handbuch), DECISIONS D-043…D-052, ARCHITECTURE.
+  with heartbeats, timeouts, MCLT (default 1 h), automatic partner down
+  (optional), manual partner down confirmation and split-brain protection
+  (reconcile first, then allocate).
+- Peer protocol over gRPC/Protobuf, secured with mTLS (certificates via
+  the UI or `leasorixd ha certs`) or TLS + a channel-bound shared secret.
+- Lease replication: synchronous before the ACK (default) or asynchronous,
+  batched; reconciliation of the complete table after reconnecting, with
+  deterministic conflict resolution (newer change wins; for true
+  conflicts the later end, then the node ID). Migration 00004.
+- Configuration replication following the single-writer principle:
+  trigger-maintained version number, snapshot from the config leader,
+  partner is read-only (API 409, banner in the UI); users/API tokens are
+  replicated as well.
+- DHCP handler: responsibility per state (directed renewals are always
+  answered); lease manager: own pool share, MCLT limit,
+  shortening when the partner has not acknowledged.
+- API/UI: HA status (state, partner, mode, configuration, errors,
+  certificate expiry), confirm partner down, certificate generator,
+  emergency export/import of the lease DB (also via CLI), split scope
+  wizard (80/20) with scope export/import (`leasorix-scope/v1`).
+- Metrics `leasorix_ha_*`, audit entries for state changes,
+  partner down, config takeover and conflicts.
+- `flock` on the data directory (no double start, safe offline import).
+- Docs: [HA.md](HA.md) (HA guide), DECISIONS D-043…D-052, ARCHITECTURE.
 
-**Akzeptanz** (`make test-ha`, zwei echte `leasorixd` in Network Namespaces,
-mTLS mit per CLI erzeugten Zertifikaten)
-- Normalbetrieb: 5000 Clients, beide Server liefern (≈ 2500/2500), keine
-  doppelte Adresse, beide Datenbanken identisch; ≈ 300 Leases/s inkl.
-  ICMP-Konfliktprüfung und synchroner Replikation ✅
-- Primary per SIGKILL beendet: der Standby hat alle Leases schon beim ACK
-  (synchron), verlängert alle 40 Clients ohne Unterbrechung (Lease ≤ MCLT),
-  bedient neue Clients aus der Reserve, geht nach Auto-Timeout in
-  PARTNER_DOWN; der zurückkehrende Primary gleicht ab, beide NORMAL,
-  Tabellen identisch ✅
-- Netzwerk-Partition zwischen den Servern: beide vergeben nur aus ihrem
-  Anteil (Lease ≤ MCLT), nach der Heilung konsistente Datenbanken ohne
-  doppelte Adressen ✅
-- Konfigurationsänderung am Leader nach ≈ 0,2 s am Partner sichtbar; der
-  Partner lehnt Änderungen ab; der replizierte Admin kann sich am Partner
-  anmelden ✅
-- Unit-Tests: Zustandsautomat mit simulierter Zeit (9 Szenarien),
-  Aufteilung, zwei Nodes im Prozess (Replikation, Partition, Takeover nach
-  MCLT, falsches Secret, mTLS inkl. fremdem Knotenzertifikat),
-  Config-Snapshot-Roundtrip, Merge-Regeln, API (Read-only, Partner-Down,
-  Zertifikate, Export/Import, Split); Playwright-E2E 6/6 ✅
+**Acceptance** (`make test-ha`, two real `leasorixd` in network namespaces,
+mTLS with certificates generated via CLI)
+- Normal operation: 5000 clients, both servers serve (≈ 2500/2500), no
+  duplicate address, both databases identical; ≈ 300 leases/s incl.
+  ICMP conflict check and synchronous replication ✅
+- Primary killed with SIGKILL: the standby already has all leases at ACK
+  time (synchronous), renews all 40 clients without interruption
+  (lease ≤ MCLT), serves new clients from the reserve, enters PARTNER_DOWN
+  after the automatic timeout; the returning primary reconciles, both
+  NORMAL, tables identical ✅
+- Network partition between the servers: both allocate only from their
+  share (lease ≤ MCLT), after healing consistent databases without
+  duplicate addresses ✅
+- A configuration change on the leader is visible on the partner after
+  ≈ 0.2 s; the partner rejects changes; the replicated admin can sign in on
+  the partner ✅
+- Unit tests: state machine with simulated time (9 scenarios),
+  address split, two nodes in one process (replication, partition, takeover
+  after MCLT, wrong secret, mTLS incl. a foreign node certificate),
+  config snapshot round trip, merge rules, API (read-only, partner down,
+  certificates, export/import, split); Playwright E2E 6/6 ✅
 
-**Offene Punkte / Hinweise**
-- Kein Raft-/Cluster-Modus für mehr als zwei Knoten (optional laut Plan,
+**Open points / notes**
+- No Raft/cluster mode for more than two nodes (optional per the plan,
   D-052).
-- Die HA-Compose-Variante ist mit Phase 8 umgesetzt (`deploy/docker-compose.ha.yml`).
+- The HA Compose variant was implemented in phase 8 (`deploy/docker-compose.ha.yml`).
 
-## Phase 7 – Komfort & Kompatibilität
+## Phase 7 – Convenience & compatibility
 
-**Umgesetzt**
-- **Superscopes** (Multinet): Migration 00005, CRUD in API/UI, Zuordnung
-  im Scope, der DHCP-Handler bezieht alle Mitglieder des Links ein;
-  Teil von HA-Replikation und Export/Import.
-- **BOOTP** (optional): Antworten für reservierte BOOTP-Clients, dynamisches
-  BOOTP pro Scope, eigene Lease-Dauer, 64-Byte-Vendor-Bereich, Bootserver/
-  -datei im Header.
-- **Konfigurations-Export/-Import** (YAML/JSON, `leasorix-config/v1`) in
-  UI, API und `leasorixctl`: Modi Ergänzen/Ersetzen, Dry-Run, vollständige
-  Validierung über eine temporäre Datenbank, alles-oder-nichts, Leases
-  bleiben bei Ersetzen erhalten (Zuordnung per Adresse).
-- **Importer für `netsh dhcp server dump`** (Windows): Scopes, Bereiche,
-  Ausschlüsse, Reservierungen, Optionswerte, Optionsdefinitionen, Klassen,
-  Superscopes, MAC-Filter; Warnungen für nicht übernommene Zeilen; UTF-16.
-- **Backup/Restore** per UI, API, `leasorixd backup|restore` und
-  `leasorixctl backup|restore`: konsistente Datenbank-Kopie im laufenden
-  Betrieb, logischer Restore ohne Neustart inkl. Migration älterer Backups.
-- **`leasorixctl`**: REST-CLI (generierter Client) für Status, Scopes,
-  Leases, HA, Konfiguration, Backup; Tabellen- oder JSON-Ausgabe.
-- Multicast-Scopes (MADCAP) bewusst nicht umgesetzt (optional, D-055).
-- Doku: [ADMIN.md](ADMIN.md) (Admin-Handbuch), DECISIONS D-053…D-059.
+**Implemented**
+- **Superscopes** (multinet): migration 00005, CRUD in API/UI, assignment
+  in the scope, the DHCP handler includes all members of the link;
+  part of HA replication and export/import.
+- **BOOTP** (optional): replies for reserved BOOTP clients, dynamic
+  BOOTP per scope, separate lease duration, 64-byte vendor area, boot
+  server/boot file in the header.
+- **Configuration export/import** (YAML/JSON, `leasorix-config/v1`) in
+  the UI, API and `leasorixctl`: Merge/Replace modes, dry run, full
+  validation against a temporary database, all-or-nothing, leases
+  are kept on Replace (matched by address).
+- **Importer for `netsh dhcp server dump`** (Windows): scopes, ranges,
+  exclusions, reservations, option values, option definitions, classes,
+  superscopes, MAC filters; warnings for lines that were not imported;
+  UTF-16.
+- **Backup/restore** via UI, API, `leasorixd backup|restore` and
+  `leasorixctl backup|restore`: consistent database copy while running,
+  logical restore without a restart, incl. migration of older backups.
+- **`leasorixctl`**: REST CLI (generated client) for status, scopes,
+  leases, HA, configuration, backup; table or JSON output.
+- Multicast scopes (MADCAP) deliberately not implemented (optional, D-055).
+- Docs: [ADMIN.md](ADMIN.md) (admin guide), DECISIONS D-053…D-059.
 
 **Tests**
-- Unit: Superscope-Store, Snapshot, Handler (Superscope-Erweiterung,
-  BOOTP-Antworten), Bundle/Export-Import-Roundtrip (YAML und JSON
-  identisch), Merge-Konflikt ohne Teiländerung, Dry-Run, Replace mit
-  Lease-Erhalt, netsh-Import (UTF-8 und UTF-16), Backup/Restore inkl.
-  fremder/neuerer Dateien, API (Rollen, Content-Types, Session-Ende nach
-  Restore), `leasorixctl` gegen einen echten In-Process-Server.
-- Integration (netns, echte Pakete): Multinet über Superscope (dritter
-  Client bekommt eine Adresse des zweiten Subnetzes mit dessen Router),
-  BOOTP mit Reservierung und Lease-Dauer, kein dynamisches BOOTP ohne
-  Freigabe ✅
-- Playwright-E2E 7/7 (neu: Superscope anlegen/zuordnen, YAML-Export,
-  netsh-Dry-Run mit Warnungen, Backup-Download) ✅
+- Unit: superscope store, snapshot, handler (superscope expansion,
+  BOOTP replies), bundle/export-import round trip (YAML and JSON
+  identical), merge conflict without partial changes, dry run, Replace
+  keeping leases, netsh import (UTF-8 and UTF-16), backup/restore incl.
+  foreign/newer files, API (roles, content types, session end after
+  restore), `leasorixctl` against a real in-process server.
+- Integration (netns, real packets): multinet via a superscope (a third
+  client gets an address from the second subnet with that subnet's router),
+  BOOTP with reservation and lease duration, no dynamic BOOTP unless
+  enabled ✅
+- Playwright E2E 7/7 (new: create/assign a superscope, YAML export,
+  netsh dry run with warnings, backup download) ✅
 
 ## Phase 8 – Docker & Compose
 
-**Umgesetzt**
-- **Image** (`deploy/Dockerfile`): Multi-Stage Node → Go → distroless
-  `static-debian12:nonroot`, ca. 50 MB, läuft als UID 65532; File-
-  Capabilities `NET_BIND_SERVICE` + `NET_RAW` (kein `NET_ADMIN`), gesetzt
-  von einem eigenen Go-Helfer; `HEALTHCHECK` über `leasorixd healthcheck`;
-  `/data`-Volume, Config im Image + `LEASORIX_*`-Env oder Bind-Mount;
-  `leasorixctl` enthalten; Cross-Build für amd64/arm64 ohne Emulation;
-  Mirror-Build-Argumente und optionales Proxy-CA-Secret.
-- **Compose:** `docker-compose.yml` (Host-Netzwerk),
-  `docker-compose.macvlan.yml`, `docker-compose.ha.yml` (zwei Container im
-  macvlan-Netz, Einmal-Dienst erzeugt die mTLS-Zertifikate). Gehärtet mit
-  `cap_drop: [ALL]`, read-only Root-FS, `no-new-privileges`,
+**Implemented**
+- **Image** (`deploy/Dockerfile`): multi-stage Node → Go → distroless
+  `static-debian12:nonroot`, about 50 MB, runs as UID 65532; file
+  capabilities `NET_BIND_SERVICE` + `NET_RAW` (no `NET_ADMIN`), set
+  by a dedicated Go helper; `HEALTHCHECK` via `leasorixd healthcheck`;
+  `/data` volume, config in the image + `LEASORIX_*` env or bind mount;
+  `leasorixctl` included; cross-build for amd64/arm64 without emulation;
+  mirror build arguments and an optional proxy CA secret.
+- **Compose:** `docker-compose.yml` (host network),
+  `docker-compose.macvlan.yml`, `docker-compose.ha.yml` (two containers on
+  the macvlan network, a one-shot service generates the mTLS certificates).
+  Hardened with `cap_drop: [ALL]`, read-only root FS, `no-new-privileges`,
   `restart: unless-stopped`.
-- `make docker` (Tags `<version>` und `latest`), `make test-docker`.
-- **CI:** Job `docker` (Image bauen + Compose-Tests);
-  `release.yml` veröffentlicht Multi-Arch-Images in der GitHub Container
-  Registry (Versionstag, `latest`, `edge`).
-- `leasorixd version`; unbekannte Argumente brechen jetzt mit Fehler ab.
-- Doku: [DOCKER.md](DOCKER.md) (Varianten, warum kein Bridge-Netz, Rechte,
-  macvlan-Shim/VLAN/VM-Hinweise, HA auf einem oder zwei Hosts, Betrieb,
-  Build, Fehlersuche), README-Schnellstart mit Compose, DECISIONS
-  D-060…D-063.
+- `make docker` (tags `<version>` and `latest`), `make test-docker`.
+- **CI:** job `docker` (build the image + Compose tests);
+  `release.yml` publishes multi-arch images to the GitHub Container
+  Registry (version tag, `latest`, `edge`).
+- `leasorixd version`; unknown arguments now abort with an error.
+- Docs: [DOCKER.md](DOCKER.md) (variants, why no bridge network,
+  permissions, macvlan shim/VLAN/VM notes, HA on one or two hosts,
+  operations, build, troubleshooting), README quick start with Compose,
+  DECISIONS D-060…D-063.
 
-**Tests** (`sudo make test-docker`, isolierte veth/netns-Netze)
-- Host-Netzwerk: `docker compose up -d` → `healthy`, UID 65532, read-only,
-  `CapEff` = genau die zwei Capabilities, UI erreichbar, Setup + Scope per
-  API, echter DHCP-Client (`udhcpc`) bekommt eine Adresse, Backup per
-  `docker exec`, `leasorixctl` im Image ✅
-- macvlan: Client bekommt eine Adresse vom Container mit eigener IP ✅
-- HA-Compose mit zwei Containern: beide `NORMAL`, Admin + Scope vom Leader
-  auf den Partner repliziert, Partner read-only, Clients auf beide Server
-  verteilt, Lease auf dem Partner sichtbar; nach `docker kill dhcp-a`
-  bekommt der Client von `dhcp-a` seine Adresse vom Partner ✅
-- arm64-Cross-Build geprüft (AArch64-Binary, Capabilities im Layer);
-  Offline-Restore im read-only-Container geprüft ✅
+**Tests** (`sudo make test-docker`, isolated veth/netns networks)
+- Host network: `docker compose up -d` → `healthy`, UID 65532, read-only,
+  `CapEff` = exactly the two capabilities, UI reachable, setup + scope via
+  the API, a real DHCP client (`udhcpc`) gets an address, backup via
+  `docker exec`, `leasorixctl` in the image ✅
+- macvlan: a client gets an address from the container with its own IP ✅
+- HA Compose with two containers: both `NORMAL`, admin + scope replicated
+  from the leader to the partner, partner read-only, clients distributed
+  across both servers, lease visible on the partner; after
+  `docker kill dhcp-a` the client of `dhcp-a` gets its address from the
+  partner ✅
+- arm64 cross-build verified (AArch64 binary, capabilities in the layer);
+  offline restore in the read-only container verified ✅
 
-**Offene Punkte / Hinweise**
-- Das Veröffentlichen in GHCR ist nur als Workflow umgesetzt; ein Push war
-  aus der Entwicklungsumgebung nicht möglich und passiert beim ersten
-  Versionstag auf GitHub.
-- Bridge-Netz + DHCP-Relay ist nicht getestet und nicht unterstützt (D-062).
+**Open points / notes**
+- Publishing to GHCR is only implemented as a workflow; a push was not
+  possible from the development environment and happens with the first
+  version tag on GitHub.
+- Bridge network + DHCP relay is neither tested nor supported (D-062).
 
-## Phase 9 – DNS-Integration
+## Phase 9 – DNS integration
 
-**Umgesetzt**
-- **RFC-2136-Updates** (A, PTR, DHCID) mit **TSIG** (HMAC-SHA256 u. a.,
-  `miekg/dns`), Zonen mit primärem Server und optionalem Schlüssel, längste
-  passende Zone pro Name; asynchroner Updater mit Wiederholungen und
-  persistentem Registrierungszustand (Migration 00006).
-- **Pro Scope:** nie / auf Anforderung des Clients (Option 81 nach RFC 4702)
-  / immer; Domäne (Fallback Option 15), TTL, Entfernen bei Lease-Ende,
-  Namensschutz. Option 81 wird in OFFER/ACK beantwortet (S/O/N-Bits).
-- **Name Protection** mit DHCID (RFC 4701/4703): fremde und manuell
-  angelegte Namen werden nie überschrieben; Konflikte im Log, Audit
-  (`dns.conflict`), Status und Metriken.
-- **Cleanup** bei Release, Ablauf, Löschen (auch nach Neustart) über einen
-  periodischen Abgleich mit der Lease-Tabelle.
-- API (`/dns/keys`, `/dns/zones`, `/dns/registrations`, `dns` am Scope),
-  Web-UI (Seite *DNS-Updates* mit Schlüssel-Generator und Snippets für BIND/
-  PowerDNS, Registrierungsstatus; Scope-Reiter *DNS*), `leasorixctl dns
-  zones|registrations`, Konfigurations-Export/-Import (Zonen, Scope-
-  Einstellungen; Schlüssel bewusst nicht), netsh `set dnsconfig`, HA-Sync
-  und Backup der Schlüssel/Zonen. Metriken `leasorix_dns_*`.
-- Korrektur aus Phase 6: gekürzte Leases (unbestätigte synchrone
-  Replikation) werden nachrepliziert (D-068).
-- Doku: [ADMIN.md](ADMIN.md#11-dns-updates), DECISIONS D-064…D-068.
+**Implemented**
+- **RFC 2136 updates** (A, PTR, DHCID) with **TSIG** (HMAC-SHA256 and
+  others, `miekg/dns`), zones with a primary server and an optional key,
+  longest matching zone per name; asynchronous updater with retries and
+  persistent registration state (migration 00006).
+- **Per scope:** never / on client request (option 81 per RFC 4702)
+  / always; domain (fallback: option 15), TTL, remove records when the
+  lease ends, name protection. Option 81 is answered in OFFER/ACK
+  (S/O/N bits).
+- **Name protection** with DHCID (RFC 4701/4703): foreign and manually
+  created names are never overwritten; conflicts show up in the log, audit
+  (`dns.conflict`), status and metrics.
+- **Cleanup** on release, expiry and deletion (also after a restart) via a
+  periodic reconciliation with the lease table.
+- API (`/dns/keys`, `/dns/zones`, `/dns/registrations`, `dns` on the
+  scope), web UI (*DNS updates* page with a key generator and snippets for
+  BIND/PowerDNS, registration status; scope tab *DNS*), `leasorixctl dns
+  zones|registrations`, configuration export/import (zones, scope
+  settings; deliberately no keys), netsh `set dnsconfig`, HA sync
+  and backup of keys/zones. Metrics `leasorix_dns_*`.
+- Fix from phase 6: shortened leases (unacknowledged synchronous
+  replication) are replicated afterwards (D-068).
+- Docs: [ADMIN.md](ADMIN.md#11-dns-updates), DECISIONS D-064…D-068.
 
 **Tests**
-- Unit: Option-81-Parser/-Antwort (inkl. Fuzzing), Entscheidungsmatrix,
-  DHCID gegen die Beispiele aus RFC 4701, TTL, Updater mit simuliertem DNS
-  (Registrierung, Verlängerung ohne Traffic, Umbenennung, Release, Ablauf,
-  Konflikt ohne Endlosschleife, Backoff, Neustart mit Cleanup, Records
-  behalten, fehlende Zone), Handler (Option 81 in OFFER/ACK), API (Rollen,
-  Geheimnis nie ausgegeben, Validierung, Read-only-Partner), Config-Roundtrip
-  mit Zonen, fehlender Schlüssel, netsh-Mapping, `leasorixctl`.
-- Integration (`make test-dns`, Teil von `make test-integration`): BIND 9.20
-  und PowerDNS 4.9 per Compose (`test/dns`) auf einem macvlan-Netz am
-  Server-Namespace; echte DHCP-Clients registrieren sich mit TSIG
-  (Option 81 bzw. nur Hostname), A/PTR/DHCID werden geprüft, Namensschutz
-  gegen manuellen Record und fremden Client, Entfernen nach Release und nach
-  Ablauf – gegen beide Server ✅
-- Playwright-E2E 8/8 (neu: Schlüssel mit Snippet, Zone, Scope-Einstellung,
-  Registrierung eines echten Clients) ✅; alle 17 Integrationstests ✅
+- Unit: option 81 parser/reply (incl. fuzzing), decision matrix,
+  DHCID against the examples from RFC 4701, TTL, updater with simulated DNS
+  (registration, renewal without traffic, rename, release, expiry,
+  conflict without an endless loop, backoff, restart with cleanup, keeping
+  records, missing zone), handler (option 81 in OFFER/ACK), API (roles,
+  secret never returned, validation, read-only partner), config round trip
+  with zones, missing key, netsh mapping, `leasorixctl`.
+- Integration (`make test-dns`, part of `make test-integration`): BIND 9.20
+  and PowerDNS 4.9 via Compose (`test/dns`) on a macvlan network attached
+  to the server namespace; real DHCP clients register with TSIG
+  (option 81 or hostname only), A/PTR/DHCID are verified, name protection
+  against a manual record and a foreign client, removal after release and
+  after expiry – against both servers ✅
+- Playwright E2E 8/8 (new: key with snippet, zone, scope setting,
+  registration of a real client) ✅; all 17 integration tests ✅
 
-**Offene Punkte / Hinweise**
-- Kein GSS-TSIG (Windows-DNS mit „nur sicheren“ Updates); Windows-DNS nur
-  mit unsignierten Updates (D-067).
-- Keine AAAA-Records (kommen mit DHCPv6 in Frage, Phase 10).
+**Open points / notes**
+- No GSS-TSIG (Windows DNS with "secure only" updates); Windows DNS only
+  with unsigned updates (D-067).
+- No AAAA records (a candidate with DHCPv6, phase 10).
 
 ## Phase 10 – DHCPv6 (optional)
 
-**Umgesetzt**
-- **Stateful DHCPv6 nach RFC 8415:** SOLICIT/ADVERTISE, REQUEST, RENEW,
+**Implemented**
+- **Stateful DHCPv6 per RFC 8415:** SOLICIT/ADVERTISE, REQUEST, RENEW,
   REBIND, RELEASE, DECLINE, CONFIRM, INFORMATION-REQUEST; Rapid Commit,
-  Server-Präferenz, Server-ID-Regeln, `UseMulticast` für Unicast,
-  Statuscodes (NoAddrsAvail, NoPrefixAvail, NoBinding, NotOnLink).
-- **IA_NA** (Adressen) und **IA_PD** (Präfix-Delegation für Router) mit
-  deterministischer Vergabe auch in großen Bereichen (ganze /64, D-071),
-  Client-Hints, Angebots-Haltezeit, Grace-Zeit für den bisherigen Client,
-  DECLINE-Sperre, Expiry; Bindungen persistent (`leases6`).
-- **Scopes** mit Präfix, Adressbereich, Lebensdauern, Delegations-Pool,
-  Präferenz, Rapid Commit; Ausschlüsse; **Reservierungen per DUID**
-  (optional IAID); Optionen auf Server-/Scope-/Reservierungsebene
-  (Katalog: DNS 23/24, SIP, NIS, SNTP, NTP 56, Boot-URL 59, AFTR 64 …, eigene
-  Codes mit Typ). Eigenes Datenmodell (Migration 00007, D-070).
-- **Server:** Socket pro Interface (`[::]:547`, `ff02::1:2`), Relays auch
-  mehrstufig (link-address, Interface-ID, RFC-6939-Client-MAC), persistente
-  Server-DUID, MAC-Filter für Clients mit bekannter MAC, Metriken
-  `leasorix_dhcp6_*`, Audit (`scope6.*`, `exclusion6.*`, `reservation6.*`,
-  `option6.*`, `lease6.delete`; Bindungs-Ereignisse wie bei IPv4 optional).
-- **HA:** Konfiguration wird repliziert (Config-Sync, Read-only-Partner);
-  Bindungen nicht – Aufteilung von Clients und Adressen nach Hash, jeder
-  Server vergibt nur aus seinem Anteil (D-073).
-- REST-API `/api/v1/v6/…` (Scopes, Ausschlüsse, Reservierungen, Optionen,
-  Bindungen, Statistik), Web-UI-Seite *IPv6 (DHCPv6)* (Scopes mit Detail-
-  ansicht, Reservierungen, Optionen, Leases, Server-Optionen),
-  `leasorixctl v6 scopes|leases`, Konfigurations-Export/-Import
-  (`scopes6`, `server_options6`), Backup/Restore inkl. Bindungen, Bootstrap-
-  Abschnitt `dhcp6`, `make fuzz` um `FuzzHandle6` erweitert.
-- Korrektur HA (IPv4): Änderungen, die während einer kurzen Unterbrechung
-  nicht gesendet werden konnten, gingen verloren, wenn der Partner seinen
-  Abgleich schon vorher gemacht hatte (sporadisch roter HA-Test unter Last).
-  Jetzt erzwingt jede nicht gesendete Änderung einen weiteren Abgleich
-  (Nachtrag D-068, Unit-Test der Zustandsmaschine).
-- Doku: [ADMIN.md](ADMIN.md#12-dhcpv6), [HA.md](HA.md#dhcpv6),
+  server preference, server ID rules, `UseMulticast` for unicast,
+  status codes (NoAddrsAvail, NoPrefixAvail, NoBinding, NotOnLink).
+- **IA_NA** (addresses) and **IA_PD** (prefix delegation for routers) with
+  deterministic allocation even in large ranges (a whole /64, D-071),
+  client hints, offer hold time, grace time for the previous client,
+  blocking on DECLINE, expiry; persistent bindings (`leases6`).
+- **Scopes** with prefix, address range, lifetimes, delegation pool,
+  preference, Rapid Commit; exclusions; **reservations by DUID**
+  (optionally IAID); options at server/scope/reservation level
+  (catalog: DNS 23/24, SIP, NIS, SNTP, NTP 56, boot URL 59, AFTR 64 …,
+  custom codes with a type). Separate data model (migration 00007, D-070).
+- **Server:** one socket per interface (`[::]:547`, `ff02::1:2`), relays
+  including multi-hop (link-address, interface ID, RFC 6939 client MAC),
+  persistent server DUID, MAC filter for clients with a known MAC, metrics
+  `leasorix_dhcp6_*`, audit (`scope6.*`, `exclusion6.*`, `reservation6.*`,
+  `option6.*`, `lease6.delete`; binding events optional, as for IPv4).
+- **HA:** configuration is replicated (config sync, read-only partner);
+  bindings are not – clients and addresses are split by hash, each
+  server allocates only from its share (D-073).
+- REST API `/api/v1/v6/…` (scopes, exclusions, reservations, options,
+  bindings, statistics), web UI page *IPv6 (DHCPv6)* (scopes with a detail
+  view, reservations, options, leases, server options),
+  `leasorixctl v6 scopes|leases`, configuration export/import
+  (`scopes6`, `server_options6`), backup/restore incl. bindings, bootstrap
+  section `dhcp6`, `make fuzz` extended with `FuzzHandle6`.
+- HA fix (IPv4): changes that could not be sent during a short interruption
+  were lost if the partner had already completed its reconciliation
+  (sporadically failing HA test under load). Now every unsent change forces
+  another reconciliation (addendum to D-068, unit test of the state
+  machine).
+- Docs: [ADMIN.md](ADMIN.md#12-dhcpv6), [HA.md](HA.md#dhcpv6),
   ARCHITECTURE, DOCKER, DECISIONS D-069…D-073.
 
 **Tests**
-- Unit: 128-Bit-Arithmetik und Bucket-Verteilung, Scope-Validierung,
-  Reservierungen/Optionen/Snapshot, Allokator (Stabilität pro Client,
-  Erschöpfung, Ausschlüsse, Reservierungen, Hints, PD, /64-Bereich,
-  HA-Anteil, Expiry, Scope-Entfernung), Handler (kompletter Austausch,
-  Renew/Rebind, Release, Rapid Commit, Decline, Information-Request, Relay,
-  Filter, erschöpfter Scope) und Fuzzing des Paketpfads, HA-Aufteilung
-  komplementär, API (Rollen, Read-only-Partner, Validierung), Config-
-  Roundtrip, Bootstrap-Config, `leasorixctl`.
-- Playwright-E2E 9/9 (neu: IPv6-Scope mit Präfix-Delegation,
-  Server-Validierung, Option, Reservierung, Export) ✅
-- Integration: `test/integration/dhcp6_test.go` (Teil von
-  `make test-integration`) mit ISC `dhclient -6` (Adresse, Präfix-Delegation,
-  Release), busybox `udhcpc6`, Go-Client (Solicit/Request/Renew/
-  Information-Request) und einem Relay (RELAY-FORW mit Interface-ID).
-- Alle Unit-Tests (Race-Detector), golangci-lint (auch mit Build-Tag
-  `integration`) und die 17 bestehenden Integrationstests inkl. HA und DNS
-  (BIND/PowerDNS) ✅; der DHCPv6-Integrationstest ist hier übersprungen (s. u.).
-- CI-Workflow: `busybox` für `udhcpc6` installiert, manueller Start per
-  `workflow_dispatch` möglich. Erster CI-Lauf der Integrationstests auf
-  GitHub-Runnern: Ubuntu vererbt `rp_filter=2` an neue Namespaces (verwarf
-  Broadcast-Antworten an den Go-Testclient) und beschränkt `/sbin/dhclient`
-  per AppArmor auf System-Skripte – Test-Namespaces schalten `rp_filter` ab,
-  dhclient läuft aus einer Kopie. Lokal mit `rp_filter=2` reproduziert und
-  verifiziert. Im selben Lauf liefen Go-Client- und Relay-Test für DHCPv6
-  erstmals real grün.
+- Unit: 128-bit arithmetic and bucket distribution, scope validation,
+  reservations/options/snapshot, allocator (stability per client,
+  exhaustion, exclusions, reservations, hints, PD, /64 range,
+  HA share, expiry, scope removal), handler (complete exchange,
+  renew/rebind, release, Rapid Commit, decline, information-request, relay,
+  filter, exhausted scope) and fuzzing of the packet path, complementary
+  HA split, API (roles, read-only partner, validation), config
+  round trip, bootstrap config, `leasorixctl`.
+- Playwright E2E 9/9 (new: IPv6 scope with prefix delegation,
+  server-side validation, option, reservation, export) ✅
+- Integration: `test/integration/dhcp6_test.go` (part of
+  `make test-integration`) with ISC `dhclient -6` (address, prefix
+  delegation, release), busybox `udhcpc6`, Go client (Solicit/Request/
+  Renew/Information-Request) and a relay (RELAY-FORW with interface ID).
+- All unit tests (race detector), golangci-lint (also with build tag
+  `integration`) and the 17 existing integration tests incl. HA and DNS
+  (BIND/PowerDNS) ✅; the DHCPv6 integration test is skipped here (see
+  below).
+- CI workflow: `busybox` installed for `udhcpc6`, manual start via
+  `workflow_dispatch` possible. First CI run of the integration tests on
+  GitHub runners: Ubuntu passes `rp_filter=2` on to new namespaces (which
+  dropped broadcast replies to the Go test client) and uses AppArmor to
+  restrict `/sbin/dhclient` to system scripts – test namespaces disable
+  `rp_filter`, dhclient runs from a copy. Reproduced and verified locally
+  with `rp_filter=2`. In the same run the Go client and relay tests for
+  DHCPv6 passed for real for the first time.
 
-**Offene Punkte / Hinweise**
-- Der Kernel dieser Entwicklungsumgebung ist mit `ipv6.disable=1` gebootet;
-  der DHCPv6-Integrationstest überspringt sich hier. In CI (GitHub-Runner,
-  Lauf vom 16.10.2026 auf `c0ff4bc`) lief er vollständig grün – dhclient -6
-  mit Präfix-Delegation und Release, udhcpc6, Go-Client, Relay – ebenso alle
-  übrigen Jobs (Lint, Unit, govulncheck, npm audit, Integration, E2E, Docker).
-- Nicht umgesetzt (D-069): DNS-Updates für DHCPv6 (AAAA), Policies/Klassen
-  für IPv6, Reconfigure, Server-Unicast, Leasequery, DHCPv6-Lease-Export,
-  netsh-Übernahme von DHCPv6-Scopes.
-- HA: Bei Ausfall eines Servers wechseln dessen DHCPv6-Clients die Adresse
+**Open points / notes**
+- The kernel of this development environment is booted with
+  `ipv6.disable=1`; the DHCPv6 integration test skips itself here. In CI
+  (GitHub runner, run of 16.10.2026 on `c0ff4bc`) it passed fully green –
+  dhclient -6 with prefix delegation and release, udhcpc6, Go client,
+  relay – as did all other jobs (lint, unit, govulncheck, npm audit,
+  integration, E2E, Docker).
+- Not implemented (D-069): DNS updates for DHCPv6 (AAAA), policies/classes
+  for IPv6, Reconfigure, server unicast, Leasequery, DHCPv6 lease export,
+  netsh import of DHCPv6 scopes.
+- HA: when a server fails, its DHCPv6 clients change their address
   (D-073).
-

@@ -1,122 +1,120 @@
 # Docker & Compose
 
-Leasorix läuft als ein Container pro Server. Das Image enthält `leasorixd`
-(mit eingebetteter Web-UI) und `leasorixctl`, basiert auf
-`gcr.io/distroless/static-debian12:nonroot` (keine Shell, kein
-Paketmanager) und läuft als unprivilegierter Benutzer `nonroot` (UID/GID
-65532).
+Leasorix runs as one container per server. The image contains `leasorixd`
+(with the embedded web UI) and `leasorixctl`, is based on
+`gcr.io/distroless/static-debian12:nonroot` (no shell, no package manager)
+and runs as the unprivileged user `nonroot` (UID/GID 65532).
 
-| Datei | Netzwerk | Einsatz |
+| File | Network | Use case |
 |---|---|---|
-| `deploy/docker-compose.yml` | `network_mode: host` | ein Server, einfachste Variante |
-| `deploy/docker-compose.macvlan.yml` | macvlan | ein Server mit eigener IP/MAC im LAN |
-| `deploy/docker-compose.ha.yml` | macvlan | zwei Server als HA-Paar (inkl. Zertifikaten) |
+| `deploy/docker-compose.yml` | `network_mode: host` | one server, simplest option |
+| `deploy/docker-compose.macvlan.yml` | macvlan | one server with its own IP/MAC on the LAN |
+| `deploy/docker-compose.ha.yml` | macvlan | two servers as an HA pair (including certificates) |
 
-Image: `ghcr.io/meister119/leasorix:<version>` bzw. `:latest` (siehe
-[Image bauen](#image-bauen) für einen lokalen Build).
+Image: `ghcr.io/meister119/leasorix:<version>` or `:latest` (see
+[Building the image](#building-the-image) for a local build).
 
-## Warum kein Bridge-Netz?
+## Why not a bridge network?
 
-DHCP-Clients ohne Adresse senden `DHCPDISCOVER` als Broadcast in ihr
-Layer-2-Segment. Ein Container im Docker-Bridge-Netz (NAT) sieht diese
-Broadcasts nicht und kennt die Interfaces des LANs nicht – **ohne Relay
-bekommt er keine einzige Anfrage**. Leasorix braucht deshalb direkten
-L2-Zugang: Host-Netzwerk oder macvlan. Ein Bridge-Netz mit veröffentlichtem
-Port `67/udp` hinter einem DHCP-Relay (`ip helper-address` auf dem Router)
-ist nicht getestet und wird nicht unterstützt.
+DHCP clients without an address send `DHCPDISCOVER` as a broadcast into
+their layer 2 segment. A container on the Docker bridge network (NAT) does
+not see these broadcasts and does not know the LAN's interfaces — **without
+a relay it does not receive a single request**. Leasorix therefore needs
+direct L2 access: host network or macvlan. A bridge network with a published
+port `67/udp` behind a DHCP relay (`ip helper-address` on the router) is not
+tested and is not supported.
 
-## Schnellstart (Host-Netzwerk)
+## Quick start (host network)
 
 ```sh
 cd deploy
-export LEASORIX_DHCP4_INTERFACES=eth0               # Interface(s) des Hosts, kommagetrennt
-export LEASORIX_HTTP_LISTEN=192.168.1.10:8067       # Management-Adresse (Default: nur localhost)
+export LEASORIX_DHCP4_INTERFACES=eth0               # host interface(s), comma-separated
+export LEASORIX_HTTP_LISTEN=192.168.1.10:8067       # management address (default: localhost only)
 docker compose up -d
-docker compose logs leasorix | grep setup_token     # einmaliges Setup-Token
+docker compose logs leasorix | grep setup_token     # one-time setup token
 ```
 
-Dann `https://192.168.1.10:8067/` öffnen (Zertifikat zunächst
-selbstsigniert), mit dem Setup-Token den ersten Administrator anlegen und
-einen Scope einrichten. Statt das Token aus dem Log zu lesen, kann man es
-vorgeben: `LEASORIX_SETUP_TOKEN=…` (nur beim ersten Start relevant).
+Then open `https://192.168.1.10:8067/` (the certificate is self-signed at
+first), use the setup token to create the first administrator, and set up a
+scope. Instead of reading the token from the log, you can preset it:
+`LEASORIX_SETUP_TOKEN=…` (only relevant on the first start).
 
-Auf dem Host muss UDP-Port 67 eingehend erlaubt sein, und kein anderer
-DHCP-Server (z. B. dnsmasq von libvirt) darf auf denselben Interfaces
-lauschen.
+UDP port 67 must be allowed inbound on the host, and no other DHCP server
+(e.g., libvirt's dnsmasq) may listen on the same interfaces.
 
-## Konfiguration
+## Configuration
 
-- **Datei im Image:** `/etc/leasorix/leasorix.yml` (Datenverzeichnis
-  `/data`, JSON-Logs, UI auf `0.0.0.0:8067` mit selbstsigniertem
-  Zertifikat, DHCP aus, bis Interfaces gesetzt sind).
-- **Umgebungsvariablen** überschreiben jeden Wert:
-  `LEASORIX_<SECTION>_<KEY>`, z. B. `LEASORIX_DHCP4_INTERFACES=eth0`,
+- **File in the image:** `/etc/leasorix/leasorix.yml` (data directory
+  `/data`, JSON logs, UI on `0.0.0.0:8067` with a self-signed
+  certificate, DHCP off until interfaces are set).
+- **Environment variables** override any value:
+  `LEASORIX_<SECTION>_<KEY>`, e.g., `LEASORIX_DHCP4_INTERFACES=eth0`,
   `LEASORIX_LOG_LEVEL=debug`, `LEASORIX_HTTP_TLS_MODE=files`.
-- **Eigene Datei:** per Bind-Mount über die Datei im Image legen (in den
-  Compose-Dateien als Kommentar vorbereitet):
-  `- ./leasorix.yml:/etc/leasorix/leasorix.yml:ro`. Alle Schlüssel:
+- **Custom file:** bind-mount it over the file in the image (prepared as a
+  comment in the Compose files):
+  `- ./leasorix.yml:/etc/leasorix/leasorix.yml:ro`. All keys:
   `deploy/examples/leasorix.yml`.
-- **Daten:** Volume `/data` (Datenbank, selbstsigniertes TLS-Zertifikat,
-  Lock-Datei). Ein Bind-Mount statt Volume muss UID 65532 gehören:
+- **Data:** volume `/data` (database, self-signed TLS certificate, lock
+  file). A bind mount used instead of a volume must be owned by UID 65532:
   `sudo chown 65532:65532 ./data`.
-- **Ports:** `67/udp` (DHCP), `547/udp` (DHCPv6, falls aktiviert),
-  `8067/tcp` (UI, REST-API, Metriken), `8068/tcp` (HA-Peer-Verbindung).
-- **DHCPv6:** `LEASORIX_DHCP6_INTERFACES=eth0` setzen. Im Host-Netzwerk
-  genügt IPv6 auf dem Host-Interface. Die macvlan-Compose-Dateien sind
-  IPv4-only; für DHCPv6 dem Netz `enable_ipv6: true` und ein IPv6-Subnetz
-  (`ipam.config`) mitgeben und dem Container eine feste IPv6-Adresse im
-  Präfix des Scopes zuweisen. Weitere Capabilities braucht DHCPv6 nicht.
+- **Ports:** `67/udp` (DHCP), `547/udp` (DHCPv6, if enabled),
+  `8067/tcp` (UI, REST API, metrics), `8068/tcp` (HA peer connection).
+- **DHCPv6:** set `LEASORIX_DHCP6_INTERFACES=eth0`. With the host network,
+  IPv6 on the host interface is sufficient. The macvlan Compose files are
+  IPv4-only; for DHCPv6, give the network `enable_ipv6: true` and an IPv6
+  subnet (`ipam.config`) and assign the container a static IPv6 address in
+  the scope's prefix. DHCPv6 needs no additional capabilities.
 
-Die DHCP-Konfiguration selbst (Scopes, Optionen, Reservierungen …) liegt in
-der Datenbank und wird über UI, API oder `leasorixctl` gepflegt.
+The DHCP configuration itself (scopes, options, reservations …) is stored
+in the database and is managed via the UI, the API, or `leasorixctl`.
 
-## Rechte und Härtung
+## Privileges and hardening
 
-`leasorixd` braucht genau zwei Capabilities:
+`leasorixd` needs exactly two capabilities:
 
-| Capability | wofür |
+| Capability | Purpose |
 |---|---|
-| `NET_BIND_SERVICE` | Port 67 als nicht-root binden |
-| `NET_RAW` | `AF_PACKET`-Antworten an Clients ohne Adresse (L2-Unicast), ICMP-Konfliktprüfung |
+| `NET_BIND_SERVICE` | bind port 67 as non-root |
+| `NET_RAW` | `AF_PACKET` replies to clients without an address (L2 unicast), ICMP conflict detection |
 
-`NET_ADMIN` ist nicht nötig. Weil Docker einem nicht-root-Prozess keine
-Capabilities vererbt, trägt das Binary sie als **File-Capabilities**
-(`cap_net_bind_service,cap_net_raw=ep`). Die Compose-Dateien härten
-zusätzlich:
+`NET_ADMIN` is not required. Because Docker does not pass capabilities on
+to a non-root process, the binary carries them as **file capabilities**
+(`cap_net_bind_service,cap_net_raw=ep`). The Compose files add further
+hardening:
 
 ```yaml
-read_only: true                          # Root-Dateisystem schreibgeschützt
-tmpfs: [/tmp]                            # Temp-Dateien von SQLite
-security_opt: ["no-new-privileges:true"] # verträgt sich mit den File-Capabilities
+read_only: true                          # read-only root file system
+tmpfs: [/tmp]                            # SQLite temp files
+security_opt: ["no-new-privileges:true"] # compatible with the file capabilities
 cap_drop: [ALL]
 cap_add: [NET_BIND_SERVICE, NET_RAW]
 ```
 
-Wichtig: Beide Capabilities müssen im Capability-Set des Containers bleiben
-– auch bei Einmal-Kommandos wie `ha certs`. Fehlen sie, verweigert der
-Kernel den Start mit `exec /usr/local/bin/leasorixd: operation not
-permitted`. Der Default von Docker enthält beide; nur bei `cap_drop: [ALL]`
-bzw. `--cap-drop ALL` müssen sie wieder hinzugefügt werden.
+Important: both capabilities must remain in the container's capability set
+— even for one-off commands such as `ha certs`. If they are missing, the
+kernel refuses to start the binary with `exec /usr/local/bin/leasorixd:
+operation not permitted`. Docker's default set includes both; they only
+need to be added back when using `cap_drop: [ALL]` or `--cap-drop ALL`.
 
-Den Container als root zu starten ist weder nötig noch sinnvoll: mit
-`cap_drop: [ALL]` fehlt root das Recht, in das `/data` von UID 65532 zu
-schreiben.
+Running the container as root is neither necessary nor useful: with
+`cap_drop: [ALL]`, root lacks the permission to write to `/data`, which is
+owned by UID 65532.
 
-## Host-Netzwerk (`docker-compose.yml`)
+## Host network (`docker-compose.yml`)
 
-- `LEASORIX_DHCP4_INTERFACES`: Interface-Namen des Hosts, auf denen DHCP
-  beantwortet wird. Weitere Subnetze erreicht man über DHCP-Relays
-  (giaddr) – dafür genügt ein Interface.
-- `LEASORIX_HTTP_LISTEN`: Default `127.0.0.1:8067`, damit die UI nicht
-  versehentlich im ganzen Netz erreichbar ist; für den Zugriff von außen
-  eine Management-Adresse eintragen.
-- HA mit Host-Netzwerk auf zwei Hosts: siehe
-  [HA auf zwei Docker-Hosts](#ha-auf-zwei-docker-hosts).
+- `LEASORIX_DHCP4_INTERFACES`: names of the host interfaces on which DHCP
+  is answered. Additional subnets are reached via DHCP relays (giaddr) —
+  one interface is enough for that.
+- `LEASORIX_HTTP_LISTEN`: default `127.0.0.1:8067`, so that the UI is not
+  accidentally reachable from the entire network; for external access,
+  enter a management address.
+- HA with the host network on two hosts: see
+  [HA on two Docker hosts](#ha-on-two-docker-hosts).
 
 ## macvlan (`docker-compose.macvlan.yml`)
 
-Der Container bekommt eine eigene MAC- und IP-Adresse im LAN und beantwortet
-DHCP auf seinem `eth0`:
+The container gets its own MAC and IP address on the LAN and answers DHCP
+on its `eth0`:
 
 ```sh
 cd deploy
@@ -125,14 +123,14 @@ LEASORIX_GATEWAY=192.168.1.1 LEASORIX_IP=192.168.1.5 \
   docker compose -f docker-compose.macvlan.yml up -d
 ```
 
-- `LEASORIX_IP` liegt außerhalb des DHCP-Pools (bzw. als Ausschluss
-  anlegen). `ip_range` (/32) verhindert, dass Docker weiteren Containern
-  Adressen aus dem Pool gibt.
-- **VLAN:** als Parent `eth0.20` angeben – Docker legt das
-  802.1Q-Subinterface selbst an.
-- **Der Docker-Host selbst erreicht macvlan-Container nicht** (Eigenschaft
-  von macvlan). UI und API also von einem anderen Rechner aufrufen oder auf
-  dem Host ein macvlan-„Shim“-Interface anlegen:
+- `LEASORIX_IP` lies outside the DHCP pool (or create it as an exclusion).
+  `ip_range` (/32) prevents Docker from assigning addresses from the pool to
+  other containers.
+- **VLAN:** specify `eth0.20` as the parent — Docker creates the 802.1Q
+  subinterface itself.
+- **The Docker host itself cannot reach macvlan containers** (a property
+  of macvlan). So open the UI and API from another machine, or create a
+  macvlan "shim" interface on the host:
 
   ```sh
   ip link add lx-shim link eth0 type macvlan mode bridge
@@ -141,17 +139,18 @@ LEASORIX_GATEWAY=192.168.1.1 LEASORIX_IP=192.168.1.5 \
   ip route add 192.168.1.5/32 dev lx-shim
   ```
 
-- In virtuellen Maschinen muss der Hypervisor fremde MAC-Adressen am
-  Parent-Interface zulassen (VMware: *Promiscuous Mode* und *Forged
-  Transmits*, Hyper-V: *MAC-Adress-Spoofing*). WLAN-Interfaces eignen sich
-  nicht als Parent.
+- In virtual machines, the hypervisor must allow foreign MAC addresses on
+  the parent interface (VMware: *Promiscuous Mode* and *Forged
+  Transmits*, Hyper-V: *MAC address spoofing*). Wi-Fi interfaces are not
+  suitable as a parent.
 
-## Hochverfügbarkeit (`docker-compose.ha.yml`)
+## High availability (`docker-compose.ha.yml`)
 
-Zwei Container `dhcp-a` (primary, Config-Leader) und `dhcp-b` (secondary)
-im selben macvlan-Netz. Ein Einmal-Dienst `certs` erzeugt beim ersten Start
-CA und Knotenzertifikate für mTLS im Volume `ha-certs`
-(`leasorixd ha certs --if-missing`); danach starten beide Server.
+Two containers, `dhcp-a` (primary, config leader) and `dhcp-b`
+(secondary), on the same macvlan network. On the first start, a one-shot
+service `certs` generates the CA and node certificates for mTLS in the
+`ha-certs` volume (`leasorixd ha certs --if-missing`); then both servers
+start.
 
 ```sh
 cd deploy
@@ -161,35 +160,35 @@ LEASORIX_A_IP=192.168.1.5 LEASORIX_B_IP=192.168.1.6 \
 docker compose -f docker-compose.ha.yml logs dhcp-a | grep setup_token
 ```
 
-- Setup und Konfiguration auf `dhcp-a`; `dhcp-b` übernimmt Konfiguration
-  und Benutzer automatisch und ist read-only.
-- `LEASORIX_HA_MODE`: `load-balance` (Default) oder `hot-standby`;
-  `LEASORIX_HA_AUTO_PARTNER_DOWN` (z. B. `1h`, Default `0s` = nur
-  manuell). Weitere Parameter (`LEASORIX_HA_MCLT`, …) siehe
+- Setup and configuration happen on `dhcp-a`; `dhcp-b` takes over the
+  configuration and users automatically and is read-only.
+- `LEASORIX_HA_MODE`: `load-balance` (default) or `hot-standby`;
+  `LEASORIX_HA_AUTO_PARTNER_DOWN` (e.g., `1h`, default `0s` = manual
+  only). For further parameters (`LEASORIX_HA_MCLT`, …), see
   [HA.md](HA.md).
-- Beide Container auf **einem** Host schützen vor Software-Ausfällen und
-  sind ideal zum Ausprobieren; echte Redundanz braucht zwei Hosts.
+- Both containers on **one** host protect against software failures and
+  are ideal for trying things out; real redundancy requires two hosts.
 
-### HA auf zwei Docker-Hosts
+### HA on two Docker hosts
 
-Zertifikate einmal erzeugen und verteilen:
+Generate the certificates once and distribute them:
 
 ```sh
 mkdir ha-certs && sudo chown 65532:65532 ha-certs
 docker run --rm --network none -v "$PWD/ha-certs:/certs" \
   ghcr.io/meister119/leasorix:latest ha certs --out /certs dhcp-a dhcp-b
-# auf Host B kopieren: ca.pem, dhcp-b.pem, dhcp-b-key.pem (Besitzer 65532, Key 0600)
+# copy to host B: ca.pem, dhcp-b.pem, dhcp-b-key.pem (owner 65532, key 0600)
 ```
 
-Auf jedem Host läuft dann `docker-compose.yml` (oder die macvlan-Variante)
-mit zusätzlichem Zertifikats-Mount `- ./ha-certs:/certs:ro` und den
-HA-Variablen, hier für Host A (192.168.1.10):
+Each host then runs `docker-compose.yml` (or the macvlan variant) with an
+additional certificate mount `- ./ha-certs:/certs:ro` and the HA
+variables, shown here for host A (192.168.1.10):
 
 ```yaml
     environment:
-      LEASORIX_HA_NODE_ID: dhcp-a          # Host B: dhcp-b
-      LEASORIX_HA_ROLE: primary            # Host B: secondary
-      LEASORIX_HA_PEER_ID: dhcp-b          # Host B: dhcp-a
+      LEASORIX_HA_NODE_ID: dhcp-a          # host B: dhcp-b
+      LEASORIX_HA_ROLE: primary            # host B: secondary
+      LEASORIX_HA_PEER_ID: dhcp-b          # host B: dhcp-a
       LEASORIX_HA_PEER_ADDRESS: 192.168.1.11:8068
       LEASORIX_HA_TLS_MODE: mtls
       LEASORIX_HA_TLS_CA_FILE: /certs/ca.pem
@@ -197,86 +196,87 @@ HA-Variablen, hier für Host A (192.168.1.10):
       LEASORIX_HA_TLS_KEY_FILE: /certs/dhcp-a-key.pem
 ```
 
-TCP-Port 8068 muss zwischen den Hosts offen sein.
+TCP port 8068 must be open between the hosts.
 
-## Healthcheck und Neustart
+## Health check and restart
 
-Das Image enthält einen `HEALTHCHECK`: `leasorixd healthcheck` fragt
-`/readyz` des lokalen Servers ab (Adresse aus der Konfiguration, Wildcard →
-`127.0.0.1`). `docker compose ps` zeigt `healthy`, sobald Datenbank und
-DHCP-Listener bereit sind. Alle Dienste haben `restart: unless-stopped`.
+The image contains a `HEALTHCHECK`: `leasorixd healthcheck` queries
+`/readyz` on the local server (address from the configuration, wildcard →
+`127.0.0.1`). `docker compose ps` shows `healthy` as soon as the database
+and the DHCP listener are ready. All services have `restart: unless-stopped`.
 
-## Betrieb
+## Operations
 
 ```sh
-docker compose logs -f leasorix                                   # Logs (JSON)
+docker compose logs -f leasorix                                   # logs (JSON)
 docker compose exec leasorix leasorixd backup --out /data/backup.db
-docker compose cp leasorix:/data/backup.db ./leasorix-backup.db   # Backup sichern
+docker compose cp leasorix:/data/backup.db ./leasorix-backup.db   # copy the backup to the host
 docker compose exec -e LEASORIX_TOKEN=lxt_… leasorix \
-  leasorixctl --url https://127.0.0.1:8067 --insecure status      # CLI im Container
-docker compose pull && docker compose up -d                       # Update (Migration läuft beim Start)
+  leasorixctl --url https://127.0.0.1:8067 --insecure status      # CLI inside the container
+docker compose pull && docker compose up -d                       # update (migration runs on start)
 ```
 
-`--url` von `leasorixctl` muss zur Listen-Adresse passen (bei
-`LEASORIX_HTTP_LISTEN=192.168.1.10:8067` also diese). Wiederherstellen geht
-im laufenden Betrieb über UI, API oder `leasorixctl restore`; offline mit
-gestopptem Dienst über
-`docker compose run --rm leasorix restore /data/backup.db`. Vor einem
-Update empfiehlt sich ein Backup.
+The `--url` of `leasorixctl` must match the listen address (with
+`LEASORIX_HTTP_LISTEN=192.168.1.10:8067`, use that address). Restoring
+works while running via the UI, the API, or `leasorixctl restore`; offline,
+with the service stopped, via
+`docker compose run --rm leasorix restore /data/backup.db`. Taking a backup
+before an update is recommended.
 
-## Image bauen
+## Building the image
 
 ```sh
-make docker                            # leasorix:<version> und leasorix:latest
+make docker                            # leasorix:<version> and leasorix:latest
 LEASORIX_IMAGE=leasorix:latest docker compose -f deploy/docker-compose.yml up -d
 ```
 
-- Multi-Stage: Node baut die UI, Go baut beide Binaries (statisch,
-  `CGO_ENABLED=0`) und setzt die File-Capabilities, das Laufzeit-Image ist
+- Multi-stage: Node builds the UI, Go builds both binaries (static,
+  `CGO_ENABLED=0`) and sets the file capabilities; the runtime image is
   distroless.
-- Basis-Images per Build-Argument austauschbar, z. B. für einen
-  Registry-Mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim
+- Base images can be swapped via build arguments, e.g., for a registry
+  mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim
   --build-arg GO_IMAGE=mirror.gcr.io/library/golang:1.27-bookworm`
-  (`RUNTIME_IMAGE` analog).
-- Hinter einem TLS-inspizierenden Proxy dessen CA als Build-Secret
-  übergeben: `--secret id=ca,src=proxy-ca.pem` (wird nur für `npm ci` und
-  `go mod download` verwendet, landet nicht im Image).
-- Zusätzliche Optionen über `DOCKER_BUILD_ARGS`, z. B.
+  (`RUNTIME_IMAGE` works the same way).
+- Behind a TLS-inspecting proxy, pass the proxy's CA as a build secret:
+  `--secret id=ca,src=proxy-ca.pem` (used only for `npm ci` and
+  `go mod download`; it does not end up in the image).
+- Additional options via `DOCKER_BUILD_ARGS`, e.g.,
   `make docker DOCKER_BUILD_ARGS="--network host --secret id=ca,src=ca.pem"`.
-- Multi-Arch ohne Emulation (die Binaries werden cross-kompiliert):
+- Multi-arch without emulation (the binaries are cross-compiled):
   `docker buildx build -f deploy/Dockerfile --platform linux/amd64,linux/arm64 .`
-- Releases: `.github/workflows/release.yml` baut bei einem Tag `v1.2.3` die
-  Images für amd64/arm64 und veröffentlicht sie als `1.2.3`, `1.2` und
-  `latest` in der GitHub Container Registry, Commits auf `main` als `edge`.
+- Releases: for a tag `v1.2.3`, `.github/workflows/release.yml` builds the
+  images for amd64/arm64 and publishes them as `1.2.3`, `1.2`, and
+  `latest` to the GitHub Container Registry; commits to `main` are
+  published as `edge`.
 
 ## Tests
 
-`sudo make test-docker` prüft das Image und alle drei Compose-Dateien in
-isolierten Netzen (veth-Paar + Network Namespace als Client-LAN, nie das
-echte Netz):
+`sudo make test-docker` tests the image and all three Compose files in
+isolated networks (a veth pair + network namespace as the client LAN, never
+the real network):
 
-1. **Host-Netzwerk:** Container wird `healthy`, läuft als 65532 mit
-   read-only Root-FS und genau `NET_BIND_SERVICE`+`NET_RAW`, UI erreichbar,
-   Setup + Scope per API, ein echter DHCP-Client (`udhcpc`) bekommt eine
-   Adresse, Backup per `docker exec`, `leasorixctl` im Image.
-2. **macvlan:** Client bekommt eine Adresse vom Container mit eigener IP.
-3. **HA:** beide Container `NORMAL`, Admin und Scope vom Leader auf den
-   Partner repliziert, Partner lehnt Konfigurationsänderungen ab, Clients
-   werden auf beide Server verteilt, Lease auf dem Partner sichtbar; nach
-   `docker kill dhcp-a` behält ein Client von `dhcp-a` seine Adresse beim
-   Partner.
+1. **Host network:** the container becomes `healthy`, runs as 65532 with a
+   read-only root FS and exactly `NET_BIND_SERVICE`+`NET_RAW`, the UI is
+   reachable, setup + scope via the API, a real DHCP client (`udhcpc`) gets
+   an address, backup via `docker exec`, `leasorixctl` in the image.
+2. **macvlan:** a client gets an address from the container with its own IP.
+3. **HA:** both containers `NORMAL`, admin and scope replicated from the
+   leader to the partner, the partner rejects configuration changes, clients
+   are distributed across both servers, the lease is visible on the partner;
+   after `docker kill dhcp-a`, a client of `dhcp-a` keeps its address on the
+   partner.
 
-Voraussetzungen: root, Docker mit Compose-Plugin, `iproute2`, `udhcpc`,
-`curl`; Image über `IMAGE=…` (Default `leasorix:latest`).
+Requirements: root, Docker with the Compose plugin, `iproute2`, `udhcpc`,
+`curl`; image via `IMAGE=…` (default `leasorix:latest`).
 
-## Fehlersuche
+## Troubleshooting
 
-| Meldung / Symptom | Ursache |
+| Message / symptom | Cause |
 |---|---|
-| `exec /usr/local/bin/leasorixd: operation not permitted` | `NET_BIND_SERVICE`/`NET_RAW` fehlen (z. B. `cap_drop: [ALL]` ohne `cap_add`) |
-| `open /data/leasorixd.lock: permission denied` | Bind-Mount gehört nicht UID 65532 (`chown 65532:65532`) |
-| `data directory … is in use by another leasorixd process` | zwei Container auf demselben Volume |
-| `no dhcp4.interfaces configured; DHCPv4 service is disabled` | `LEASORIX_DHCP4_INTERFACES` fehlt |
-| Clients bekommen keine Antwort (Bridge-Netz) | nicht unterstützt, Host-Netzwerk oder macvlan nutzen |
-| Clients bekommen keine Antwort (macvlan in VM) | Hypervisor verwirft fremde MACs (Promiscuous/Forged Transmits) |
-| UI vom Docker-Host aus nicht erreichbar (macvlan) | macvlan-Isolation, Shim-Interface anlegen |
+| `exec /usr/local/bin/leasorixd: operation not permitted` | `NET_BIND_SERVICE`/`NET_RAW` missing (e.g., `cap_drop: [ALL]` without `cap_add`) |
+| `open /data/leasorixd.lock: permission denied` | bind mount not owned by UID 65532 (`chown 65532:65532`) |
+| `data directory … is in use by another leasorixd process` | two containers on the same volume |
+| `no dhcp4.interfaces configured; DHCPv4 service is disabled` | `LEASORIX_DHCP4_INTERFACES` missing |
+| Clients get no response (bridge network) | not supported; use host network or macvlan |
+| Clients get no response (macvlan in a VM) | hypervisor drops foreign MACs (Promiscuous/Forged Transmits) |
+| UI not reachable from the Docker host (macvlan) | macvlan isolation; create a shim interface |
