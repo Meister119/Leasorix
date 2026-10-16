@@ -24,6 +24,8 @@ Jeder Schlüssel lässt sich per Umgebungsvariable überschreiben:
 | `dhcp4.interfaces` | – | Interfaces, auf denen DHCP bedient wird (leer = aus) |
 | `dhcp4.conflict_detection` | an, 500 ms | Ping vor jeder neuen Adresse |
 | `dhcp4.bootp_lease_time` | `720h` | Lease-Dauer für BOOTP-Clients |
+| `dhcp6.interfaces` | – | Interfaces für DHCPv6 (leer = aus), siehe [Abschnitt 12](#12-dhcpv6) |
+| `dhcp6.decline_time` | `24h` | Sperre für Adressen, die ein Client per DECLINE meldet |
 | `audit.retention` | `2160h` (90 Tage) | Aufbewahrung des Audit-Logs |
 | `auth.*` | | Sitzungsdauer, Login-Sperre, Setup-Token |
 | `ha.*` | aus | siehe [HA.md](HA.md) |
@@ -109,7 +111,8 @@ und Vorher/Nachher. Prometheus-Metriken unter `/metrics`
 JSON) enthält Einstellungen, eigene Optionsdefinitionen, Klassen,
 Server-Optionen und -Policies, MAC-Filter, Superscopes, DNS-Zonen und alle
 Scopes mit Ausschlüssen, Reservierungen, Optionen, Policies und
-DNS-Einstellungen. Bezüge laufen über Namen, nicht über Datenbank-IDs;
+DNS-Einstellungen, außerdem die DHCPv6-Konfiguration (`server_options6`,
+`scopes6`, siehe [Abschnitt 12](#12-dhcpv6)). Bezüge laufen über Namen, nicht über Datenbank-IDs;
 Benutzer, API-Tokens und TSIG-Schlüssel (Geheimnisse) sind nicht enthalten –
 eine Zone mit Schlüssel lässt sich nur importieren, wenn ein Schlüssel
 gleichen Namens auf dem Zielserver existiert.
@@ -172,7 +175,7 @@ laufenden Betrieb) – inklusive Passwort-Hashes, also sicher aufbewahren.
   `leasorixctl backup FILE`, `leasorixctl restore FILE --yes`
 
 Die Wiederherstellung übernimmt Konfiguration, Benutzer, API-Tokens und
-Leases; das Audit-Log des Servers bleibt erhalten und bekommt einen Eintrag
+Leases (auch DHCPv6-Bindungen); das Audit-Log des Servers bleibt erhalten und bekommt einen Eintrag
 `system.restore`. Alle Sitzungen enden. Backups älterer Versionen werden
 automatisch migriert, Backups einer neueren Version abgelehnt. Für den
 reinen Lease-Notfall gibt es zusätzlich den Lease-Export/-Import (siehe
@@ -190,6 +193,7 @@ leasorixctl scopes list
 leasorixctl leases list --scope LAN -q printer
 leasorixctl ha status
 leasorixctl dns registrations
+leasorixctl v6 leases -q 0003000102    # DHCPv6-Bindungen
 leasorixctl config export -f config.yaml
 leasorixctl -o json leases list            # JSON statt Tabelle
 ```
@@ -249,7 +253,94 @@ Bei Hochverfügbarkeit registriert jeder Server die Leases, die er vergibt;
 übernimmt der Partner einen Client, aktualisiert er dessen Records (gleiche
 DHCID, daher kein Konflikt). Die Registrierungsliste ist pro Server.
 
-## 12. Sicherheit
+## 12. DHCPv6
+
+Leasorix bedient IPv6-Clients zustandsbehaftet nach RFC 8415: Adressen
+(IA_NA) und Präfix-Delegation (IA_PD) für Router, dazu Optionen für
+zustandslose Clients (INFORMATION-REQUEST). Die Konfiguration ist von IPv4
+getrennt (Seite *IPv6 (DHCPv6)*, API unter `/api/v1/v6/…`,
+`leasorixctl v6 …`), folgt aber denselben Konzepten.
+
+**Aktivieren:** in der Bootstrap-Konfiguration
+
+```yaml
+dhcp6:
+  interfaces: [eth0]      # Interfaces mit IPv6-Adresse im Präfix eines Scopes
+```
+
+Pro Interface öffnet Leasorix UDP-Port 547 und tritt der Multicast-Gruppe
+`ff02::1:2` bei. Die Server-DUID (DUID-LLT aus der MAC des ersten
+Interfaces) wird beim ersten Start erzeugt und bleibt danach gleich
+(*Benutzer & Einstellungen → System*). Im Container braucht DHCPv6 den
+Host- oder macvlan-Modus mit IPv6 wie DHCPv4.
+
+**Router-Advertisements:** Ob Clients DHCPv6 überhaupt nutzen, steuert der
+Router: das *Managed*-Flag (M=1) im Router-Advertisement für Adressen, das
+*Other*-Flag (O=1) nur für Optionen. Das Default-Gateway kommt bei IPv6 immer
+aus dem Router-Advertisement, nie von DHCPv6.
+
+**Scopes** (*IPv6 (DHCPv6) → Neuer IPv6-Scope*):
+
+| Feld | Bedeutung |
+|---|---|
+| Präfix | Präfix des Links (z. B. `2001:db8:1::/64`); bestimmt, welche Clients der Scope bedient – über die Adresse des Interfaces oder bei Relays über die *link-address* |
+| Start-/Endadresse | Bereich für die Adressvergabe; leer = keine Adressen (nur Präfix-Delegation) |
+| Bevorzugte / gültige Lebensdauer | in Sekunden; T1/T2 = 50 %/80 % der bevorzugten Lebensdauer |
+| Delegations-Pool, Länge | z. B. `2001:db8:100::/40` mit Länge 56 → 65 536 delegierbare /56 für Router; darf das Link-Präfix nicht überlappen |
+| Server-Präferenz | Option 7 im ADVERTISE (0–255); bei mehreren Servern wählt der Client den höchsten |
+| Rapid Commit | SOLICIT mit Rapid-Commit wird direkt mit REPLY beantwortet (2 statt 4 Nachrichten) |
+
+Adressen werden pro Client deterministisch gewählt (gleicher Client – gleiche
+Adresse, solange sie frei ist); große Bereiche wie ein ganzes /64 sind
+möglich. **Ausschlüsse** nehmen Adressbereiche aus der Vergabe.
+**Reservierungen** binden eine Adresse an die DUID des Clients, optional nur
+für eine IAID (leer = jede IA des Clients); die Adresse muss im Präfix
+liegen, nicht unbedingt im Bereich. Die DUID steht im Lease bzw. im Log des
+Clients (z. B. `/var/lib/dhcp/dhclient6.leases`, Windows: `ipconfig /all`
+„DHCPv6-Client-DUID“).
+
+**Optionen** gibt es auf Server-, Scope- und Reservierungsebene (die
+spezifischere gewinnt): u. a. DNS-Server (23), Domänen-Suchliste (24), SNTP
+(31), NTP (56), Boot-Datei-URL (59), AFTR-Name (64). Eigene Optionen mit
+Code und Typ sind möglich; Optionen, die das Protokoll selbst setzt (IA,
+Status, Präferenz, Rapid Commit, Relay-Optionen …), sind gesperrt. Ohne
+Option-Request des Clients werden alle konfigurierten Optionen gesendet.
+
+**Leases** (*IPv6 → Leases*, `leasorixctl v6 leases`) zeigen Adressen und
+delegierte Präfixe mit DUID, IAID, Hostname (aus Option 39) und Laufzeit;
+Operatoren können Bindungen löschen. Abgelaufene oder freigegebene Bindungen
+bleiben `dhcp6.expired_grace` (4 h) für denselben Client reserviert; per
+DECLINE gemeldete Adressen sind `dhcp6.decline_time` gesperrt.
+
+**Relays:** Ein DHCPv6-Relay (RELAY-FORW, auch mehrstufig) muss an eine
+Adresse eines der `dhcp6.interfaces` senden. Der Scope ergibt sich aus der
+*link-address* des innersten Relays; die Antwort geht als RELAY-REPL an das
+Relay zurück (Interface-ID wird zurückgegeben). Direkt per Unicast gesendete
+Anfragen beantwortet Leasorix mit `UseMulticast` (es bietet keine
+Server-Unicast-Option an).
+
+**MAC-Filter** gelten auch für DHCPv6, sofern die MAC des Clients bekannt
+ist (DUID-LL/-LLT mit Ethernet-Adresse oder Option 79 vom Relay).
+
+**Hochverfügbarkeit:** Die DHCPv6-Konfiguration wird wie die IPv4-
+Konfiguration vom Config-Leader repliziert. DHCPv6-Bindungen werden **nicht**
+repliziert: Die Clients (nach DUID) und die Adressen/Präfixe werden wie bei
+IPv4 nach dem HA-Modus aufgeteilt, und jeder Server vergibt nur aus seinem
+Anteil. Ist ein Server ausgefallen, bedient der Partner alle Clients – aber
+weiterhin nur aus seinem Anteil; Clients des ausgefallenen
+Servers bekommen beim nächsten Rebind eine neue Adresse (die alte mit
+Lebensdauer 0). Die Bereiche sollten daher großzügig sein (bei /64 kein
+Thema). Details: [HA.md](HA.md#dhcpv6).
+
+**Nicht umgesetzt:** DNS-Updates (AAAA) für DHCPv6, Policies/Klassen für
+IPv6, Lease-Export/-Import für DHCPv6 (Backup enthält die Bindungen),
+Reconfigure, Server-Unicast-Option, Übernahme von Windows-DHCPv6-Scopes aus
+dem netsh-Dump.
+
+Metriken: `leasorix_dhcp6_packets_received_total`, `…_packets_sent_total`,
+`…_packets_dropped_total` (nach Grund) und `…_lease_events_total`.
+
+## 13. Sicherheit
 
 - Den Management-Listener nur im Management-Netz (oder auf localhost hinter
   einem Reverse Proxy) erreichbar machen.

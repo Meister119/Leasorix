@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -46,11 +47,14 @@ const (
 
 // Options are the collaborators of a Node.
 type Options struct {
-	Config  config.HAConfig
-	Log     *slog.Logger
-	DB      *store.DB
-	Leases  *lease.Manager
-	Scopes  *scope.Store
+	Config config.HAConfig
+	Log    *slog.Logger
+	DB     *store.DB
+	Leases *lease.Manager
+	Scopes *scope.Store
+	// Reload reloads further configuration (DHCPv6 scopes) after the
+	// configuration of the leader was applied.
+	Reload  func(context.Context) error
 	Metrics *metrics.HA
 	Version string
 	// Creds overrides the transport credentials (tests).
@@ -72,6 +76,7 @@ type Node struct {
 	db      *store.DB
 	leases  *lease.Manager
 	scopes  *scope.Store
+	reload  func(context.Context) error
 	metrics *metrics.HA
 	version string
 	creds   credentials.TransportCredentials
@@ -114,7 +119,7 @@ type Node struct {
 func NewNode(ctx context.Context, o Options) (*Node, error) {
 	cfg := o.Config
 	n := &Node{
-		cfg: cfg, log: o.Log, db: o.DB, leases: o.Leases, scopes: o.Scopes, metrics: o.Metrics,
+		cfg: cfg, log: o.Log, db: o.DB, leases: o.Leases, scopes: o.Scopes, reload: o.Reload, metrics: o.Metrics,
 		version: o.Version, creds: o.Creds, now: time.Now, kick: make(chan struct{}, 1),
 		split: split{
 			mode:    cfg.Mode,
@@ -264,6 +269,18 @@ func (n *Node) CanAllocate(ip uint32) bool {
 	return false
 }
 
+// CanAllocate6 implements lease6.Coordinator. DHCPv6 bindings are not
+// replicated, so each server only ever allocates from its own share, also
+// in PARTNER_DOWN (the partner's bindings are unknown here); clients of a
+// failed partner get a new address from this server's share.
+func (n *Node) CanAllocate6(p netip.Prefix) bool {
+	switch n.pol.Load().state {
+	case StateNormal, StateCommunicationInterrupted, StatePartnerDown:
+		return n.split.owns6(p)
+	}
+	return false
+}
+
 // LeaseLimit implements lease.Coordinator: without a working partner (and
 // during recovery) leases are limited to MCLT.
 func (n *Node) LeaseLimit() time.Duration {
@@ -336,9 +353,13 @@ func (o *outbox) take() []*pushReq {
 func (n *Node) Replicate(ctx context.Context, changes []lease.Change, critical bool) bool {
 	n.mu.Lock()
 	connected := n.m.connected
+	if !connected {
+		// The partner pulls our table when it sees the new epoch; the
+		// change is already in it.
+		n.m.changeNotSent()
+	}
 	n.mu.Unlock()
 	if !connected {
-		// The partner pulls everything when the connection comes back.
 		return false
 	}
 	wait := critical && n.cfg.Replication == config.HAReplSync
@@ -912,6 +933,11 @@ func (n *Node) PushConfig(ctx context.Context, in *pb.ConfigSnapshot) (*pb.Confi
 	}
 	if err := n.scopes.Load(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "reloading configuration: %v", err)
+	}
+	if n.reload != nil {
+		if err := n.reload(ctx); err != nil {
+			return nil, status.Errorf(codes.Internal, "reloading configuration: %v", err)
+		}
 	}
 	e := audit.New(audit.WithActor(ctx, "ha:"+n.cfg.Peer.ID, ""), "ha.config_applied", "ha", n.cfg.NodeID,
 		map[string]any{"version": in.GetVersion(), "bytes": len(in.GetData())})

@@ -3,8 +3,10 @@ package ha
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"net/netip"
 
 	"github.com/meister119/leasorix/internal/config"
+	"github.com/meister119/leasorix/internal/ip6"
 )
 
 // ClientBucket maps a client hardware address (canonical form) to 0..99.
@@ -44,10 +46,15 @@ func (s split) responsible(mac string) bool {
 }
 
 // owns reports whether a free address belongs to this server's share.
-func (s split) owns(ip uint32) bool {
-	b := AddressBucket(ip)
+func (s split) owns(ip uint32) bool { return s.ownsBucket(AddressBucket(ip)) }
+
+func (s split) ownsBucket(b int) bool {
 	if s.mode == config.HAHotStandby {
 		return (b < s.reserve) != s.primary
 	}
 	return (b < s.lb) == s.primary
 }
+
+// owns6 reports whether an IPv6 address or delegated prefix belongs to
+// this server's share.
+func (s split) owns6(p netip.Prefix) bool { return s.ownsBucket(ip6.Bucket(p.Addr())) }

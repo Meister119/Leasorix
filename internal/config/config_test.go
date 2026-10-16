@@ -272,3 +272,19 @@ func TestExampleConfigIsValid(t *testing.T) {
 		t.Fatal("example config without interfaces")
 	}
 }
+
+func TestDHCP6Config(t *testing.T) {
+	p := writeFile(t, "dhcp6:\n  decline_time: 1h\n")
+	cfg, err := load(p, envMap(map[string]string{"LEASORIX_DHCP6_INTERFACES": "eth0,eth1"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := cfg.DHCP6
+	if strings.Join(d.Interfaces, "|") != "eth0|eth1" || d.DeclineTime != time.Hour || d.Workers != 64 || d.OfferTimeout != time.Minute {
+		t.Fatalf("unexpected dhcp6 config: %+v", d)
+	}
+	p = writeFile(t, "dhcp6:\n  interfaces: [eth0]\n  workers: 0\n")
+	if _, err := load(p, envMap(nil)); err == nil {
+		t.Fatal("workers 0 accepted")
+	}
+}

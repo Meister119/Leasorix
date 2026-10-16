@@ -349,6 +349,14 @@ function SystemInfo() {
           <dd>{formatDateTime(i.started_at)}</dd>
           <dt className="text-slate-500">DHCPv4-Interfaces</dt>
           <dd className="font-mono">{i.dhcp4_interfaces.join(", ") || "keine (DHCP deaktiviert)"}</dd>
+          <dt className="text-slate-500">DHCPv6-Interfaces</dt>
+          <dd className="font-mono">{i.dhcp6_interfaces.join(", ") || "keine (DHCPv6 deaktiviert)"}</dd>
+          {i.dhcp6_server_duid && (
+            <>
+              <dt className="text-slate-500">DHCPv6-Server-DUID</dt>
+              <dd className="font-mono break-all">{i.dhcp6_server_duid}</dd>
+            </>
+          )}
           <dt className="text-slate-500">HTTPS</dt>
           <dd>{i.tls ? "ja" : "nein"}</dd>
           <dt className="text-slate-500">Konflikterkennung</dt>

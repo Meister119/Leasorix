@@ -310,6 +310,48 @@ func (e HAStatusTlsMode) Valid() bool {
 	}
 }
 
+// Defines values for Lease6Kind.
+const (
+	Lease6KindNa Lease6Kind = "na"
+	Lease6KindPd Lease6Kind = "pd"
+)
+
+// Valid indicates whether the value is a known member of the Lease6Kind enum.
+func (e Lease6Kind) Valid() bool {
+	switch e {
+	case Lease6KindNa:
+		return true
+	case Lease6KindPd:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Lease6State.
+const (
+	Lease6Active   Lease6State = "active"
+	Lease6Declined Lease6State = "declined"
+	Lease6Expired  Lease6State = "expired"
+	Lease6Released Lease6State = "released"
+)
+
+// Valid indicates whether the value is a known member of the Lease6State enum.
+func (e Lease6State) Valid() bool {
+	switch e {
+	case Lease6Active:
+		return true
+	case Lease6Declined:
+		return true
+	case Lease6Expired:
+		return true
+	case Lease6Released:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LeaseExportFormat.
 const (
 	LeasorixLeasesv1 LeaseExportFormat = "leasorix-leases/v1"
@@ -379,6 +421,63 @@ func (e MacFilterInputList) Valid() bool {
 	case MacFilterInputListAllow:
 		return true
 	case MacFilterInputListDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Option6Owner.
+const (
+	Option6OwnerReservation Option6Owner = "reservation"
+	Option6OwnerScope       Option6Owner = "scope"
+	Option6OwnerServer      Option6Owner = "server"
+)
+
+// Valid indicates whether the value is a known member of the Option6Owner enum.
+func (e Option6Owner) Valid() bool {
+	switch e {
+	case Option6OwnerReservation:
+		return true
+	case Option6OwnerScope:
+		return true
+	case Option6OwnerServer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Option6Type.
+const (
+	Option6TypeDomainList Option6Type = "domain-list"
+	Option6TypeHex        Option6Type = "hex"
+	Option6TypeIpv6List   Option6Type = "ipv6-list"
+	Option6TypeNtpServers Option6Type = "ntp-servers"
+	Option6TypeString     Option6Type = "string"
+	Option6TypeUint16     Option6Type = "uint16"
+	Option6TypeUint32     Option6Type = "uint32"
+	Option6TypeUint8      Option6Type = "uint8"
+)
+
+// Valid indicates whether the value is a known member of the Option6Type enum.
+func (e Option6Type) Valid() bool {
+	switch e {
+	case Option6TypeDomainList:
+		return true
+	case Option6TypeHex:
+		return true
+	case Option6TypeIpv6List:
+		return true
+	case Option6TypeNtpServers:
+		return true
+	case Option6TypeString:
+		return true
+	case Option6TypeUint16:
+		return true
+	case Option6TypeUint32:
+		return true
+	case Option6TypeUint8:
 		return true
 	default:
 		return false
@@ -747,6 +846,7 @@ type ConfigImportResult struct {
 	Policies          int                    `json:"policies"`
 	Reservations      int                    `json:"reservations"`
 	Scopes            int                    `json:"scopes"`
+	Scopes6           int                    `json:"scopes6"`
 	Superscopes       int                    `json:"superscopes"`
 }
 
@@ -872,6 +972,14 @@ type Exclusion struct {
 	Start   string `json:"start"`
 }
 
+// Exclusion6 defines model for Exclusion6.
+type Exclusion6 struct {
+	End     string `json:"end"`
+	Id      int64  `json:"id"`
+	ScopeId int64  `json:"scope_id"`
+	Start   string `json:"start"`
+}
+
 // FieldError defines model for FieldError.
 type FieldError struct {
 	Field   string `json:"field"`
@@ -975,6 +1083,27 @@ type Lease struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+// Lease6 defines model for Lease6.
+type Lease6 struct {
+	Address        string      `json:"address"`
+	Duid           string      `json:"duid"`
+	ExpiresAt      time.Time   `json:"expires_at"`
+	Hostname       string      `json:"hostname"`
+	Iaid           int64       `json:"iaid"`
+	Kind           Lease6Kind  `json:"kind"`
+	PreferredUntil time.Time   `json:"preferred_until"`
+	PrefixLen      int         `json:"prefix_len"`
+	ScopeId        int64       `json:"scope_id"`
+	StartsAt       time.Time   `json:"starts_at"`
+	State          Lease6State `json:"state"`
+}
+
+// Lease6Kind defines model for Lease6.Kind.
+type Lease6Kind string
+
+// Lease6State defines model for Lease6.State.
+type Lease6State string
+
 // LeaseExport defines model for LeaseExport.
 type LeaseExport struct {
 	ExportedAt time.Time         `json:"exported_at"`
@@ -1048,6 +1177,36 @@ type NetshImportResult struct {
 		Reason string `json:"reason"`
 		Text   string `json:"text"`
 	} `json:"warnings"`
+}
+
+// Option6Definition defines model for Option6Definition.
+type Option6Definition struct {
+	Code        int         `json:"code"`
+	Description string      `json:"description"`
+	Name        string      `json:"name"`
+	Type        Option6Type `json:"type"`
+}
+
+// Option6Input defines model for Option6Input.
+type Option6Input struct {
+	Type  *Option6Type `json:"type,omitempty"`
+	Value string       `json:"value"`
+}
+
+// Option6Owner defines model for Option6Owner.
+type Option6Owner string
+
+// Option6Type defines model for Option6Type.
+type Option6Type string
+
+// Option6Value defines model for Option6Value.
+type Option6Value struct {
+	Code    int          `json:"code"`
+	Name    string       `json:"name"`
+	Owner   Option6Owner `json:"owner"`
+	OwnerId int64        `json:"owner_id"`
+	Type    Option6Type  `json:"type"`
+	Value   string       `json:"value"`
 }
 
 // OptionDefinition defines model for OptionDefinition.
@@ -1138,6 +1297,12 @@ type PolicyInput struct {
 // PolicyInputOperator defines model for PolicyInput.Operator.
 type PolicyInputOperator string
 
+// Range6 defines model for Range6.
+type Range6 struct {
+	End   string `json:"end"`
+	Start string `json:"start"`
+}
+
 // Reservation defines model for Reservation.
 type Reservation struct {
 	ClientId    string    `json:"client_id"`
@@ -1149,6 +1314,35 @@ type Reservation struct {
 	Mac         string    `json:"mac"`
 	ScopeId     int64     `json:"scope_id"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Reservation6 defines model for Reservation6.
+type Reservation6 struct {
+	Description string `json:"description"`
+
+	// Duid Client DUID as hex.
+	Duid     string `json:"duid"`
+	Hostname string `json:"hostname"`
+
+	// Iaid -1 = any IA of the client.
+	Iaid    int64  `json:"iaid"`
+	Id      int64  `json:"id"`
+	Ip      string `json:"ip"`
+	ScopeId int64  `json:"scope_id"`
+}
+
+// Reservation6Input defines model for Reservation6Input.
+type Reservation6Input struct {
+	Description *string `json:"description,omitempty"`
+	Duid        string  `json:"duid"`
+	Hostname    *string `json:"hostname,omitempty"`
+
+	// Iaid Absent or -1 = any IA.
+	Iaid *int64 `json:"iaid,omitempty"`
+	Ip   string `json:"ip"`
+
+	// ScopeId Required on creation.
+	ScopeId *int64 `json:"scope_id,omitempty"`
 }
 
 // ReservationInput defines model for ReservationInput.
@@ -1199,6 +1393,67 @@ type Scope struct {
 	// SuperscopeId 0 = no superscope.
 	SuperscopeId int64     `json:"superscope_id"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// Scope6 defines model for Scope6.
+type Scope6 struct {
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
+	Enabled     bool      `json:"enabled"`
+	End         string    `json:"end"`
+	Id          int64     `json:"id"`
+	Name        string    `json:"name"`
+
+	// PdLength Length of the delegated prefixes, e.g. 56.
+	PdLength int `json:"pd_length"`
+
+	// PdPool Prefix delegation pool (empty = none), e.g. 2001:db8:100::/40.
+	PdPool     string `json:"pd_pool"`
+	Preference int    `json:"preference"`
+
+	// PreferredLifetime Seconds.
+	PreferredLifetime int `json:"preferred_lifetime"`
+
+	// Prefix Example: 2001:db8:1::/64
+	Prefix      string `json:"prefix"`
+	RapidCommit bool   `json:"rapid_commit"`
+
+	// Start First address of the range (empty = no addresses).
+	Start     string    `json:"start"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// ValidLifetime Seconds.
+	ValidLifetime int `json:"valid_lifetime"`
+}
+
+// Scope6Input defines model for Scope6Input.
+type Scope6Input struct {
+	Description       *string `json:"description,omitempty"`
+	Enabled           bool    `json:"enabled"`
+	End               *string `json:"end,omitempty"`
+	Name              string  `json:"name"`
+	PdLength          *int    `json:"pd_length,omitempty"`
+	PdPool            *string `json:"pd_pool,omitempty"`
+	Preference        *int    `json:"preference,omitempty"`
+	PreferredLifetime int     `json:"preferred_lifetime"`
+	Prefix            string  `json:"prefix"`
+	RapidCommit       *bool   `json:"rapid_commit,omitempty"`
+	Start             *string `json:"start,omitempty"`
+	ValidLifetime     int     `json:"valid_lifetime"`
+}
+
+// Scope6Stats defines model for Scope6Stats.
+type Scope6Stats struct {
+	AddressesInUse int `json:"addresses_in_use"`
+	Declined       int `json:"declined"`
+
+	// PrefixCapacity Delegable prefixes (decimal).
+	PrefixCapacity string `json:"prefix_capacity"`
+	PrefixesInUse  int    `json:"prefixes_in_use"`
+	ScopeId        int64  `json:"scope_id"`
+
+	// Size Addresses in the range (decimal; ranges can exceed 2^53).
+	Size string `json:"size"`
 }
 
 // ScopeBundle defines model for ScopeBundle.
@@ -1366,14 +1621,18 @@ type SystemInfo struct {
 	ConfigLeader *string `json:"config_leader,omitempty"`
 
 	// ConfigReadOnly Configuration changes must be made on the HA config leader.
-	ConfigReadOnly    bool      `json:"config_read_only"`
-	ConflictDetection bool      `json:"conflict_detection"`
-	Dhcp4Interfaces   []string  `json:"dhcp4_interfaces"`
-	GoVersion         string    `json:"go_version"`
-	HaEnabled         bool      `json:"ha_enabled"`
-	StartedAt         time.Time `json:"started_at"`
-	Tls               bool      `json:"tls"`
-	Version           string    `json:"version"`
+	ConfigReadOnly    bool     `json:"config_read_only"`
+	ConflictDetection bool     `json:"conflict_detection"`
+	Dhcp4Interfaces   []string `json:"dhcp4_interfaces"`
+	Dhcp6Interfaces   []string `json:"dhcp6_interfaces"`
+
+	// Dhcp6ServerDuid DUID of this DHCPv6 server (hex).
+	Dhcp6ServerDuid *string   `json:"dhcp6_server_duid,omitempty"`
+	GoVersion       string    `json:"go_version"`
+	HaEnabled       bool      `json:"ha_enabled"`
+	StartedAt       time.Time `json:"started_at"`
+	Tls             bool      `json:"tls"`
+	Version         string    `json:"version"`
 }
 
 // User defines model for User.
@@ -1517,6 +1776,19 @@ type ListReservationsParams struct {
 	ScopeId *int64 `form:"scope_id,omitempty" json:"scope_id,omitempty"`
 }
 
+// ListLeases6Params defines parameters for ListLeases6.
+type ListLeases6Params struct {
+	ScopeId *int64 `form:"scope_id,omitempty" json:"scope_id,omitempty"`
+
+	// Q Substring of address, DUID or host name.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+}
+
+// ListReservations6Params defines parameters for ListReservations6.
+type ListReservations6Params struct {
+	ScopeId *int64 `form:"scope_id,omitempty" json:"scope_id,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -1612,6 +1884,24 @@ type CreateUserJSONRequestBody = UserCreate
 
 // UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
 type UpdateUserJSONRequestBody = UserUpdate
+
+// SetOption6JSONRequestBody defines body for SetOption6 for application/json ContentType.
+type SetOption6JSONRequestBody = Option6Input
+
+// CreateReservation6JSONRequestBody defines body for CreateReservation6 for application/json ContentType.
+type CreateReservation6JSONRequestBody = Reservation6Input
+
+// UpdateReservation6JSONRequestBody defines body for UpdateReservation6 for application/json ContentType.
+type UpdateReservation6JSONRequestBody = Reservation6Input
+
+// CreateScope6JSONRequestBody defines body for CreateScope6 for application/json ContentType.
+type CreateScope6JSONRequestBody = Scope6Input
+
+// UpdateScope6JSONRequestBody defines body for UpdateScope6 for application/json ContentType.
+type UpdateScope6JSONRequestBody = Scope6Input
+
+// CreateExclusion6JSONRequestBody defines body for CreateExclusion6 for application/json ContentType.
+type CreateExclusion6JSONRequestBody = Range6
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -2173,6 +2463,93 @@ type ClientInterface interface {
 	// UpdateUser performs a PATCH /users/{id} (the `UpdateUser` operationId) request.
 	// Takes a body of the `application/json` content type.
 	UpdateUser(ctx context.Context, id Id, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListLeases6 performs a GET /v6/leases (the `ListLeases6` operationId) request.
+	ListLeases6(ctx context.Context, params *ListLeases6Params, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteLease6 performs a DELETE /v6/leases/{address} (the `DeleteLease6` operationId) request.
+	DeleteLease6(ctx context.Context, address string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListOptionDefinitions6 performs a GET /v6/option-definitions (the `ListOptionDefinitions6` operationId) request.
+	ListOptionDefinitions6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListOptions6 performs a GET /v6/options/{owner}/{ownerId} (the `ListOptions6` operationId) request.
+	ListOptions6(ctx context.Context, owner Option6Owner, ownerId OwnerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteOption6 performs a DELETE /v6/options/{owner}/{ownerId}/{code} (the `DeleteOption6` operationId) request.
+	DeleteOption6(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetOption6WithBody performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request,
+	// with any type of body and a specified content type.
+	SetOption6WithBody(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetOption6 performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	SetOption6(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, body SetOption6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListReservations6 performs a GET /v6/reservations (the `ListReservations6` operationId) request.
+	ListReservations6(ctx context.Context, params *ListReservations6Params, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateReservation6WithBody performs a POST /v6/reservations (the `CreateReservation6` operationId) request,
+	// with any type of body and a specified content type.
+	CreateReservation6WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateReservation6 performs a POST /v6/reservations (the `CreateReservation6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateReservation6(ctx context.Context, body CreateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteReservation6 performs a DELETE /v6/reservations/{id} (the `DeleteReservation6` operationId) request.
+	DeleteReservation6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateReservation6WithBody performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateReservation6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateReservation6 performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateReservation6(ctx context.Context, id Id, body UpdateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListScopes6 performs a GET /v6/scopes (the `ListScopes6` operationId) request.
+	ListScopes6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScope6WithBody performs a POST /v6/scopes (the `CreateScope6` operationId) request,
+	// with any type of body and a specified content type.
+	CreateScope6WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScope6 performs a POST /v6/scopes (the `CreateScope6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateScope6(ctx context.Context, body CreateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteScope6 performs a DELETE /v6/scopes/{id} (the `DeleteScope6` operationId) request.
+	DeleteScope6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScope6 performs a GET /v6/scopes/{id} (the `GetScope6` operationId) request.
+	GetScope6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScope6WithBody performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateScope6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScope6 performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateScope6(ctx context.Context, id Id, body UpdateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListExclusions6 performs a GET /v6/scopes/{id}/exclusions (the `ListExclusions6` operationId) request.
+	ListExclusions6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateExclusion6WithBody performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request,
+	// with any type of body and a specified content type.
+	CreateExclusion6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateExclusion6 performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateExclusion6(ctx context.Context, id Id, body CreateExclusion6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteExclusion6 performs a DELETE /v6/scopes/{id}/exclusions/{exclusionId} (the `DeleteExclusion6` operationId) request.
+	DeleteExclusion6(ctx context.Context, id Id, exclusionId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetStats6 performs a GET /v6/stats (the `GetStats6` operationId) request.
+	GetStats6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListAudit performs a GET /audit (the `ListAudit` operationId) request.
@@ -3792,6 +4169,343 @@ func (c *Client) UpdateUserWithBody(ctx context.Context, id Id, contentType stri
 // Takes a body of the `application/json` content type.
 func (c *Client) UpdateUser(ctx context.Context, id Id, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateUserRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListLeases6 performs a GET /v6/leases (the `ListLeases6` operationId) request.
+func (c *Client) ListLeases6(ctx context.Context, params *ListLeases6Params, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLeases6Request(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteLease6 performs a DELETE /v6/leases/{address} (the `DeleteLease6` operationId) request.
+func (c *Client) DeleteLease6(ctx context.Context, address string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteLease6Request(c.Server, address)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListOptionDefinitions6 performs a GET /v6/option-definitions (the `ListOptionDefinitions6` operationId) request.
+func (c *Client) ListOptionDefinitions6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListOptionDefinitions6Request(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListOptions6 performs a GET /v6/options/{owner}/{ownerId} (the `ListOptions6` operationId) request.
+func (c *Client) ListOptions6(ctx context.Context, owner Option6Owner, ownerId OwnerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListOptions6Request(c.Server, owner, ownerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteOption6 performs a DELETE /v6/options/{owner}/{ownerId}/{code} (the `DeleteOption6` operationId) request.
+func (c *Client) DeleteOption6(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteOption6Request(c.Server, owner, ownerId, code)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetOption6WithBody performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SetOption6WithBody(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetOption6RequestWithBody(c.Server, owner, ownerId, code, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetOption6 performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) SetOption6(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, body SetOption6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetOption6Request(c.Server, owner, ownerId, code, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListReservations6 performs a GET /v6/reservations (the `ListReservations6` operationId) request.
+func (c *Client) ListReservations6(ctx context.Context, params *ListReservations6Params, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListReservations6Request(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateReservation6WithBody performs a POST /v6/reservations (the `CreateReservation6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateReservation6WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateReservation6RequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateReservation6 performs a POST /v6/reservations (the `CreateReservation6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateReservation6(ctx context.Context, body CreateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateReservation6Request(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteReservation6 performs a DELETE /v6/reservations/{id} (the `DeleteReservation6` operationId) request.
+func (c *Client) DeleteReservation6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteReservation6Request(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateReservation6WithBody performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateReservation6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateReservation6RequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateReservation6 performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateReservation6(ctx context.Context, id Id, body UpdateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateReservation6Request(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListScopes6 performs a GET /v6/scopes (the `ListScopes6` operationId) request.
+func (c *Client) ListScopes6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListScopes6Request(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateScope6WithBody performs a POST /v6/scopes (the `CreateScope6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateScope6WithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScope6RequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateScope6 performs a POST /v6/scopes (the `CreateScope6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateScope6(ctx context.Context, body CreateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScope6Request(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteScope6 performs a DELETE /v6/scopes/{id} (the `DeleteScope6` operationId) request.
+func (c *Client) DeleteScope6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScope6Request(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetScope6 performs a GET /v6/scopes/{id} (the `GetScope6` operationId) request.
+func (c *Client) GetScope6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScope6Request(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateScope6WithBody performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateScope6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScope6RequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateScope6 performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateScope6(ctx context.Context, id Id, body UpdateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScope6Request(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListExclusions6 performs a GET /v6/scopes/{id}/exclusions (the `ListExclusions6` operationId) request.
+func (c *Client) ListExclusions6(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListExclusions6Request(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateExclusion6WithBody performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateExclusion6WithBody(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateExclusion6RequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateExclusion6 performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateExclusion6(ctx context.Context, id Id, body CreateExclusion6JSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateExclusion6Request(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteExclusion6 performs a DELETE /v6/scopes/{id}/exclusions/{exclusionId} (the `DeleteExclusion6` operationId) request.
+func (c *Client) DeleteExclusion6(ctx context.Context, id Id, exclusionId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteExclusion6Request(c.Server, id, exclusionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetStats6 performs a GET /v6/stats (the `GetStats6` operationId) request.
+func (c *Client) GetStats6(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStats6Request(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -7068,6 +7782,789 @@ func NewUpdateUserRequestWithBody(server string, id Id, contentType string, body
 	return req, nil
 }
 
+// NewListLeases6Request constructs an http.Request for the ListLeases6 method
+func NewListLeases6Request(server string, params *ListLeases6Params) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/leases")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.ScopeId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope_id", *params.ScopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteLease6Request constructs an http.Request for the DeleteLease6 method
+func NewDeleteLease6Request(server string, address string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "address", address, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/leases/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListOptionDefinitions6Request constructs an http.Request for the ListOptionDefinitions6 method
+func NewListOptionDefinitions6Request(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/option-definitions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListOptions6Request constructs an http.Request for the ListOptions6 method
+func NewListOptions6Request(server string, owner Option6Owner, ownerId OwnerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "ownerId", ownerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/options/%s/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteOption6Request constructs an http.Request for the DeleteOption6 method
+func NewDeleteOption6Request(server string, owner Option6Owner, ownerId OwnerId, code int) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "ownerId", ownerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "code", code, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/options/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetOption6Request calls the generic SetOption6 builder with application/json body
+func NewSetOption6Request(server string, owner Option6Owner, ownerId OwnerId, code int, body SetOption6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetOption6RequestWithBody(server, owner, ownerId, code, "application/json", bodyReader)
+}
+
+// NewSetOption6RequestWithBody constructs an http.Request for the SetOption6 method, with any body, and a specified content type
+func NewSetOption6RequestWithBody(server string, owner Option6Owner, ownerId OwnerId, code int, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "owner", owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "ownerId", ownerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "code", code, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/options/%s/%s/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListReservations6Request constructs an http.Request for the ListReservations6 method
+func NewListReservations6Request(server string, params *ListReservations6Params) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/reservations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.ScopeId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope_id", *params.ScopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateReservation6Request calls the generic CreateReservation6 builder with application/json body
+func NewCreateReservation6Request(server string, body CreateReservation6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateReservation6RequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateReservation6RequestWithBody constructs an http.Request for the CreateReservation6 method, with any body, and a specified content type
+func NewCreateReservation6RequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/reservations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteReservation6Request constructs an http.Request for the DeleteReservation6 method
+func NewDeleteReservation6Request(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/reservations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateReservation6Request calls the generic UpdateReservation6 builder with application/json body
+func NewUpdateReservation6Request(server string, id Id, body UpdateReservation6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateReservation6RequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateReservation6RequestWithBody constructs an http.Request for the UpdateReservation6 method, with any body, and a specified content type
+func NewUpdateReservation6RequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/reservations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListScopes6Request constructs an http.Request for the ListScopes6 method
+func NewListScopes6Request(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateScope6Request calls the generic CreateScope6 builder with application/json body
+func NewCreateScope6Request(server string, body CreateScope6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScope6RequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateScope6RequestWithBody constructs an http.Request for the CreateScope6 method, with any body, and a specified content type
+func NewCreateScope6RequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteScope6Request constructs an http.Request for the DeleteScope6 method
+func NewDeleteScope6Request(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetScope6Request constructs an http.Request for the GetScope6 method
+func NewGetScope6Request(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateScope6Request calls the generic UpdateScope6 builder with application/json body
+func NewUpdateScope6Request(server string, id Id, body UpdateScope6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateScope6RequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateScope6RequestWithBody constructs an http.Request for the UpdateScope6 method, with any body, and a specified content type
+func NewUpdateScope6RequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListExclusions6Request constructs an http.Request for the ListExclusions6 method
+func NewListExclusions6Request(server string, id Id) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s/exclusions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateExclusion6Request calls the generic CreateExclusion6 builder with application/json body
+func NewCreateExclusion6Request(server string, id Id, body CreateExclusion6JSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateExclusion6RequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewCreateExclusion6RequestWithBody constructs an http.Request for the CreateExclusion6 method, with any body, and a specified content type
+func NewCreateExclusion6RequestWithBody(server string, id Id, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s/exclusions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteExclusion6Request constructs an http.Request for the DeleteExclusion6 method
+func NewDeleteExclusion6Request(server string, id Id, exclusionId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "exclusionId", exclusionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/scopes/%s/exclusions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetStats6Request constructs an http.Request for the GetStats6 method
+func NewGetStats6Request(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v6/stats")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -7762,6 +9259,131 @@ type ClientWithResponsesInterface interface {
 	// UpdateUserWithResponse performs a PATCH /users/{id} (the `UpdateUser` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	UpdateUserWithResponse(ctx context.Context, id Id, body UpdateUserJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateUserResponse, error)
+
+	// ListLeases6WithResponse performs a GET /v6/leases (the `ListLeases6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListLeases6WithResponse(ctx context.Context, params *ListLeases6Params, reqEditors ...RequestEditorFn) (*ListLeases6Response, error)
+
+	// DeleteLease6WithResponse performs a DELETE /v6/leases/{address} (the `DeleteLease6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteLease6WithResponse(ctx context.Context, address string, reqEditors ...RequestEditorFn) (*DeleteLease6Response, error)
+
+	// ListOptionDefinitions6WithResponse performs a GET /v6/option-definitions (the `ListOptionDefinitions6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListOptionDefinitions6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOptionDefinitions6Response, error)
+
+	// ListOptions6WithResponse performs a GET /v6/options/{owner}/{ownerId} (the `ListOptions6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListOptions6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, reqEditors ...RequestEditorFn) (*ListOptions6Response, error)
+
+	// DeleteOption6WithResponse performs a DELETE /v6/options/{owner}/{ownerId}/{code} (the `DeleteOption6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteOption6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, reqEditors ...RequestEditorFn) (*DeleteOption6Response, error)
+
+	// SetOption6WithBodyWithResponse performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SetOption6WithBodyWithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetOption6Response, error)
+
+	// SetOption6WithResponse performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SetOption6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, body SetOption6JSONRequestBody, reqEditors ...RequestEditorFn) (*SetOption6Response, error)
+
+	// ListReservations6WithResponse performs a GET /v6/reservations (the `ListReservations6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListReservations6WithResponse(ctx context.Context, params *ListReservations6Params, reqEditors ...RequestEditorFn) (*ListReservations6Response, error)
+
+	// CreateReservation6WithBodyWithResponse performs a POST /v6/reservations (the `CreateReservation6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateReservation6WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReservation6Response, error)
+
+	// CreateReservation6WithResponse performs a POST /v6/reservations (the `CreateReservation6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateReservation6WithResponse(ctx context.Context, body CreateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReservation6Response, error)
+
+	// DeleteReservation6WithResponse performs a DELETE /v6/reservations/{id} (the `DeleteReservation6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteReservation6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteReservation6Response, error)
+
+	// UpdateReservation6WithBodyWithResponse performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateReservation6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateReservation6Response, error)
+
+	// UpdateReservation6WithResponse performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateReservation6WithResponse(ctx context.Context, id Id, body UpdateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateReservation6Response, error)
+
+	// ListScopes6WithResponse performs a GET /v6/scopes (the `ListScopes6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListScopes6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScopes6Response, error)
+
+	// CreateScope6WithBodyWithResponse performs a POST /v6/scopes (the `CreateScope6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateScope6WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScope6Response, error)
+
+	// CreateScope6WithResponse performs a POST /v6/scopes (the `CreateScope6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateScope6WithResponse(ctx context.Context, body CreateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScope6Response, error)
+
+	// DeleteScope6WithResponse performs a DELETE /v6/scopes/{id} (the `DeleteScope6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteScope6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteScope6Response, error)
+
+	// GetScope6WithResponse performs a GET /v6/scopes/{id} (the `GetScope6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetScope6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetScope6Response, error)
+
+	// UpdateScope6WithBodyWithResponse performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateScope6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScope6Response, error)
+
+	// UpdateScope6WithResponse performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateScope6WithResponse(ctx context.Context, id Id, body UpdateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScope6Response, error)
+
+	// ListExclusions6WithResponse performs a GET /v6/scopes/{id}/exclusions (the `ListExclusions6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListExclusions6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*ListExclusions6Response, error)
+
+	// CreateExclusion6WithBodyWithResponse performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateExclusion6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateExclusion6Response, error)
+
+	// CreateExclusion6WithResponse performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateExclusion6WithResponse(ctx context.Context, id Id, body CreateExclusion6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateExclusion6Response, error)
+
+	// DeleteExclusion6WithResponse performs a DELETE /v6/scopes/{id}/exclusions/{exclusionId} (the `DeleteExclusion6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteExclusion6WithResponse(ctx context.Context, id Id, exclusionId int64, reqEditors ...RequestEditorFn) (*DeleteExclusion6Response, error)
+
+	// GetStats6WithResponse performs a GET /v6/stats (the `GetStats6` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetStats6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetStats6Response, error)
 }
 
 type ListAuditResponse struct {
@@ -11756,6 +13378,904 @@ func (r UpdateUserResponse) ContentType() string {
 	return ""
 }
 
+type ListLeases6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Lease6
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListLeases6Response) GetJSON200() *[]Lease6 {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListLeases6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLeases6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLeases6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListLeases6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteLease6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteLease6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteLease6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteLease6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteLease6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteLease6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListOptionDefinitions6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Option6Definition
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListOptionDefinitions6Response) GetJSON200() *[]Option6Definition {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListOptionDefinitions6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListOptionDefinitions6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListOptionDefinitions6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListOptionDefinitions6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListOptions6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Option6Value
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListOptions6Response) GetJSON200() *[]Option6Value {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListOptions6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r ListOptions6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListOptions6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListOptions6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListOptions6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteOption6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteOption6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteOption6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteOption6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteOption6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteOption6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetOption6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Option6Value
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetOption6Response) GetJSON200() *Option6Value {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetOption6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SetOption6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r SetOption6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetOption6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetOption6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetOption6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListReservations6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Reservation6
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListReservations6Response) GetJSON200() *[]Reservation6 {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListReservations6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListReservations6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListReservations6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListReservations6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateReservation6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Reservation6
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateReservation6Response) GetJSON201() *Reservation6 {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateReservation6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateReservation6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateReservation6Response) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateReservation6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateReservation6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateReservation6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateReservation6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteReservation6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteReservation6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteReservation6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteReservation6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteReservation6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteReservation6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateReservation6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Reservation6
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateReservation6Response) GetJSON200() *Reservation6 {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateReservation6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateReservation6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateReservation6Response) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateReservation6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateReservation6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateReservation6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateReservation6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListScopes6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Scope6
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListScopes6Response) GetJSON200() *[]Scope6 {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListScopes6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListScopes6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListScopes6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListScopes6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateScope6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Scope6
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateScope6Response) GetJSON201() *Scope6 {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateScope6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateScope6Response) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateScope6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScope6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScope6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateScope6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteScope6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteScope6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteScope6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteScope6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteScope6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteScope6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetScope6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope6
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetScope6Response) GetJSON200() *Scope6 {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetScope6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r GetScope6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScope6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScope6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetScope6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateScope6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope6
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateScope6Response) GetJSON200() *Scope6 {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateScope6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateScope6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateScope6Response) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateScope6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateScope6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateScope6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateScope6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListExclusions6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Exclusion6
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListExclusions6Response) GetJSON200() *[]Exclusion6 {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r ListExclusions6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListExclusions6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListExclusions6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListExclusions6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateExclusion6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Exclusion6
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateExclusion6Response) GetJSON201() *Exclusion6 {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateExclusion6Response) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateExclusion6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateExclusion6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateExclusion6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateExclusion6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateExclusion6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteExclusion6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteExclusion6Response) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteExclusion6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteExclusion6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteExclusion6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteExclusion6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetStats6Response struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Scope6Stats
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetStats6Response) GetJSON200() *[]Scope6Stats {
+	return r.JSON200
+}
+
+// GetBody returns the raw response body bytes
+func (r GetStats6Response) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetStats6Response) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetStats6Response) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetStats6Response) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListAuditWithResponse performs a GET /audit (the `ListAudit` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -13089,6 +15609,281 @@ func (c *ClientWithResponses) UpdateUserWithResponse(ctx context.Context, id Id,
 		return nil, err
 	}
 	return ParseUpdateUserResponse(rsp)
+}
+
+// ListLeases6WithResponse performs a GET /v6/leases (the `ListLeases6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListLeases6WithResponse(ctx context.Context, params *ListLeases6Params, reqEditors ...RequestEditorFn) (*ListLeases6Response, error) {
+	rsp, err := c.ListLeases6(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLeases6Response(rsp)
+}
+
+// DeleteLease6WithResponse performs a DELETE /v6/leases/{address} (the `DeleteLease6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteLease6WithResponse(ctx context.Context, address string, reqEditors ...RequestEditorFn) (*DeleteLease6Response, error) {
+	rsp, err := c.DeleteLease6(ctx, address, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteLease6Response(rsp)
+}
+
+// ListOptionDefinitions6WithResponse performs a GET /v6/option-definitions (the `ListOptionDefinitions6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListOptionDefinitions6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOptionDefinitions6Response, error) {
+	rsp, err := c.ListOptionDefinitions6(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListOptionDefinitions6Response(rsp)
+}
+
+// ListOptions6WithResponse performs a GET /v6/options/{owner}/{ownerId} (the `ListOptions6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListOptions6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, reqEditors ...RequestEditorFn) (*ListOptions6Response, error) {
+	rsp, err := c.ListOptions6(ctx, owner, ownerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListOptions6Response(rsp)
+}
+
+// DeleteOption6WithResponse performs a DELETE /v6/options/{owner}/{ownerId}/{code} (the `DeleteOption6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteOption6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, reqEditors ...RequestEditorFn) (*DeleteOption6Response, error) {
+	rsp, err := c.DeleteOption6(ctx, owner, ownerId, code, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteOption6Response(rsp)
+}
+
+// SetOption6WithBodyWithResponse performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SetOption6WithBodyWithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetOption6Response, error) {
+	rsp, err := c.SetOption6WithBody(ctx, owner, ownerId, code, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetOption6Response(rsp)
+}
+
+// SetOption6WithResponse performs a PUT /v6/options/{owner}/{ownerId}/{code} (the `SetOption6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SetOption6WithResponse(ctx context.Context, owner Option6Owner, ownerId OwnerId, code int, body SetOption6JSONRequestBody, reqEditors ...RequestEditorFn) (*SetOption6Response, error) {
+	rsp, err := c.SetOption6(ctx, owner, ownerId, code, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetOption6Response(rsp)
+}
+
+// ListReservations6WithResponse performs a GET /v6/reservations (the `ListReservations6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListReservations6WithResponse(ctx context.Context, params *ListReservations6Params, reqEditors ...RequestEditorFn) (*ListReservations6Response, error) {
+	rsp, err := c.ListReservations6(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListReservations6Response(rsp)
+}
+
+// CreateReservation6WithBodyWithResponse performs a POST /v6/reservations (the `CreateReservation6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateReservation6WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateReservation6Response, error) {
+	rsp, err := c.CreateReservation6WithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateReservation6Response(rsp)
+}
+
+// CreateReservation6WithResponse performs a POST /v6/reservations (the `CreateReservation6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateReservation6WithResponse(ctx context.Context, body CreateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateReservation6Response, error) {
+	rsp, err := c.CreateReservation6(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateReservation6Response(rsp)
+}
+
+// DeleteReservation6WithResponse performs a DELETE /v6/reservations/{id} (the `DeleteReservation6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteReservation6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteReservation6Response, error) {
+	rsp, err := c.DeleteReservation6(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteReservation6Response(rsp)
+}
+
+// UpdateReservation6WithBodyWithResponse performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateReservation6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateReservation6Response, error) {
+	rsp, err := c.UpdateReservation6WithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateReservation6Response(rsp)
+}
+
+// UpdateReservation6WithResponse performs a PUT /v6/reservations/{id} (the `UpdateReservation6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateReservation6WithResponse(ctx context.Context, id Id, body UpdateReservation6JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateReservation6Response, error) {
+	rsp, err := c.UpdateReservation6(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateReservation6Response(rsp)
+}
+
+// ListScopes6WithResponse performs a GET /v6/scopes (the `ListScopes6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListScopes6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScopes6Response, error) {
+	rsp, err := c.ListScopes6(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListScopes6Response(rsp)
+}
+
+// CreateScope6WithBodyWithResponse performs a POST /v6/scopes (the `CreateScope6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateScope6WithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScope6Response, error) {
+	rsp, err := c.CreateScope6WithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScope6Response(rsp)
+}
+
+// CreateScope6WithResponse performs a POST /v6/scopes (the `CreateScope6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateScope6WithResponse(ctx context.Context, body CreateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScope6Response, error) {
+	rsp, err := c.CreateScope6(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScope6Response(rsp)
+}
+
+// DeleteScope6WithResponse performs a DELETE /v6/scopes/{id} (the `DeleteScope6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteScope6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*DeleteScope6Response, error) {
+	rsp, err := c.DeleteScope6(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScope6Response(rsp)
+}
+
+// GetScope6WithResponse performs a GET /v6/scopes/{id} (the `GetScope6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetScope6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*GetScope6Response, error) {
+	rsp, err := c.GetScope6(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScope6Response(rsp)
+}
+
+// UpdateScope6WithBodyWithResponse performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateScope6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScope6Response, error) {
+	rsp, err := c.UpdateScope6WithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScope6Response(rsp)
+}
+
+// UpdateScope6WithResponse performs a PUT /v6/scopes/{id} (the `UpdateScope6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateScope6WithResponse(ctx context.Context, id Id, body UpdateScope6JSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScope6Response, error) {
+	rsp, err := c.UpdateScope6(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScope6Response(rsp)
+}
+
+// ListExclusions6WithResponse performs a GET /v6/scopes/{id}/exclusions (the `ListExclusions6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListExclusions6WithResponse(ctx context.Context, id Id, reqEditors ...RequestEditorFn) (*ListExclusions6Response, error) {
+	rsp, err := c.ListExclusions6(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListExclusions6Response(rsp)
+}
+
+// CreateExclusion6WithBodyWithResponse performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateExclusion6WithBodyWithResponse(ctx context.Context, id Id, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateExclusion6Response, error) {
+	rsp, err := c.CreateExclusion6WithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateExclusion6Response(rsp)
+}
+
+// CreateExclusion6WithResponse performs a POST /v6/scopes/{id}/exclusions (the `CreateExclusion6` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateExclusion6WithResponse(ctx context.Context, id Id, body CreateExclusion6JSONRequestBody, reqEditors ...RequestEditorFn) (*CreateExclusion6Response, error) {
+	rsp, err := c.CreateExclusion6(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateExclusion6Response(rsp)
+}
+
+// DeleteExclusion6WithResponse performs a DELETE /v6/scopes/{id}/exclusions/{exclusionId} (the `DeleteExclusion6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteExclusion6WithResponse(ctx context.Context, id Id, exclusionId int64, reqEditors ...RequestEditorFn) (*DeleteExclusion6Response, error) {
+	rsp, err := c.DeleteExclusion6(ctx, id, exclusionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteExclusion6Response(rsp)
+}
+
+// GetStats6WithResponse performs a GET /v6/stats (the `GetStats6` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetStats6WithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetStats6Response, error) {
+	rsp, err := c.GetStats6(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetStats6Response(rsp)
 }
 
 // ParseListAuditResponse parses an HTTP response from a ListAuditWithResponse call
@@ -15892,6 +18687,634 @@ func ParseUpdateUserResponse(rsp *http.Response) (*UpdateUserResponse, error) {
 	return response, nil
 }
 
+// ParseListLeases6Response parses an HTTP response from a ListLeases6WithResponse call
+func ParseListLeases6Response(rsp *http.Response) (*ListLeases6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLeases6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Lease6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteLease6Response parses an HTTP response from a DeleteLease6WithResponse call
+func ParseDeleteLease6Response(rsp *http.Response) (*DeleteLease6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteLease6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListOptionDefinitions6Response parses an HTTP response from a ListOptionDefinitions6WithResponse call
+func ParseListOptionDefinitions6Response(rsp *http.Response) (*ListOptionDefinitions6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListOptionDefinitions6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Option6Definition
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListOptions6Response parses an HTTP response from a ListOptions6WithResponse call
+func ParseListOptions6Response(rsp *http.Response) (*ListOptions6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListOptions6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Option6Value
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteOption6Response parses an HTTP response from a DeleteOption6WithResponse call
+func ParseDeleteOption6Response(rsp *http.Response) (*DeleteOption6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteOption6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetOption6Response parses an HTTP response from a SetOption6WithResponse call
+func ParseSetOption6Response(rsp *http.Response) (*SetOption6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetOption6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Option6Value
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListReservations6Response parses an HTTP response from a ListReservations6WithResponse call
+func ParseListReservations6Response(rsp *http.Response) (*ListReservations6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListReservations6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Reservation6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateReservation6Response parses an HTTP response from a CreateReservation6WithResponse call
+func ParseCreateReservation6Response(rsp *http.Response) (*CreateReservation6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateReservation6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Reservation6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteReservation6Response parses an HTTP response from a DeleteReservation6WithResponse call
+func ParseDeleteReservation6Response(rsp *http.Response) (*DeleteReservation6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteReservation6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateReservation6Response parses an HTTP response from a UpdateReservation6WithResponse call
+func ParseUpdateReservation6Response(rsp *http.Response) (*UpdateReservation6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateReservation6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Reservation6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListScopes6Response parses an HTTP response from a ListScopes6WithResponse call
+func ParseListScopes6Response(rsp *http.Response) (*ListScopes6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListScopes6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Scope6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateScope6Response parses an HTTP response from a CreateScope6WithResponse call
+func ParseCreateScope6Response(rsp *http.Response) (*CreateScope6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScope6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Scope6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteScope6Response parses an HTTP response from a DeleteScope6WithResponse call
+func ParseDeleteScope6Response(rsp *http.Response) (*DeleteScope6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteScope6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScope6Response parses an HTTP response from a GetScope6WithResponse call
+func ParseGetScope6Response(rsp *http.Response) (*GetScope6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScope6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateScope6Response parses an HTTP response from a UpdateScope6WithResponse call
+func ParseUpdateScope6Response(rsp *http.Response) (*UpdateScope6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateScope6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListExclusions6Response parses an HTTP response from a ListExclusions6WithResponse call
+func ParseListExclusions6Response(rsp *http.Response) (*ListExclusions6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListExclusions6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Exclusion6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateExclusion6Response parses an HTTP response from a CreateExclusion6WithResponse call
+func ParseCreateExclusion6Response(rsp *http.Response) (*CreateExclusion6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateExclusion6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Exclusion6
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteExclusion6Response parses an HTTP response from a DeleteExclusion6WithResponse call
+func ParseDeleteExclusion6Response(rsp *http.Response) (*DeleteExclusion6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteExclusion6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetStats6Response parses an HTTP response from a GetStats6WithResponse call
+func ParseGetStats6Response(rsp *http.Response) (*GetStats6Response, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetStats6Response{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Scope6Stats
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
@@ -16140,6 +19563,63 @@ type ServerInterface interface {
 
 	// (PATCH /users/{id})
 	UpdateUser(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /v6/leases)
+	ListLeases6(w http.ResponseWriter, r *http.Request, params ListLeases6Params)
+
+	// (DELETE /v6/leases/{address})
+	DeleteLease6(w http.ResponseWriter, r *http.Request, address string)
+
+	// (GET /v6/option-definitions)
+	ListOptionDefinitions6(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v6/options/{owner}/{ownerId})
+	ListOptions6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId)
+
+	// (DELETE /v6/options/{owner}/{ownerId}/{code})
+	DeleteOption6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId, code int)
+
+	// (PUT /v6/options/{owner}/{ownerId}/{code})
+	SetOption6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId, code int)
+
+	// (GET /v6/reservations)
+	ListReservations6(w http.ResponseWriter, r *http.Request, params ListReservations6Params)
+
+	// (POST /v6/reservations)
+	CreateReservation6(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /v6/reservations/{id})
+	DeleteReservation6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /v6/reservations/{id})
+	UpdateReservation6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /v6/scopes)
+	ListScopes6(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v6/scopes)
+	CreateScope6(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /v6/scopes/{id})
+	DeleteScope6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /v6/scopes/{id})
+	GetScope6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /v6/scopes/{id})
+	UpdateScope6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /v6/scopes/{id}/exclusions)
+	ListExclusions6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /v6/scopes/{id}/exclusions)
+	CreateExclusion6(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (DELETE /v6/scopes/{id}/exclusions/{exclusionId})
+	DeleteExclusion6(w http.ResponseWriter, r *http.Request, id Id, exclusionId int64)
+
+	// (GET /v6/stats)
+	GetStats6(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -16553,6 +20033,101 @@ func (_ Unimplemented) DeleteUser(w http.ResponseWriter, r *http.Request, id Id)
 
 // (PATCH /users/{id})
 func (_ Unimplemented) UpdateUser(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/leases)
+func (_ Unimplemented) ListLeases6(w http.ResponseWriter, r *http.Request, params ListLeases6Params) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /v6/leases/{address})
+func (_ Unimplemented) DeleteLease6(w http.ResponseWriter, r *http.Request, address string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/option-definitions)
+func (_ Unimplemented) ListOptionDefinitions6(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/options/{owner}/{ownerId})
+func (_ Unimplemented) ListOptions6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /v6/options/{owner}/{ownerId}/{code})
+func (_ Unimplemented) DeleteOption6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId, code int) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /v6/options/{owner}/{ownerId}/{code})
+func (_ Unimplemented) SetOption6(w http.ResponseWriter, r *http.Request, owner Option6Owner, ownerId OwnerId, code int) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/reservations)
+func (_ Unimplemented) ListReservations6(w http.ResponseWriter, r *http.Request, params ListReservations6Params) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /v6/reservations)
+func (_ Unimplemented) CreateReservation6(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /v6/reservations/{id})
+func (_ Unimplemented) DeleteReservation6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /v6/reservations/{id})
+func (_ Unimplemented) UpdateReservation6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/scopes)
+func (_ Unimplemented) ListScopes6(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /v6/scopes)
+func (_ Unimplemented) CreateScope6(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /v6/scopes/{id})
+func (_ Unimplemented) DeleteScope6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/scopes/{id})
+func (_ Unimplemented) GetScope6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /v6/scopes/{id})
+func (_ Unimplemented) UpdateScope6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/scopes/{id}/exclusions)
+func (_ Unimplemented) ListExclusions6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /v6/scopes/{id}/exclusions)
+func (_ Unimplemented) CreateExclusion6(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /v6/scopes/{id}/exclusions/{exclusionId})
+func (_ Unimplemented) DeleteExclusion6(w http.ResponseWriter, r *http.Request, id Id, exclusionId int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v6/stats)
+func (_ Unimplemented) GetStats6(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -18489,6 +22064,521 @@ func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListLeases6 operation middleware
+func (siw *ServerInterfaceWrapper) ListLeases6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLeases6Params
+
+	// ------------- Optional query parameter "scope_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope_id", r.URL.Query(), &params.ScopeId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLeases6(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteLease6 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteLease6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "address" -------------
+	var address string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "address", chi.URLParam(r, "address"), &address, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "address", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteLease6(w, r, address)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOptionDefinitions6 operation middleware
+func (siw *ServerInterfaceWrapper) ListOptionDefinitions6(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOptionDefinitions6(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOptions6 operation middleware
+func (siw *ServerInterfaceWrapper) ListOptions6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "owner" -------------
+	var owner Option6Owner
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", chi.URLParam(r, "owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "ownerId" -------------
+	var ownerId OwnerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ownerId", chi.URLParam(r, "ownerId"), &ownerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ownerId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOptions6(w, r, owner, ownerId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteOption6 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOption6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "owner" -------------
+	var owner Option6Owner
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", chi.URLParam(r, "owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "ownerId" -------------
+	var ownerId OwnerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ownerId", chi.URLParam(r, "ownerId"), &ownerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ownerId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "code" -------------
+	var code int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "code", chi.URLParam(r, "code"), &code, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteOption6(w, r, owner, ownerId, code)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetOption6 operation middleware
+func (siw *ServerInterfaceWrapper) SetOption6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "owner" -------------
+	var owner Option6Owner
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", chi.URLParam(r, "owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "ownerId" -------------
+	var ownerId OwnerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ownerId", chi.URLParam(r, "ownerId"), &ownerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ownerId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "code" -------------
+	var code int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "code", chi.URLParam(r, "code"), &code, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetOption6(w, r, owner, ownerId, code)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListReservations6 operation middleware
+func (siw *ServerInterfaceWrapper) ListReservations6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListReservations6Params
+
+	// ------------- Optional query parameter "scope_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope_id", r.URL.Query(), &params.ScopeId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReservations6(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateReservation6 operation middleware
+func (siw *ServerInterfaceWrapper) CreateReservation6(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateReservation6(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteReservation6 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteReservation6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteReservation6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateReservation6 operation middleware
+func (siw *ServerInterfaceWrapper) UpdateReservation6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateReservation6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListScopes6 operation middleware
+func (siw *ServerInterfaceWrapper) ListScopes6(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScopes6(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateScope6 operation middleware
+func (siw *ServerInterfaceWrapper) CreateScope6(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateScope6(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteScope6 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScope6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteScope6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScope6 operation middleware
+func (siw *ServerInterfaceWrapper) GetScope6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScope6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateScope6 operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScope6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateScope6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListExclusions6 operation middleware
+func (siw *ServerInterfaceWrapper) ListExclusions6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExclusions6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateExclusion6 operation middleware
+func (siw *ServerInterfaceWrapper) CreateExclusion6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateExclusion6(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteExclusion6 operation middleware
+func (siw *ServerInterfaceWrapper) DeleteExclusion6(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "exclusionId" -------------
+	var exclusionId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "exclusionId", chi.URLParam(r, "exclusionId"), &exclusionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "exclusionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteExclusion6(w, r, id, exclusionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStats6 operation middleware
+func (siw *ServerInterfaceWrapper) GetStats6(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStats6(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -18687,6 +22777,63 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/dns/registrations", wrapper.ListDnsRegistrations)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/scopes", wrapper.ListScopes6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v6/scopes", wrapper.CreateScope6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v6/scopes/{id}", wrapper.DeleteScope6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/scopes/{id}", wrapper.GetScope6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/v6/scopes/{id}", wrapper.UpdateScope6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/scopes/{id}/exclusions", wrapper.ListExclusions6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v6/scopes/{id}/exclusions", wrapper.CreateExclusion6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v6/scopes/{id}/exclusions/{exclusionId}", wrapper.DeleteExclusion6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/reservations", wrapper.ListReservations6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v6/reservations", wrapper.CreateReservation6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v6/reservations/{id}", wrapper.DeleteReservation6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/v6/reservations/{id}", wrapper.UpdateReservation6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/option-definitions", wrapper.ListOptionDefinitions6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/options/{owner}/{ownerId}", wrapper.ListOptions6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v6/options/{owner}/{ownerId}/{code}", wrapper.DeleteOption6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/v6/options/{owner}/{ownerId}/{code}", wrapper.SetOption6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/leases", wrapper.ListLeases6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/v6/leases/{address}", wrapper.DeleteLease6)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v6/stats", wrapper.GetStats6)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/config/export", wrapper.ExportConfig)
 	})
 	r.Group(func(r chi.Router) {
@@ -18857,153 +23004,174 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"zrRSLNwH+vLP/UQ7PDlP0vpkFOye/3j+fwMA",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

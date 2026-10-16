@@ -132,6 +132,11 @@ func (m *machine) setMismatch(msg string) { m.mismatch = msg }
 // lease update could not be delivered.
 func (m *machine) commFailed() { m.lastOut = time.Time{} }
 
+// changeNotSent records a lease change that could not be sent to the
+// partner. The new epoch makes the partner pull our table (again) after the
+// change, even if it already resynced earlier in this interruption.
+func (m *machine) changeNotSent() { m.epoch++ }
+
 func (m *machine) commOK(now time.Time) bool {
 	if !m.peer.valid || m.mismatch != "" || m.lastOut.IsZero() || m.lastIn.IsZero() {
 		return false

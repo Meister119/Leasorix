@@ -28,6 +28,7 @@ import (
 	"github.com/meister119/leasorix/internal/audit"
 	"github.com/meister119/leasorix/internal/dhcpopt"
 	"github.com/meister119/leasorix/internal/scope"
+	"github.com/meister119/leasorix/internal/scope6"
 	"github.com/meister119/leasorix/internal/store"
 )
 
@@ -47,6 +48,8 @@ type Document struct {
 	Superscopes       []Superscope         `json:"superscopes,omitempty" yaml:"superscopes,omitempty"`
 	DNSZones          []DNSZone            `json:"dns_zones,omitempty" yaml:"dns_zones,omitempty"`
 	Scopes            []scope.Bundle       `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+	ServerOptions6    []Option6            `json:"server_options6,omitempty" yaml:"server_options6,omitempty"`
+	Scopes6           []Scope6             `json:"scopes6,omitempty" yaml:"scopes6,omitempty"`
 }
 
 // DNSZone is a zone for dynamic DNS updates. The TSIG key is referenced by
@@ -94,7 +97,7 @@ type Superscope struct {
 }
 
 // Export builds the document of the current configuration.
-func Export(ctx context.Context, s *scope.Store, now time.Time) (*Document, error) {
+func Export(ctx context.Context, s *scope.Store, s6 *scope6.Store, now time.Time) (*Document, error) {
 	at := now.UTC().Truncate(time.Second)
 	d := &Document{Format: Format, ExportedAt: &at}
 	fs, err := s.FilterSettings(ctx)
@@ -167,6 +170,11 @@ func Export(ctx context.Context, s *scope.Store, now time.Time) (*Document, erro
 		b.Format = ""
 		d.Scopes = append(d.Scopes, *b)
 	}
+	if s6 != nil {
+		if err := export6(ctx, s6, d); err != nil {
+			return nil, err
+		}
+	}
 	return d, nil
 }
 
@@ -235,6 +243,9 @@ type Options struct {
 	// DryRun validates the document against the configuration without
 	// changing anything.
 	DryRun bool
+	// Reload is called after a successful import to reload further
+	// in-memory state (the DHCPv6 configuration).
+	Reload func(context.Context) error
 }
 
 // Summary counts the imported objects.
@@ -250,6 +261,7 @@ type Summary struct {
 	MACFilters        int  `json:"mac_filters"`
 	Superscopes       int  `json:"superscopes"`
 	DNSZones          int  `json:"dns_zones"`
+	Scopes6           int  `json:"scopes6"`
 }
 
 // importTables are the configuration tables an import replaces (users and
@@ -306,6 +318,13 @@ func Import(ctx context.Context, db *store.DB, live *scope.Store, d *Document, o
 	if err != nil {
 		return nil, err
 	}
+	ts6 := scope6.NewStore(tmp)
+	if err := ts6.Load(ctx); err != nil {
+		return nil, err
+	}
+	if err := apply6(ctx, ts6, d, sum, wrapErr); err != nil {
+		return nil, err
+	}
 	sum.Mode, sum.DryRun = opt.Mode, opt.DryRun
 	if opt.DryRun {
 		return sum, nil
@@ -329,26 +348,35 @@ func Import(ctx context.Context, db *store.DB, live *scope.Store, d *Document, o
 	if err != nil {
 		return nil, err
 	}
-	return sum, live.Load(ctx)
+	if err := live.Load(ctx); err != nil {
+		return nil, err
+	}
+	if opt.Reload != nil {
+		return sum, opt.Reload(ctx)
+	}
+	return sum, nil
 }
 
 // apply creates the document's objects through the store (all validation
 // rules apply). Errors name the failing object.
+// wrapErr names the failing object of the document in a store error.
+func wrapErr(what string, err error) error {
+	var ve *apperr.ValidationError
+	if errors.As(err, &ve) {
+		var v apperr.Validator
+		v.Add("document", "%s: %s", what, err.Error())
+		return v.Err()
+	}
+	if errors.Is(err, apperr.ErrConflict) || errors.Is(err, apperr.ErrNotFound) {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	// Remaining store errors are constraint violations of the document.
+	return apperr.Conflictf("%s: %v", what, err)
+}
+
 func apply(ctx context.Context, s *scope.Store, d *Document) (*Summary, error) {
 	sum := &Summary{}
-	wrap := func(what string, err error) error {
-		var ve *apperr.ValidationError
-		if errors.As(err, &ve) {
-			var v apperr.Validator
-			v.Add("document", "%s: %s", what, err.Error())
-			return v.Err()
-		}
-		if errors.Is(err, apperr.ErrConflict) || errors.Is(err, apperr.ErrNotFound) {
-			return fmt.Errorf("%s: %w", what, err)
-		}
-		// Remaining store errors are constraint violations of the document.
-		return apperr.Conflictf("%s: %v", what, err)
-	}
+	wrap := wrapErr
 	if d.Settings != nil {
 		if err := s.SetFilterSettings(ctx, scope.FilterSettings{AllowEnabled: d.Settings.MACFilterAllowEnabled, DenyEnabled: d.Settings.MACFilterDenyEnabled}); err != nil {
 			return nil, wrap("settings", err)

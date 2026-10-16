@@ -3,7 +3,7 @@
 Selbst gehosteter DHCP-Server mit dem Funktionsumfang eines Windows-DHCP-Servers,
 Docker/Compose-Deployment, Web-UI und Hochverfügbarkeit.
 
-> Status: in Entwicklung – siehe [docs/PROGRESS.md](docs/PROGRESS.md) und [PLAN.md](PLAN.md).
+> Status: alle Phasen aus [PLAN.md](PLAN.md) umgesetzt (inkl. optionalem DHCPv6) – siehe [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Schnellstart mit Docker Compose
 
@@ -100,6 +100,13 @@ Leasorix trägt Clients per RFC 2136 (mit TSIG) als A- und PTR-Records ein –
 pro Scope nie, auf Anforderung des Clients oder immer, mit Namensschutz
 (DHCID) und Entfernen beim Lease-Ende. Einrichtung unter *DNS-Updates* in der
 Web-UI: [docs/ADMIN.md](docs/ADMIN.md#11-dns-updates).
+
+## DHCPv6
+
+Stateful DHCPv6 (RFC 8415) mit Adressvergabe, Präfix-Delegation für Router,
+Reservierungen per DUID, Optionen und Relay-Unterstützung – eingeschaltet
+mit `dhcp6.interfaces` in der Bootstrap-Konfiguration, verwaltet unter
+*IPv6 (DHCPv6)* in der Web-UI: [docs/ADMIN.md](docs/ADMIN.md#12-dhcpv6).
 
 ## Verwaltung per Kommandozeile
 

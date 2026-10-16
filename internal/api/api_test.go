@@ -22,19 +22,23 @@ import (
 	"github.com/meister119/leasorix/internal/auth"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
+	"github.com/meister119/leasorix/internal/lease6"
 	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
+	"github.com/meister119/leasorix/internal/scope6"
 	"github.com/meister119/leasorix/internal/store"
 )
 
 const setupToken = "test-setup-token"
 
 type stack struct {
-	t      *testing.T
-	srv    *httptest.Server
-	scopes *scope.Store
-	leases *lease.Manager
-	auth   *auth.Service
+	t       *testing.T
+	srv     *httptest.Server
+	scopes  *scope.Store
+	leases  *lease.Manager
+	scopes6 *scope6.Store
+	leases6 *lease6.Manager
+	auth    *auth.Service
 }
 
 func newStack(t *testing.T) *stack { return newStackWith(t, nil) }
@@ -56,12 +60,18 @@ func newStackWith(t *testing.T, mod func(*Deps)) *stack {
 	}
 	leases := lease.NewManager(lease.DefaultConfig(), log, lease.NewDBStore(db), nil)
 	scopes.OnChange(leases.ScopesChanged)
+	scopes6 := scope6.NewStore(db)
+	if err := scopes6.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	leases6 := lease6.NewManager(lease6.DefaultConfig(), log, db)
+	scopes6.OnChange(leases6.ScopesChanged)
 	done := make(chan struct{})
 	go func() { _ = leases.Run(ctx); close(done) }()
 	authSvc := auth.NewService(db, auth.Config{SetupToken: setupToken})
 	deps := Deps{
 		Log: log, Health: health.NewChecker(), Metrics: metrics.New(),
-		Auth: authSvc, DB: db, Scopes: scopes, Leases: leases, Audit: audit.NewLog(db),
+		Auth: authSvc, DB: db, Scopes: scopes, Leases: leases, Audit: audit.NewLog(db), Scopes6: scopes6, Leases6: leases6,
 		Info: SystemInfo{StartedAt: time.Now(), Interfaces: []string{"eth0"}}, LoginMaxFailures: 5, LoginWindow: time.Minute,
 	}
 	if mod != nil {
@@ -70,7 +80,7 @@ func newStackWith(t *testing.T, mod func(*Deps)) *stack {
 	s := NewServer("127.0.0.1:0", time.Second, deps)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(func() { srv.Close(); cancel(); <-done; _ = db.Close() })
-	return &stack{t: t, srv: srv, scopes: scopes, leases: leases, auth: authSvc}
+	return &stack{t: t, srv: srv, scopes: scopes, leases: leases, scopes6: scopes6, leases6: leases6, auth: authSvc}
 }
 
 // client is a browser-like client with cookie jar and CSRF token, or an

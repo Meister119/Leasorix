@@ -59,8 +59,13 @@ lauschen.
 - **Daten:** Volume `/data` (Datenbank, selbstsigniertes TLS-Zertifikat,
   Lock-Datei). Ein Bind-Mount statt Volume muss UID 65532 gehören:
   `sudo chown 65532:65532 ./data`.
-- **Ports:** `67/udp` (DHCP), `8067/tcp` (UI, REST-API, Metriken),
-  `8068/tcp` (HA-Peer-Verbindung).
+- **Ports:** `67/udp` (DHCP), `547/udp` (DHCPv6, falls aktiviert),
+  `8067/tcp` (UI, REST-API, Metriken), `8068/tcp` (HA-Peer-Verbindung).
+- **DHCPv6:** `LEASORIX_DHCP6_INTERFACES=eth0` setzen. Im Host-Netzwerk
+  genügt IPv6 auf dem Host-Interface. Die macvlan-Compose-Dateien sind
+  IPv4-only; für DHCPv6 dem Netz `enable_ipv6: true` und ein IPv6-Subnetz
+  (`ipam.config`) mitgeben und dem Container eine feste IPv6-Adresse im
+  Präfix des Scopes zuweisen. Weitere Capabilities braucht DHCPv6 nicht.
 
 Die DHCP-Konfiguration selbst (Scopes, Optionen, Reservierungen …) liegt in
 der Datenbank und wird über UI, API oder `leasorixctl` gepflegt.

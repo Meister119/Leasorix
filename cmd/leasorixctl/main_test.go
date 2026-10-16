@@ -117,6 +117,17 @@ scopes:
 	contains(t, s.ctl(t, 0, "config", "import", zones), "1 DNS zones")
 	contains(t, s.ctl(t, 0, "dns", "zones"), "lan.example", "192.0.2.53", "(unsigned)")
 	contains(t, s.ctl(t, 0, "dns", "registrations"), "IP", "STATE")
+	v6 := s.file(t, "v6.yaml", `format: leasorix-config/v1
+scopes6:
+  - {name: lan6, prefix: "2001:db8:5::/64", start: "2001:db8:5::100", end: "2001:db8:5::1ff", preferred_lifetime: 1800, valid_lifetime: 3600,
+     enabled: true, pd_pool: "2001:db8:500::/40", pd_length: 56}
+`)
+	contains(t, s.ctl(t, 0, "config", "import", v6), "1 IPv6 scopes")
+	contains(t, s.ctl(t, 0, "v6", "scopes"), "lan6", "2001:db8:5::/64", "2001:db8:5::100 - 2001:db8:5::1ff", "2001:db8:500::/40 /56", "30m0s/1h0m0s")
+	contains(t, s.ctl(t, 0, "v6", "leases", "--scope", "lan6"), "ADDRESS", "DUID")
+	contains(t, s.ctl(t, 1, "v6", "leases", "--scope", "nope"), "no IPv6 scope")
+	contains(t, s.ctl(t, 1, "v6", "leases", "delete", "2001:db8:5::100"), "server answered 404")
+	contains(t, s.ctl(t, 2, "v6", "bogus"), "unknown command")
 
 	bundle := filepath.Join(s.dir, "lan.json")
 	s.ctl(t, 0, "scopes", "export", "lan", "-f", bundle)

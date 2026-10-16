@@ -36,6 +36,7 @@ tags:
   - name: users
   - name: system
   - name: dns
+  - name: ipv6
 
 paths:
   /setup:
@@ -410,6 +411,281 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/DnsRegistration" }
+  /v6/scopes:
+    get:
+      tags: [ipv6]
+      operationId: listScopes6
+      responses:
+        "200":
+          description: DHCPv6 scopes by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope6" }
+    post:
+      tags: [ipv6]
+      operationId: createScope6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Scope6Input" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v6/scopes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [ipv6]
+      operationId: getScope6
+      responses:
+        "200":
+          description: The scope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [ipv6]
+      operationId: updateScope6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Scope6Input" }
+      responses:
+        "200":
+          description: Updated (the prefix cannot be changed).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scope6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteScope6
+      responses:
+        "204": { description: Deleted with exclusions, reservations, options and bindings. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/scopes/{id}/exclusions:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [ipv6]
+      operationId: listExclusions6
+      responses:
+        "200":
+          description: Exclusions of the scope.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Exclusion6" }
+    post:
+      tags: [ipv6]
+      operationId: createExclusion6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Range6" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Exclusion6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/scopes/{id}/exclusions/{exclusionId}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: exclusionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [ipv6]
+      operationId: deleteExclusion6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/reservations:
+    get:
+      tags: [ipv6]
+      operationId: listReservations6
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Reservations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reservation6" }
+    post:
+      tags: [ipv6]
+      operationId: createReservation6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reservation6Input" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v6/reservations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [ipv6]
+      operationId: updateReservation6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Reservation6Input" }
+      responses:
+        "200":
+          description: Updated (the scope stays).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation6" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteReservation6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/option-definitions:
+    get:
+      tags: [ipv6]
+      operationId: listOptionDefinitions6
+      responses:
+        "200":
+          description: Well-known DHCPv6 options.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Option6Definition" }
+  /v6/options/{owner}/{ownerId}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Option6Owner" }
+      - $ref: "#/components/parameters/OwnerId"
+    get:
+      tags: [ipv6]
+      operationId: listOptions6
+      responses:
+        "200":
+          description: Option values of the owner.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Option6Value" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/options/{owner}/{ownerId}/{code}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Option6Owner" }
+      - $ref: "#/components/parameters/OwnerId"
+      - name: code
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1, maximum: 65535 }
+    put:
+      tags: [ipv6]
+      operationId: setOption6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Option6Input" }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Option6Value" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [ipv6]
+      operationId: deleteOption6
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/leases:
+    get:
+      tags: [ipv6]
+      operationId: listLeases6
+      parameters:
+        - name: scope_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: q
+          in: query
+          description: Substring of address, DUID or host name.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Bindings (addresses and delegated prefixes) by address.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lease6" }
+  /v6/leases/{address}:
+    parameters:
+      - name: address
+        in: path
+        required: true
+        description: Address of the binding (first address for a prefix).
+        schema: { type: string }
+    delete:
+      tags: [ipv6]
+      operationId: deleteLease6
+      responses:
+        "204": { description: Deleted; the address or prefix becomes free. }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v6/stats:
+    get:
+      tags: [ipv6]
+      operationId: getStats6
+      responses:
+        "200":
+          description: Per scope binding counts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scope6Stats" }
   /config/export:
     get:
       tags: [system]
@@ -1539,6 +1815,139 @@ components:
         next_attempt: { type: string, format: date-time }
         last_error: { type: string }
         updated_at: { type: string, format: date-time }
+    Scope6:
+      type: object
+      required: [id, name, description, prefix, start, end, preferred_lifetime, valid_lifetime, rapid_commit, preference, enabled, pd_pool, pd_length, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        description: { type: string }
+        prefix: { type: string, example: "2001:db8:1::/64" }
+        start: { type: string, description: "First address of the range (empty = no addresses)." }
+        end: { type: string }
+        preferred_lifetime: { type: integer, description: Seconds. }
+        valid_lifetime: { type: integer, description: Seconds. }
+        rapid_commit: { type: boolean }
+        preference: { type: integer, minimum: 0, maximum: 255 }
+        enabled: { type: boolean }
+        pd_pool: { type: string, description: "Prefix delegation pool (empty = none), e.g. 2001:db8:100::/40." }
+        pd_length: { type: integer, description: "Length of the delegated prefixes, e.g. 56." }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Scope6Input:
+      type: object
+      required: [name, prefix, preferred_lifetime, valid_lifetime, enabled]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        prefix: { type: string }
+        start: { type: string }
+        end: { type: string }
+        preferred_lifetime: { type: integer, minimum: 1 }
+        valid_lifetime: { type: integer, minimum: 60 }
+        rapid_commit: { type: boolean }
+        preference: { type: integer, minimum: 0, maximum: 255 }
+        enabled: { type: boolean }
+        pd_pool: { type: string }
+        pd_length: { type: integer }
+    Range6:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string }
+        end: { type: string }
+    Exclusion6:
+      type: object
+      required: [id, scope_id, start, end]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        start: { type: string }
+        end: { type: string }
+    Reservation6:
+      type: object
+      required: [id, scope_id, duid, iaid, ip, hostname, description]
+      properties:
+        id: { type: integer, format: int64 }
+        scope_id: { type: integer, format: int64 }
+        duid: { type: string, description: Client DUID as hex. }
+        iaid: { type: integer, format: int64, description: "-1 = any IA of the client." }
+        ip: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    Reservation6Input:
+      type: object
+      required: [duid, ip]
+      properties:
+        scope_id: { type: integer, format: int64, description: Required on creation. }
+        duid: { type: string }
+        iaid: { type: integer, format: int64, description: "Absent or -1 = any IA." }
+        ip: { type: string }
+        hostname: { type: string }
+        description: { type: string }
+    Option6Owner:
+      type: string
+      enum: [server, scope, reservation]
+      x-enum-varnames: [Option6OwnerServer, Option6OwnerScope, Option6OwnerReservation]
+    Option6Type:
+      type: string
+      enum: [ipv6-list, domain-list, string, uint8, uint16, uint32, hex, ntp-servers]
+      x-enum-varnames: [Option6TypeIpv6List, Option6TypeDomainList, Option6TypeString, Option6TypeUint8, Option6TypeUint16, Option6TypeUint32, Option6TypeHex, Option6TypeNtpServers]
+    Option6Definition:
+      type: object
+      required: [code, name, type, description]
+      properties:
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/Option6Type" }
+        description: { type: string }
+    Option6Value:
+      type: object
+      required: [owner, owner_id, code, name, type, value]
+      properties:
+        owner: { $ref: "#/components/schemas/Option6Owner" }
+        owner_id: { type: integer, format: int64 }
+        code: { type: integer }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/Option6Type" }
+        value: { type: string }
+    Option6Input:
+      type: object
+      required: [value]
+      properties:
+        type: { $ref: "#/components/schemas/Option6Type" }
+        value: { type: string }
+    Lease6:
+      type: object
+      required: [address, prefix_len, kind, scope_id, duid, iaid, hostname, state, starts_at, preferred_until, expires_at]
+      properties:
+        address: { type: string }
+        prefix_len: { type: integer }
+        kind:
+          type: string
+          enum: [na, pd]
+          x-enum-varnames: [Lease6KindNa, Lease6KindPd]
+        scope_id: { type: integer, format: int64 }
+        duid: { type: string }
+        iaid: { type: integer, format: int64 }
+        hostname: { type: string }
+        state:
+          type: string
+          enum: [active, expired, released, declined]
+          x-enum-varnames: [Lease6Active, Lease6Expired, Lease6Released, Lease6Declined]
+        starts_at: { type: string, format: date-time }
+        preferred_until: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    Scope6Stats:
+      type: object
+      required: [scope_id, addresses_in_use, prefixes_in_use, declined, size, prefix_capacity]
+      properties:
+        scope_id: { type: integer, format: int64 }
+        addresses_in_use: { type: integer }
+        prefixes_in_use: { type: integer }
+        declined: { type: integer }
+        size: { type: string, description: "Addresses in the range (decimal; ranges can exceed 2^53)." }
+        prefix_capacity: { type: string, description: Delegable prefixes (decimal). }
     Superscope:
       type: object
       required: [id, name, description, scope_ids]
@@ -1557,7 +1966,7 @@ components:
         description: { type: string }
     ConfigImportResult:
       type: object
-      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes, dns_zones]
+      required: [mode, dry_run, scopes, reservations, policies, classes, option_definitions, options, mac_filters, superscopes, dns_zones, scopes6]
       properties:
         mode: { type: string, enum: [merge, replace] }
         dry_run: { type: boolean }
@@ -1570,6 +1979,7 @@ components:
         mac_filters: { type: integer }
         superscopes: { type: integer }
         dns_zones: { type: integer }
+        scopes6: { type: integer }
     NetshImportResult:
       type: object
       required: [result, warnings]
@@ -1867,7 +2277,7 @@ components:
         mac_filter_deny_enabled: { type: boolean }
     SystemInfo:
       type: object
-      required: [version, commit, go_version, started_at, dhcp4_interfaces, tls, conflict_detection, ha_enabled, config_read_only]
+      required: [version, commit, go_version, started_at, dhcp4_interfaces, dhcp6_interfaces, tls, conflict_detection, ha_enabled, config_read_only]
       properties:
         version: { type: string }
         commit: { type: string }
@@ -1876,6 +2286,10 @@ components:
         dhcp4_interfaces:
           type: array
           items: { type: string }
+        dhcp6_interfaces:
+          type: array
+          items: { type: string }
+        dhcp6_server_duid: { type: string, description: DUID of this DHCPv6 server (hex). }
         tls: { type: boolean }
         conflict_detection: { type: boolean }
         ha_enabled: { type: boolean }

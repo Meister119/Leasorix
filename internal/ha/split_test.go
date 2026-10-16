@@ -2,9 +2,11 @@ package ha
 
 import (
 	"fmt"
+	"net/netip"
 	"testing"
 
 	"github.com/meister119/leasorix/internal/config"
+	"github.com/meister119/leasorix/internal/ip6"
 )
 
 func TestAddressBucketSplitsRangesEvenly(t *testing.T) {
@@ -61,6 +63,30 @@ func TestSplitIsComplementary(t *testing.T) {
 			if mode == config.HAHotStandby && (!pri.responsible(mac) || sec.responsible(mac)) {
 				t.Fatal("hot standby: only the primary answers in NORMAL")
 			}
+		}
+	}
+}
+
+func TestSplit6IsComplementary(t *testing.T) {
+	base := netip.MustParseAddr("2001:db8::100")
+	pool := netip.MustParsePrefix("2001:db8:100::/40")
+	for _, mode := range []string{config.HALoadBalance, config.HAHotStandby} {
+		pri := split{mode: mode, primary: true, lb: 60, reserve: 5}
+		sec := split{mode: mode, primary: false, lb: 60, reserve: 5}
+		ownedByPrimary := 0
+		for i := range uint64(2000) {
+			for _, p := range []netip.Prefix{netip.PrefixFrom(ip6.Offset(base, i), 128), ip6.NthPrefix(pool, 56, i)} {
+				if pri.owns6(p) == sec.owns6(p) {
+					t.Fatalf("%s: %s owned by both or none", mode, p)
+				}
+				if pri.owns6(p) {
+					ownedByPrimary++
+				}
+			}
+		}
+		share := ownedByPrimary * 100 / 4000
+		if want := map[string]int{config.HALoadBalance: 60, config.HAHotStandby: 95}[mode]; share < want-5 || share > want+5 {
+			t.Fatalf("%s: primary owns %d%%, want about %d%%", mode, share, want)
 		}
 	}
 }

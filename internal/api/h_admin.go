@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -84,7 +85,7 @@ func (h *handlers) DeleteSuperscope(w http.ResponseWriter, r *http.Request, id g
 func stamp() string { return time.Now().UTC().Format("20060102-150405") }
 
 func (h *handlers) ExportConfig(w http.ResponseWriter, r *http.Request, params gen.ExportConfigParams) {
-	d, err := configio.Export(r.Context(), h.s.deps.Scopes, time.Now())
+	d, err := configio.Export(r.Context(), h.s.deps.Scopes, h.s.deps.Scopes6, time.Now())
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -119,8 +120,8 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	return b, true
 }
 
-func importOptions(mode *string, dryRun *bool) configio.Options {
-	o := configio.Options{Mode: configio.ModeMerge}
+func (h *handlers) importOptions(mode *string, dryRun *bool) configio.Options {
+	o := configio.Options{Mode: configio.ModeMerge, Reload: h.reload6}
 	if mode != nil {
 		o.Mode = configio.Mode(*mode)
 	}
@@ -134,7 +135,7 @@ func toImportResult(s *configio.Summary) gen.ConfigImportResult {
 	return gen.ConfigImportResult{
 		Mode: gen.ConfigImportResultMode(s.Mode), DryRun: s.DryRun, Scopes: s.Scopes, Reservations: s.Reservations,
 		Policies: s.Policies, Classes: s.Classes, OptionDefinitions: s.OptionDefinitions, Options: s.Options,
-		MacFilters: s.MACFilters, Superscopes: s.Superscopes, DnsZones: s.DNSZones,
+		MacFilters: s.MACFilters, Superscopes: s.Superscopes, DnsZones: s.DNSZones, Scopes6: s.Scopes6,
 	}
 }
 
@@ -148,7 +149,7 @@ func (h *handlers) ImportConfig(w http.ResponseWriter, r *http.Request, params g
 		h.fail(w, r, err)
 		return
 	}
-	sum, err := configio.Import(r.Context(), h.s.deps.DB, h.s.deps.Scopes, d, importOptions((*string)(params.Mode), params.DryRun))
+	sum, err := configio.Import(r.Context(), h.s.deps.DB, h.s.deps.Scopes, d, h.importOptions((*string)(params.Mode), params.DryRun))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -166,7 +167,7 @@ func (h *handlers) ImportNetsh(w http.ResponseWriter, r *http.Request, params ge
 		h.fail(w, r, err)
 		return
 	}
-	sum, err := configio.Import(r.Context(), h.s.deps.DB, h.s.deps.Scopes, d, importOptions((*string)(params.Mode), params.DryRun))
+	sum, err := configio.Import(r.Context(), h.s.deps.DB, h.s.deps.Scopes, d, h.importOptions((*string)(params.Mode), params.DryRun))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -220,6 +221,25 @@ func (h *handlers) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	if err := h.reload6(ctx); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	h.s.deps.Log.Warn("backup restored; all sessions ended", "scopes", sum.Scopes, "users", sum.Users, "leases", sum.Leases)
 	writeJSON(w, http.StatusOK, gen.RestoreResult{SchemaVersion: sum.SchemaVersion, Scopes: sum.Scopes, Reservations: sum.Reservations, Users: sum.Users, Leases: sum.Leases})
+}
+
+// reload6 reloads the DHCPv6 configuration and bindings after the database
+// was changed underneath (restore, configuration import).
+func (h *handlers) reload6(ctx context.Context) error {
+	if h.s.deps.Scopes6 == nil {
+		return nil
+	}
+	if err := h.s.deps.Scopes6.Load(ctx); err != nil {
+		return err
+	}
+	if h.s.deps.Leases6 != nil {
+		return h.s.deps.Leases6.Reload(ctx)
+	}
+	return nil
 }

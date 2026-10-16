@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 )
@@ -239,8 +240,86 @@ func RemapLeases(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM leases WHERE NOT EXISTS (SELECT 1 FROM scopes s WHERE `+inScope+`)`); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `UPDATE leases SET scope_id = (SELECT s.id FROM scopes s WHERE `+inScope+`)`)
-	return err
+	if _, err := tx.ExecContext(ctx, `UPDATE leases SET scope_id = (SELECT s.id FROM scopes s WHERE `+inScope+`)`); err != nil {
+		return err
+	}
+	return remapLeases6(ctx, tx)
+}
+
+// remapLeases6 does the same for IPv6: addresses (na) belong to the scope
+// whose prefix contains them, delegated prefixes (pd) to the scope whose
+// delegation pool contains them. Containment is checked in Go because the
+// addresses are stored as text.
+func remapLeases6(ctx context.Context, tx *sql.Tx) error {
+	type scope6 struct {
+		id           int64
+		prefix, pool netip.Prefix
+	}
+	srows, err := tx.QueryContext(ctx, `SELECT id, prefix, pd_pool FROM scopes6`)
+	if err != nil {
+		return err
+	}
+	var scopes []scope6
+	for srows.Next() {
+		var s scope6
+		var prefix, pool string
+		if err := srows.Scan(&s.id, &prefix, &pool); err != nil {
+			_ = srows.Close()
+			return err
+		}
+		s.prefix, _ = netip.ParsePrefix(prefix)
+		s.pool, _ = netip.ParsePrefix(pool)
+		scopes = append(scopes, s)
+	}
+	if err := srows.Close(); err != nil {
+		return err
+	}
+	lrows, err := tx.QueryContext(ctx, `SELECT ip, kind, scope_id FROM leases6`)
+	if err != nil {
+		return err
+	}
+	type move struct {
+		ip    string
+		scope int64 // 0 = delete
+	}
+	var moves []move
+	for lrows.Next() {
+		var ip, kind string
+		var cur int64
+		if err := lrows.Scan(&ip, &kind, &cur); err != nil {
+			_ = lrows.Close()
+			return err
+		}
+		a, _ := netip.ParseAddr(ip)
+		var found int64
+		for _, s := range scopes {
+			p := s.prefix
+			if kind == "pd" {
+				p = s.pool
+			}
+			if p.IsValid() && p.Contains(a) {
+				found = s.id
+				break
+			}
+		}
+		if found != cur {
+			moves = append(moves, move{ip, found})
+		}
+	}
+	if err := lrows.Close(); err != nil {
+		return err
+	}
+	for _, m := range moves {
+		if m.scope == 0 {
+			_, err = tx.ExecContext(ctx, `DELETE FROM leases6 WHERE ip = ?`, m.ip)
+		} else {
+			_, err = tx.ExecContext(ctx, `UPDATE leases6 SET scope_id = ? WHERE ip = ?`, m.scope, m.ip)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DHCPConfigTables are the tables of the DHCP configuration in dependency
@@ -249,10 +328,11 @@ var DHCPConfigTables = []string{
 	"scopes", "superscopes", "superscope_members", "classes", "option_definitions",
 	"exclusions", "reservations", "policies", "policy_conditions", "policy_ranges",
 	"options", "mac_filters", "settings", "dns_zones",
+	"scopes6", "exclusions6", "reservations6", "options6",
 }
 
 // ConfigTables are all replicated configuration tables: the DHCP
 // configuration plus the secrets that are not part of exports (users, API
-// tokens, TSIG keys). Leases, audit log, sessions, HA state and DNS
-// registrations are local to each server.
+// tokens, TSIG keys). Leases (IPv4 and IPv6), audit log, sessions, HA state,
+// DNS registrations and local_state are local to each server.
 var ConfigTables = append(append([]string{}, DHCPConfigTables...), "users", "api_tokens", "dns_keys")

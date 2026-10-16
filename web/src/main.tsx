@@ -15,6 +15,7 @@ import { LeasesPage } from "./pages/Leases";
 import { PoliciesPage } from "./pages/Policies";
 import { HAPage } from "./pages/HA";
 import { DNSPage } from "./pages/DNS";
+import { IPv6Page, IPv6ScopeDetailPage } from "./pages/IPv6";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 
@@ -36,6 +37,8 @@ function Gate() {
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="leases" element={<LeasesPage />} />
         <Route path="policies" element={<PoliciesPage />} />
+        <Route path="ipv6" element={<IPv6Page />} />
+        <Route path="ipv6/scopes/:id" element={<IPv6ScopeDetailPage />} />
         <Route path="ha" element={<HAPage />} />
         <Route path="dns" element={<DNSPage />} />
         <Route path="audit" element={<AuditPage />} />

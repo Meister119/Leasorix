@@ -274,6 +274,219 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v6/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listScopes6"];
+        put?: never;
+        post: operations["createScope6"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/scopes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getScope6"];
+        put: operations["updateScope6"];
+        post?: never;
+        delete: operations["deleteScope6"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/scopes/{id}/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["listExclusions6"];
+        put?: never;
+        post: operations["createExclusion6"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/scopes/{id}/exclusions/{exclusionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                exclusionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteExclusion6"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listReservations6"];
+        put?: never;
+        post: operations["createReservation6"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/reservations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["updateReservation6"];
+        post?: never;
+        delete: operations["deleteReservation6"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/option-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listOptionDefinitions6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/options/{owner}/{ownerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: components["schemas"]["Option6Owner"];
+                /** @description 0 for the server level. */
+                ownerId: components["parameters"]["OwnerId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listOptions6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/options/{owner}/{ownerId}/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: components["schemas"]["Option6Owner"];
+                /** @description 0 for the server level. */
+                ownerId: components["parameters"]["OwnerId"];
+                code: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setOption6"];
+        post?: never;
+        delete: operations["deleteOption6"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listLeases6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/leases/{address}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Address of the binding (first address for a prefix). */
+                address: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteLease6"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v6/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getStats6"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/export": {
         parameters: {
             query?: never;
@@ -1174,6 +1387,144 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        Scope6: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            description: string;
+            /** @example 2001:db8:1::/64 */
+            prefix: string;
+            /** @description First address of the range (empty = no addresses). */
+            start: string;
+            end: string;
+            /** @description Seconds. */
+            preferred_lifetime: number;
+            /** @description Seconds. */
+            valid_lifetime: number;
+            rapid_commit: boolean;
+            preference: number;
+            enabled: boolean;
+            /** @description Prefix delegation pool (empty = none), e.g. 2001:db8:100::/40. */
+            pd_pool: string;
+            /** @description Length of the delegated prefixes, e.g. 56. */
+            pd_length: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        Scope6Input: {
+            name: string;
+            description?: string;
+            prefix: string;
+            start?: string;
+            end?: string;
+            preferred_lifetime: number;
+            valid_lifetime: number;
+            rapid_commit?: boolean;
+            preference?: number;
+            enabled: boolean;
+            pd_pool?: string;
+            pd_length?: number;
+        };
+        Range6: {
+            start: string;
+            end: string;
+        };
+        Exclusion6: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            scope_id: number;
+            start: string;
+            end: string;
+        };
+        Reservation6: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            scope_id: number;
+            /** @description Client DUID as hex. */
+            duid: string;
+            /**
+             * Format: int64
+             * @description -1 = any IA of the client.
+             */
+            iaid: number;
+            ip: string;
+            hostname: string;
+            description: string;
+        };
+        Reservation6Input: {
+            /**
+             * Format: int64
+             * @description Required on creation.
+             */
+            scope_id?: number;
+            duid: string;
+            /**
+             * Format: int64
+             * @description Absent or -1 = any IA.
+             */
+            iaid?: number;
+            ip: string;
+            hostname?: string;
+            description?: string;
+        };
+        /** @enum {string} */
+        Option6Owner: "server" | "scope" | "reservation";
+        /** @enum {string} */
+        Option6Type: "ipv6-list" | "domain-list" | "string" | "uint8" | "uint16" | "uint32" | "hex" | "ntp-servers";
+        Option6Definition: {
+            code: number;
+            name: string;
+            type: components["schemas"]["Option6Type"];
+            description: string;
+        };
+        Option6Value: {
+            owner: components["schemas"]["Option6Owner"];
+            /** Format: int64 */
+            owner_id: number;
+            code: number;
+            name: string;
+            type: components["schemas"]["Option6Type"];
+            value: string;
+        };
+        Option6Input: {
+            type?: components["schemas"]["Option6Type"];
+            value: string;
+        };
+        Lease6: {
+            address: string;
+            prefix_len: number;
+            /** @enum {string} */
+            kind: "na" | "pd";
+            /** Format: int64 */
+            scope_id: number;
+            duid: string;
+            /** Format: int64 */
+            iaid: number;
+            hostname: string;
+            /** @enum {string} */
+            state: "active" | "expired" | "released" | "declined";
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            preferred_until: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        Scope6Stats: {
+            /** Format: int64 */
+            scope_id: number;
+            addresses_in_use: number;
+            prefixes_in_use: number;
+            declined: number;
+            /** @description Addresses in the range (decimal; ranges can exceed 2^53). */
+            size: string;
+            /** @description Delegable prefixes (decimal). */
+            prefix_capacity: string;
+        };
         Superscope: {
             /** Format: int64 */
             id: number;
@@ -1198,6 +1549,7 @@ export interface components {
             mac_filters: number;
             superscopes: number;
             dns_zones: number;
+            scopes6: number;
         };
         NetshImportResult: {
             result: components["schemas"]["ConfigImportResult"];
@@ -1468,6 +1820,9 @@ export interface components {
             /** Format: date-time */
             started_at: string;
             dhcp4_interfaces: string[];
+            dhcp6_interfaces: string[];
+            /** @description DUID of this DHCPv6 server (hex). */
+            dhcp6_server_duid?: string;
             tls: boolean;
             conflict_detection: boolean;
             ha_enabled: boolean;
@@ -2357,6 +2712,462 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DnsRegistration"][];
+                };
+            };
+        };
+    };
+    listScopes6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description DHCPv6 scopes by name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope6"][];
+                };
+            };
+        };
+    };
+    createScope6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Scope6Input"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope6"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getScope6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope6"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateScope6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Scope6Input"];
+            };
+        };
+        responses: {
+            /** @description Updated (the prefix cannot be changed). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope6"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteScope6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted with exclusions */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listExclusions6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exclusions of the scope. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Exclusion6"][];
+                };
+            };
+        };
+    };
+    createExclusion6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Range6"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Exclusion6"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteExclusion6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                exclusionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listReservations6: {
+        parameters: {
+            query?: {
+                scope_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation6"][];
+                };
+            };
+        };
+    };
+    createReservation6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reservation6Input"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation6"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateReservation6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reservation6Input"];
+            };
+        };
+        responses: {
+            /** @description Updated (the scope stays). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation6"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteReservation6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listOptionDefinitions6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Well-known DHCPv6 options. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Option6Definition"][];
+                };
+            };
+        };
+    };
+    listOptions6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: components["schemas"]["Option6Owner"];
+                /** @description 0 for the server level. */
+                ownerId: components["parameters"]["OwnerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Option values of the owner. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Option6Value"][];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    setOption6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: components["schemas"]["Option6Owner"];
+                /** @description 0 for the server level. */
+                ownerId: components["parameters"]["OwnerId"];
+                code: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Option6Input"];
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Option6Value"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteOption6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                owner: components["schemas"]["Option6Owner"];
+                /** @description 0 for the server level. */
+                ownerId: components["parameters"]["OwnerId"];
+                code: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listLeases6: {
+        parameters: {
+            query?: {
+                scope_id?: number;
+                /** @description Substring of address, DUID or host name. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bindings (addresses and delegated prefixes) by address. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lease6"][];
+                };
+            };
+        };
+    };
+    deleteLease6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Address of the binding (first address for a prefix). */
+                address: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted; the address or prefix becomes free. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getStats6: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per scope binding counts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scope6Stats"][];
                 };
             };
         };

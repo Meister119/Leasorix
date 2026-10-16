@@ -196,6 +196,33 @@ func TestMachineReplicationFailureForcesResync(t *testing.T) {
 	}
 }
 
+// A change that could not be sent while disconnected must reach the partner
+// even if it already resynced earlier in the same interruption.
+func TestMachineUnsentChangeForcesAnotherResync(t *testing.T) {
+	p := newPair(t, 0)
+	p.run(3)
+	p.a.commFailed()
+	p.a.step(p.now)
+	// The partner pulls a's table before a's next change ...
+	p.b.heartbeat(p.now, statusOf(p.a), false)
+	p.b.step(p.now)
+	if !p.b.needResync() {
+		t.Fatal("partner must resync after the interruption")
+	}
+	p.b.resyncDone(p.a.session, p.a.epoch)
+	// ... which a then cannot send.
+	p.a.changeNotSent()
+	p.b.heartbeat(p.now, statusOf(p.a), false)
+	if !p.b.needResync() {
+		t.Fatal("partner must pull again after an unsent change")
+	}
+	p.run(5)
+	p.want(StateNormal, StateNormal)
+	if p.b.syncedEpoch != p.a.epoch {
+		t.Fatal("partner must have resynced against the latest epoch")
+	}
+}
+
 func TestMachineMismatchBlocksConnection(t *testing.T) {
 	p := newPair(t, 0)
 	// Both sides detect it (the receiver rejects the heartbeat).

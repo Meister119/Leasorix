@@ -272,9 +272,15 @@ func (h *handlers) configLeader() *string {
 func (h *handlers) GetSystemInfo(w http.ResponseWriter, _ *http.Request) {
 	ifaces := append([]string{}, h.s.deps.Info.Interfaces...)
 	sort.Strings(ifaces)
+	ifaces6 := append([]string{}, h.s.deps.Info.Interfaces6...)
+	sort.Strings(ifaces6)
+	var duid *string
+	if h.s.deps.Info.ServerDUID6 != "" {
+		duid = &h.s.deps.Info.ServerDUID6
+	}
 	writeJSON(w, http.StatusOK, gen.SystemInfo{
 		Version: buildinfo.Version, Commit: buildinfo.Commit, GoVersion: buildinfo.GoVersion(),
-		StartedAt: h.s.deps.Info.StartedAt, Dhcp4Interfaces: ifaces, Tls: h.s.deps.TLS != nil,
+		StartedAt: h.s.deps.Info.StartedAt, Dhcp4Interfaces: ifaces, Dhcp6Interfaces: ifaces6, Dhcp6ServerDuid: duid, Tls: h.s.deps.TLS != nil,
 		ConflictDetection: h.s.deps.Info.ConflictDetection,
 		HaEnabled:         h.s.deps.HA != nil,
 		ConfigReadOnly:    h.s.deps.HA != nil && h.s.deps.HA.ConfigReadOnly(),
