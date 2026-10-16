@@ -14,6 +14,7 @@ import (
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/logging"
+	"github.com/meister119/leasorix/web"
 )
 
 func main() {
@@ -56,7 +57,7 @@ func run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	a, err := app.New(ctx, cfg, log)
+	a, err := app.New(ctx, cfg, log, app.WithUI(web.Handler()))
 	if err != nil {
 		log.Error("startup failed", "err", err)
 		return 1

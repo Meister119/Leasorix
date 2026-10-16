@@ -49,3 +49,30 @@ func (r *Registry) Gatherer() prometheus.Gatherer { return r.reg }
 func (r *Registry) Handler() http.Handler {
 	return promhttp.HandlerFor(r.reg, promhttp.HandlerOpts{Registry: r.reg})
 }
+
+// CounterValues returns the current values of a counter family, keyed by
+// the value of label (summed over other labels).
+func (r *Registry) CounterValues(name, label string) map[string]float64 {
+	out := map[string]float64{}
+	families, err := r.reg.Gather()
+	if err != nil {
+		return out
+	}
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			key := ""
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == label {
+					key = lp.GetValue()
+				}
+			}
+			if c := m.GetCounter(); c != nil {
+				out[key] += c.GetValue()
+			}
+		}
+	}
+	return out
+}

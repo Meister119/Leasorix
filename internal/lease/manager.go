@@ -782,3 +782,29 @@ func (m *Manager) All() []Lease {
 	sort.Slice(out, func(i, j int) bool { return out[i].IP < out[j].IP })
 	return out
 }
+
+// Delete removes the lease record for ip (administrative action). The
+// address becomes free immediately. It returns false if there is no record.
+func (m *Manager) Delete(ctx context.Context, ip uint32) (bool, error) {
+	m.mu.Lock()
+	l := m.leases[ip]
+	if l == nil {
+		m.mu.Unlock()
+		return false, nil
+	}
+	old := *l
+	m.removeLocked(ip)
+	if o := m.offers[ip]; o != nil {
+		delete(m.offers, ip)
+		if m.offerBy[offerKey{o.key, o.scopeID}] == o {
+			delete(m.offerBy, offerKey{o.key, o.scopeID})
+		}
+	}
+	ops := []Op{Delete(ip)}
+	m.metrics.Event("delete")
+	if m.cfg.AuditEvents {
+		ops = append(ops, AuditOp(audit.New(ctx, "lease.delete", "lease", ip4.String(ip), leaseDetails(&old))))
+	}
+	m.mu.Unlock()
+	return true, m.db.Apply(ctx, ops...)
+}

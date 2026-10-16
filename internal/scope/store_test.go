@@ -269,3 +269,37 @@ func TestOnChangeListener(t *testing.T) {
 		t.Fatalf("listener got version %d, snapshot %d", got, s.Snapshot().Version)
 	}
 }
+
+func TestImportReservationsAllOrNothing(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	sc, err := s.CreateScope(ctx, lan("a", "10.0.0.0/24", "10.0.0.100", "10.0.0.200"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []Reservation{
+		{ScopeID: sc.ID, IP: netip.MustParseAddr("10.0.0.10"), MAC: "02:00:00:00:00:01", Hostname: "a"},
+		{ScopeID: sc.ID, IP: netip.MustParseAddr("10.0.0.11"), MAC: "02:00:00:00:00:02"},
+		{ScopeID: sc.ID, IP: netip.MustParseAddr("10.0.0.11"), MAC: "02:00:00:00:00:03"}, // duplicate IP within the batch
+	}
+	n, rowErrs, err := s.ImportReservations(ctx, rows)
+	if err != nil || n != 0 || len(rowErrs) != 1 || rowErrs[0].Row != 2 {
+		t.Fatalf("n=%d errs=%+v err=%v", n, rowErrs, err)
+	}
+	if all, _ := s.ListReservations(ctx, 0); len(all) != 0 {
+		t.Fatal("partial import persisted")
+	}
+	rows[2].IP = netip.MustParseAddr("10.0.0.12")
+	n, rowErrs, err = s.ImportReservations(ctx, rows)
+	if err != nil || n != 3 || len(rowErrs) != 0 {
+		t.Fatalf("n=%d errs=%+v err=%v", n, rowErrs, err)
+	}
+	if len(s.Snapshot().ByID(sc.ID).Reservations()) != 3 {
+		t.Fatal("snapshot not reloaded")
+	}
+	// Normalisation errors are reported before touching the database.
+	_, rowErrs, _ = s.ImportReservations(ctx, []Reservation{{ScopeID: sc.ID, IP: netip.MustParseAddr("10.0.0.13"), MAC: "nope"}})
+	if len(rowErrs) != 1 || rowErrs[0].Row != 0 {
+		t.Fatalf("errs %+v", rowErrs)
+	}
+}

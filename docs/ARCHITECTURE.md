@@ -36,7 +36,11 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 | `internal/dhcp4` | DHCPv4-Engine (Phase 2) |
 | `internal/scope` | Scopes, Pools, Exclusions, Reservierungen, Policies |
 | `internal/lease` | Lease-Store, Allokation, Konfliktprüfung, Expiry |
-| `internal/auth` | Benutzer, Rollen, Sessions, Tokens (Phase 5) |
+| `internal/auth` | Benutzer, Rollen, Sessions, API-Tokens, Setup |
+| `internal/audit` | Audit-Log (Schreiben im Tx, Abfrage, Purge) |
+| `internal/dhcpopt` | Options-Katalog und typisierte Werte |
+| `internal/api/gen` | aus OpenAPI generierter Code |
+| `web` | React-UI, per `go:embed` eingebettet |
 | `internal/ha` | Peer-Replikation und Failover (Phase 6) |
 | `internal/dnsupdate` | RFC-2136-Updates (Phase 9) |
 | `internal/dhcp6` | DHCPv6 (Phase 10) |
@@ -75,6 +79,28 @@ Response (Ziel nach RFC 2131 4.1) <---------------------+
   erfolgreichem Commit gesendet.
 - **Expiry-Worker**: alle `expiry_interval` → `active`→`expired`,
   Löschen nach Grace-Period bzw. Decline-Zeit, abgelaufene Angebote räumen.
+
+## Management-API und Web-UI
+
+```
+Browser ──HTTPS──> api.Server (chi)
+                     ├─ /healthz /readyz /metrics
+                     ├─ /api/v1/*  ── authenticate (Cookie | Bearer)
+                     │                └─ authorize (RBAC-Tabelle, CSRF, Origin, Content-Type)
+                     │                   └─ gen.ServerInterface (aus openapi.yaml generiert)
+                     │                      └─ handlers → scope.Store / lease.Manager / auth.Service / audit.Log
+                     └─ /*  ── eingebettete SPA (web/dist, Build-Tag ui), Fallback index.html
+```
+
+- **Spec first:** `internal/api/openapi.yaml` ist die Quelle für Go-Typen und
+  Router (`internal/api/gen`) sowie für die TypeScript-Typen der UI
+  (`web/src/api/schema.d.ts`).
+- **Audit-Actor:** Die Authentifizierungs-Middleware legt Benutzer und
+  Client-IP in den Context; alle Domänenoperationen schreiben ihn in ihre
+  Audit-Einträge.
+- **UI:** React + TanStack Query; jede Seite liest über den typisierten
+  Client, Mutationen invalidieren die betroffenen Queries. Rollen steuern,
+  welche Aktionen angezeigt werden – die Durchsetzung passiert im Backend.
 
 ## Persistenz
 

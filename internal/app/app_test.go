@@ -19,6 +19,7 @@ func TestAppStartsAndStops(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.HTTP.Listen = "127.0.0.1:0"
+	cfg.HTTP.TLS.Mode = config.TLSOff
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,6 +72,7 @@ func TestMetricsExposeScopeStatistics(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.HTTP.Listen = "127.0.0.1:0"
+	cfg.HTTP.TLS.Mode = config.TLSOff
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
