@@ -1,0 +1,101 @@
+# Leasorix – two servers in a high availability relationship (macvlan).
+#
+#   cd deploy && LEASORIX_PARENT=eth0 LEASORIX_SUBNET=192.168.1.0/24 \
+#     LEASORIX_GATEWAY=192.168.1.1 LEASORIX_A_IP=192.168.1.5 LEASORIX_B_IP=192.168.1.6 \
+#     docker compose -f docker-compose.ha.yml up -d
+#
+# The one-shot "certs" service creates a CA and node certificates for mutual
+# TLS (once; kept in the ha-certs volume). Configure scopes on dhcp-a (the
+# configuration leader); dhcp-b takes them over and is read-only. For two
+# Docker hosts, run one service per host and point LEASORIX_HA_PEER_ADDRESS
+# at the other host. See docs/HA.md and docs/DOCKER.md.
+name: leasorix-ha
+
+x-leasorix: &leasorix
+  image: ${LEASORIX_IMAGE:-ghcr.io/meister119/leasorix:latest}
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  cap_add: [NET_BIND_SERVICE, NET_RAW]
+  depends_on:
+    certs:
+      condition: service_completed_successfully
+
+x-env: &env
+  LEASORIX_DHCP4_INTERFACES: eth0
+  LEASORIX_AUTH_SETUP_TOKEN: ${LEASORIX_SETUP_TOKEN:-}
+  LEASORIX_HA_MODE: ${LEASORIX_HA_MODE:-load-balance}
+  LEASORIX_HA_TLS_MODE: mtls
+  LEASORIX_HA_TLS_CA_FILE: /certs/ca.pem
+  LEASORIX_HA_AUTO_PARTNER_DOWN: ${LEASORIX_HA_AUTO_PARTNER_DOWN:-0s}
+
+services:
+  certs:
+    image: ${LEASORIX_IMAGE:-ghcr.io/meister119/leasorix:latest}
+    command: ["ha", "certs", "--if-missing", "--out", "/certs", "dhcp-a", "dhcp-b"]
+    network_mode: none
+    restart: "no"
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    # leasorixd carries file capabilities: they must stay in the bounding
+    # set, otherwise the kernel refuses to execute it.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, NET_RAW]
+    volumes:
+      - ha-certs:/certs
+
+  dhcp-a:
+    <<: *leasorix
+    hostname: dhcp-a
+    networks:
+      lan:
+        ipv4_address: ${LEASORIX_A_IP:-192.168.1.5}
+    environment:
+      <<: *env
+      LEASORIX_HA_NODE_ID: dhcp-a
+      LEASORIX_HA_ROLE: primary
+      LEASORIX_HA_PEER_ID: dhcp-b
+      LEASORIX_HA_PEER_ADDRESS: ${LEASORIX_B_IP:-192.168.1.6}:8068
+      LEASORIX_HA_TLS_CERT_FILE: /certs/dhcp-a.pem
+      LEASORIX_HA_TLS_KEY_FILE: /certs/dhcp-a-key.pem
+    volumes:
+      - data-a:/data
+      - ha-certs:/certs:ro
+
+  dhcp-b:
+    <<: *leasorix
+    hostname: dhcp-b
+    networks:
+      lan:
+        ipv4_address: ${LEASORIX_B_IP:-192.168.1.6}
+    environment:
+      <<: *env
+      LEASORIX_HA_NODE_ID: dhcp-b
+      LEASORIX_HA_ROLE: secondary
+      LEASORIX_HA_PEER_ID: dhcp-a
+      LEASORIX_HA_PEER_ADDRESS: ${LEASORIX_A_IP:-192.168.1.5}:8068
+      LEASORIX_HA_TLS_CERT_FILE: /certs/dhcp-b.pem
+      LEASORIX_HA_TLS_KEY_FILE: /certs/dhcp-b-key.pem
+    volumes:
+      - data-b:/data
+      - ha-certs:/certs:ro
+
+networks:
+  lan:
+    driver: macvlan
+    driver_opts:
+      parent: ${LEASORIX_PARENT:-eth0}
+    ipam:
+      config:
+        - subnet: ${LEASORIX_SUBNET:-192.168.1.0/24}
+          gateway: ${LEASORIX_GATEWAY:-192.168.1.1}
+
+volumes:
+  data-a:
+  data-b:
+  ha-certs:

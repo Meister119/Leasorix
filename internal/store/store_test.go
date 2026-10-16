@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/pressly/goose/v3"
 )
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -178,5 +181,34 @@ func TestConcurrentWrites(t *testing.T) {
 	var n int
 	if err := db.R.QueryRow(`SELECT COUNT(*) FROM audit_log`).Scan(&n); err != nil || n != 50 {
 		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
+
+func TestMigrationsDownAndUp(t *testing.T) {
+	db := openTemp(t)
+	ctx := context.Background()
+	if err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT INTO options (code, type, value) VALUES (6, 'ip-list', '1.1.1.1')`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sub, err := fs.Sub(migrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := goose.NewProvider(goose.DialectSQLite3, db.W, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 1); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+	var n int
+	if err := db.R.QueryRow(`SELECT COUNT(*) FROM options WHERE policy_id IS NULL AND code = 6`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("option row lost across down/up: n=%d err=%v", n, err)
 	}
 }

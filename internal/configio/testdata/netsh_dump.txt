@@ -1,0 +1,67 @@
+
+# ============================================================================
+#  Start Add Class Definitions
+# ============================================================================
+
+Dhcp Server \\DHCP01.example.local add class "Default Routing and Remote Access Class" "User class for remote access clients" 525241532e4d6963726f736f6674 0 b
+Dhcp Server \\DHCP01.example.local add class "Default BOOTP Class" "User class for BOOTP Clients" 424f4f54502e4d6963726f736f6674 0 b
+Dhcp Server \\DHCP01.example.local add class "IP-Phones" "Polycom phones" 506f6c79636f6d 1 b
+
+# ============================================================================
+#  Start Add Optiondef
+# ============================================================================
+
+Dhcp Server \\DHCP01.example.local add optiondef 1 "Subnet Mask" IPADDRESS 0 comment="Subnet mask in network byte order" 0.0.0.0
+Dhcp Server \\DHCP01.example.local add optiondef 6 "DNS Servers" IPADDRESS 1 comment="Array of DNS servers, by preference"
+Dhcp Server \\DHCP01.example.local add optiondef 252 "WPAD" STRING 0 comment="Web Proxy Auto Discovery"
+Dhcp Server \\DHCP01.example.local add optiondef 224 "site-code" STRING 0 comment="Site"
+Dhcp Server \\DHCP01.example.local add optiondef 1 "Microsoft Disable Netbios Option " DWORD 0 vendor="Microsoft Windows 2000 Options" comment="Option for enabling or disabling Netbios" 1
+
+# ============================================================================
+#  Start Set OptionValues
+# ============================================================================
+
+Dhcp Server \\DHCP01.example.local set optionvalue 6 IPADDRESS "10.10.0.10" "10.10.0.11"
+Dhcp Server \\DHCP01.example.local set optionvalue 15 STRING "example.local"
+Dhcp Server \\DHCP01.example.local set optionvalue 51 DWORD "86400"
+Dhcp Server \\DHCP01.example.local set optionvalue 224 STRING "berlin"
+Dhcp Server \\DHCP01.example.local set optionvalue 252 STRING "http://wpad.example.local/wpad.dat"
+Dhcp Server \\DHCP01.example.local set optionvalue 1 DWORD vendor="Microsoft Windows 2000 Options" "1"
+
+Dhcp Server \\DHCP01.example.local set auditlog "C:\Windows\system32\dhcp"
+Dhcp Server \\DHCP01.example.local set dnsconfig 1 0 1 0
+
+Dhcp Server \\DHCP01.example.local add filter allow 00-15-5D-01-02-03 "Hyper-V test VM"
+Dhcp Server \\DHCP01.example.local add filter deny 02-AA-BB-CC-DD-EE "Blocked"
+Dhcp Server \\DHCP01.example.local set filter enforceallowlist=0 enforcedenylist=1
+
+# ============================================================================
+#  Start Add Scope 10.10.1.0
+# ============================================================================
+
+Dhcp Server \\DHCP01.example.local add scope 10.10.1.0 255.255.255.0 "Office" "Main office"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set state 1
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 add iprange 10.10.1.20 10.10.1.240 DHCP
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 add excluderange 10.10.1.20 10.10.1.30
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set optionvalue 51 DWORD "691200"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set optionvalue 3 IPADDRESS "10.10.1.1"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set optionvalue 66 STRING "10.10.0.5" user="IP-Phones"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 Add reservedip 10.10.1.10 00155d0a0b0c "printer01.example.local" "Printer 1st floor" "BOTH"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 Reservedip 10.10.1.10 set optionvalue 3 IPADDRESS "10.10.1.254"
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set superscope "Building A" 1
+Dhcp Server \\DHCP01.example.local Scope 10.10.1.0 set delayoffer 0
+
+# ============================================================================
+#  Start Add Scope 10.10.2.0
+# ============================================================================
+
+Dhcp Server \\DHCP01.example.local add scope 10.10.2.0 255.255.255.128 "Lab" ""
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 set state 0
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 add iprange 10.10.2.10 10.10.2.100 BOTH 0
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 set optionvalue 51 DWORD "4294967295"
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 set optionvalue 3 IPADDRESS "10.10.2.1"
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 set dnsconfig 1 1 0 0
+Dhcp Server \\DHCP01.example.local Scope 10.10.2.0 set superscope "Building A" 1
+
+Dhcp Server \\DHCP01.example.local add mscope "Multicast" "" 1
+Dhcp Server \\DHCP01.example.local v6 set optionvalue 23 IPV6ADDRESS "2001:db8::53"
