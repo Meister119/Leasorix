@@ -11,3 +11,6 @@ coverage.out
 /web/dist/
 /web/test-results/
 /web/playwright-report/
+
+# stray local builds of helper commands
+/setcap
