@@ -1,0 +1,99 @@
+# Demo configuration for the README screenshots (make screenshots).
+# The E2E server answers on 10.77.0.1/16; the other scopes stand for
+# relayed networks and get their leases from a lease import.
+format: leasorix-config/v1
+settings: {mac_filter_allow_enabled: false, mac_filter_deny_enabled: true}
+classes:
+  - {name: PXE-Clients, type: vendor, data: "PXEClient*", description: Netzwerk-Boot (BIOS/UEFI)}
+  - {name: Yealink-Telefone, type: vendor, data: "yealink*", description: VoIP-Tischtelefone}
+server_options:
+  - {code: 6, value: "10.77.0.53, 10.77.0.54"}
+  - {code: 15, value: firma.lan}
+  - {code: 42, value: 10.77.0.123}
+mac_filters:
+  - {list: deny, pattern: "de:ad:be:ef:*", description: Gesperrte Testgeräte}
+superscopes:
+  - {name: Labor, description: Zwei IP-Netze auf dem Labor-Segment}
+dns_zones:
+  - {name: firma.lan, server: 10.77.0.53}
+  - {name: 77.10.in-addr.arpa, server: 10.77.0.53}
+scopes:
+  - scope:
+      name: Büro-LAN
+      description: Arbeitsplätze und Drucker EG/1. OG
+      subnet: 10.77.0.0/16
+      start: 10.77.10.100
+      end: 10.77.10.160
+      lease_time: 28800
+      enabled: true
+      dns: {mode: client, domain: firma.lan, cleanup: true, protect: true}
+    exclusions: [{start: 10.77.10.100, end: 10.77.10.109}]
+    reservations:
+      - {ip: 10.77.10.20, mac: "00:15:5d:0a:0b:0c", hostname: drucker-eg, description: Kyocera Multifunktionsdrucker}
+      - {ip: 10.77.10.21, mac: "00:15:5d:0a:0b:0d", hostname: drucker-og1, description: Kyocera Multifunktionsdrucker}
+      - {ip: 10.77.10.30, mac: "3c:52:82:11:22:33", hostname: nas01, description: Synology NAS}
+    options: [{code: 3, value: 10.77.0.1}]
+    policies:
+      - name: PXE-Boot
+        description: iPXE für Netzwerk-Installationen
+        order: 1
+        enabled: true
+        operator: or
+        conditions: [{field: class, operator: eq, value: PXE-Clients}]
+        options: [{code: 66, value: 10.77.0.40}, {code: 67, value: ipxe.efi}]
+  - scope: {name: Gäste-WLAN, description: "Captive Portal, nur Internet", subnet: 10.20.0.0/22, start: 10.20.0.10, end: 10.20.3.250, lease_time: 3600, enabled: true}
+    exclusions: []
+    reservations: []
+    options: [{code: 3, value: 10.20.0.1}, {code: 6, value: "9.9.9.9, 149.112.112.112"}]
+    policies: []
+  - scope: {name: VoIP, description: Tischtelefone (Yealink), subnet: 10.30.0.0/24, start: 10.30.0.50, end: 10.30.0.250, lease_time: 691200, enabled: true}
+    exclusions: []
+    reservations: []
+    options: [{code: 3, value: 10.30.0.1}]
+    policies:
+      - name: Provisionierung
+        order: 1
+        enabled: true
+        operator: and
+        conditions: [{field: class, operator: eq, value: Yealink-Telefone}]
+        options: [{code: 66, value: "http://prov.firma.lan/yealink"}]
+  - scope: {name: Labor A, subnet: 192.168.50.0/24, start: 192.168.50.10, end: 192.168.50.200, lease_time: 3600, enabled: true, bootp: true, superscope: Labor}
+    exclusions: []
+    reservations: []
+    options: [{code: 3, value: 192.168.50.1}]
+    policies: []
+  - scope: {name: Labor B, subnet: 192.168.51.0/24, start: 192.168.51.10, end: 192.168.51.200, lease_time: 3600, enabled: true, superscope: Labor}
+    exclusions: []
+    reservations: []
+    options: [{code: 3, value: 192.168.51.1}]
+    policies: []
+  - scope: {name: Server-VLAN, description: "Nur Reservierungen, dynamische Vergabe pausiert", subnet: 10.40.0.0/24, start: 10.40.0.100, end: 10.40.0.199, lease_time: 86400, enabled: false}
+    exclusions: []
+    reservations: []
+    options: [{code: 3, value: 10.40.0.1}]
+    policies: []
+server_options6:
+  - {code: 23, value: "2001:db8:77::53"}
+scopes6:
+  - name: Büro-LAN v6
+    description: Adressen und /56-Präfixe für Etagen-Router
+    prefix: "2001:db8:77::/64"
+    start: "2001:db8:77::1000"
+    end: "2001:db8:77::ffff"
+    preferred_lifetime: 14400
+    valid_lifetime: 28800
+    rapid_commit: true
+    enabled: true
+    pd_pool: "2001:db8:7700::/40"
+    pd_length: 56
+    reservations:
+      - {duid: "00:03:00:01:3c:52:82:11:22:33", ip: "2001:db8:77::30", hostname: nas01}
+    options:
+      - {code: 24, value: firma.lan}
+  - name: Gäste-WLAN v6
+    prefix: "2001:db8:20::/64"
+    start: "2001:db8:20::100"
+    end: "2001:db8:20::ffff"
+    preferred_lifetime: 1800
+    valid_lifetime: 3600
+    enabled: true
