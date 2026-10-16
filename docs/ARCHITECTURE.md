@@ -46,7 +46,11 @@ einem gemeinsamen `errgroup`; fällt eine Komponente aus oder kommt
 | `web` | React-UI, per `go:embed` eingebettet |
 | `internal/ha` | HA-Partnerschaft: Zustandsautomat, Pool-Aufteilung, gRPC-Peer-Protokoll (`pb`), Lease-/Config-Replikation, Zertifikate |
 | `internal/dnsupdate` | DNS-Updates: Option 81 (RFC 4702), DHCID (RFC 4701), RFC-2136-Client mit TSIG, Updater-Worker |
-| `internal/dhcp6` | DHCPv6 (Phase 10) |
+| `internal/dhcp6` | DHCPv6-Engine (RFC 8415): Handler, Sockets pro Interface, Server-DUID |
+| `internal/scope6` | IPv6-Scopes, Ausschlüsse, Reservierungen (DUID/IAID), Optionen, Snapshot |
+| `internal/lease6` | DHCPv6-Bindungen (IA_NA, IA_PD): Allokation, Expiry, Persistenz |
+| `internal/dhcpopt6` | DHCPv6-Optionskatalog und typisierte Werte |
+| `internal/ip6` | 128-Bit-Arithmetik für Bereiche und Präfixe |
 
 ## Konfiguration
 
@@ -206,3 +210,28 @@ Details: [ADMIN.md](ADMIN.md#11-dns-updates); Entscheidungen D-064 bis D-067.
 - Name Protection ist reine DNS-Logik (Prerequisites auf den DHCID-Record);
   Leasorix muss dafür nichts über fremde Records wissen.
 
+## DHCPv6
+
+Details: [ADMIN.md](ADMIN.md#12-dhcpv6); Entscheidungen D-069 bis D-073.
+
+```
+ UDP [::]:547 pro Interface (SO_BINDTODEVICE, ff02::1:2)
+        │
+ dhcp6.Server ── Worker ──> dhcp6.Handler
+                              ├─ Server-ID-Regeln, Unicast → UseMulticast
+                              ├─ MAC-Filter (DUID-LL/-LLT, Option 79), HA: Accept(DUID)
+                              ├─ Scope: link-address des Relays bzw. Interface-Adressen
+                              │        └─ scope6.Snapshot (atomar, OnChange)
+                              └─ lease6.Manager.Assign/Extend/Release/Decline
+                                       ├─ In-Memory-Tabelle + leases6 (SQLite)
+                                       └─ HA: CanAllocate6 (eigener Anteil)
+```
+
+- Getrennt vom IPv4-Pfad (eigene Tabellen und Pakete, D-070), aber nach
+  demselben Muster: Konfiguration im Snapshot, Bindungen im Speicher und vor
+  der Antwort persistiert, Expiry-Goroutine, Audit, Metriken
+  (`leasorix_dhcp6_*`).
+- Adressen werden deterministisch aus DUID/IAID gesucht (Scan bis 65 536,
+  sonst Hash-Kandidaten), damit auch ein /64 als Bereich funktioniert (D-071).
+- HA: Konfiguration wird repliziert, Bindungen nicht; jeder Server vergibt
+  nur aus seinem Anteil (D-073).

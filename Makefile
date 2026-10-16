@@ -86,11 +86,12 @@ test-dns:
 test-e2e: build
 	./test/e2e/run.sh
 
-## fuzz: fuzz the DHCPv4 packet path
+## fuzz: fuzz the DHCPv4 and DHCPv6 packet paths and the FQDN option parser
 FUZZTIME ?= 60s
 fuzz:
 	$(GO) test -run '^$$' -fuzz FuzzHandle -fuzztime $(FUZZTIME) ./internal/dhcp4
 	$(GO) test -run '^$$' -fuzz FuzzParseClientFQDN -fuzztime $(FUZZTIME) ./internal/dnsupdate
+	$(GO) test -run '^$$' -fuzz FuzzHandle6 -fuzztime $(FUZZTIME) ./internal/dhcp6
 
 ## lint: run golangci-lint
 lint:

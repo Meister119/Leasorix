@@ -80,6 +80,8 @@ func (c *ctl) dispatch(ctx context.Context, args []string) error {
 		case "registrations", "":
 			return c.dnsRegistrations(ctx)
 		}
+	case "v6":
+		return c.v6(ctx, rest)
 	case "config":
 		switch sub {
 		case "export":
@@ -140,6 +142,9 @@ func (c *ctl) status(ctx context.Context) error {
 	fmt.Fprintf(c.out, "Version:        %s (%s)\n", s.Version, s.Commit)
 	fmt.Fprintf(c.out, "Running since:  %s\n", s.StartedAt.Local().Format(time.RFC3339))
 	fmt.Fprintf(c.out, "DHCP interfaces: %s\n", strings.Join(s.Dhcp4Interfaces, ", "))
+	if len(s.Dhcp6Interfaces) > 0 {
+		fmt.Fprintf(c.out, "DHCPv6:         %s (DUID %s)\n", strings.Join(s.Dhcp6Interfaces, ", "), deref(s.Dhcp6ServerDuid))
+	}
 	if h.Enabled {
 		peer := "not connected"
 		if h.Connected != nil && *h.Connected {
@@ -495,8 +500,8 @@ func (c *ctl) configImport(ctx context.Context, args []string) error {
 	if sum.DryRun {
 		verb = "valid (dry run, nothing changed)"
 	}
-	fmt.Fprintf(c.out, "%s (%s): %d scopes, %d reservations, %d policies, %d classes, %d option definitions, %d options, %d MAC filters, %d superscopes, %d DNS zones\n",
-		verb, sum.Mode, sum.Scopes, sum.Reservations, sum.Policies, sum.Classes, sum.OptionDefinitions, sum.Options, sum.MacFilters, sum.Superscopes, sum.DnsZones)
+	fmt.Fprintf(c.out, "%s (%s): %d scopes, %d reservations, %d policies, %d classes, %d option definitions, %d options, %d MAC filters, %d superscopes, %d DNS zones, %d IPv6 scopes\n",
+		verb, sum.Mode, sum.Scopes, sum.Reservations, sum.Policies, sum.Classes, sum.OptionDefinitions, sum.Options, sum.MacFilters, sum.Superscopes, sum.DnsZones, sum.Scopes6)
 	return nil
 }
 

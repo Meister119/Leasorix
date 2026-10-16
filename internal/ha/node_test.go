@@ -200,6 +200,10 @@ func sameTables(a, b *testNode) bool {
 
 func TestPairConfigAndLeaseReplication(t *testing.T) {
 	ca, cb := haConfigs(t, config.HALoadBalance)
+	// Under load (race detector, parallel packages) synchronous updates can
+	// time out and leases are shortened to MCLT (D-068); a longer MCLT keeps
+	// them active until the counts below.
+	ca.MCLT, cb.MCLT = time.Minute, time.Minute
 	a, b := startNode(t, ca, ""), startNode(t, cb, "")
 	waitStates(t, a, b, StateNormal, StateNormal)
 	if a.node.ConfigReadOnly() || !b.node.ConfigReadOnly() {
@@ -230,7 +234,7 @@ func TestPairConfigAndLeaseReplication(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	waitFor(t, "identical lease tables", 5*time.Second, func() bool { return sameTables(a, b) })
+	waitFor(t, "identical lease tables", 20*time.Second, func() bool { return sameTables(a, b) })
 	act := activeByIP(a)
 	if len(act) != 600 {
 		t.Fatalf("%d active leases, want 600", len(act))

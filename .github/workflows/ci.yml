@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -52,7 +53,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: install DHCP clients and relay
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 isc-dhcp-client udhcpc dnsmasq-base
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends iproute2 isc-dhcp-client udhcpc busybox dnsmasq-base
       - name: netns integration tests
         run: sudo -E env "PATH=$PATH" make test-integration
 

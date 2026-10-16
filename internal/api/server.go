@@ -24,8 +24,10 @@ import (
 	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
+	"github.com/meister119/leasorix/internal/lease6"
 	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
+	"github.com/meister119/leasorix/internal/scope6"
 	"github.com/meister119/leasorix/internal/store"
 )
 
@@ -34,6 +36,9 @@ type SystemInfo struct {
 	StartedAt         time.Time
 	Interfaces        []string
 	ConflictDetection bool
+	// Interfaces6 and ServerDUID6 describe the DHCPv6 service.
+	Interfaces6 []string
+	ServerDUID6 string
 }
 
 // HA is the part of the high availability node used by the API.
@@ -66,6 +71,9 @@ type Deps struct {
 	HA HA
 	// DNS reports the dynamic DNS registrations (nil = none).
 	DNS DNS
+	// Scopes6 and Leases6 serve the DHCPv6 API (nil = not available).
+	Scopes6 *scope6.Store
+	Leases6 *lease6.Manager
 	// UI serves the embedded web interface (nil = placeholder page).
 	UI http.Handler
 	// TLS enables HTTPS when set.

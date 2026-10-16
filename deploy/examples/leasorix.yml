@@ -65,6 +65,20 @@ dhcp4:
     timeout: 500ms
     attempts: 1
 
+dhcp6:
+  # Interfaces to serve; each socket joins ff02::1:2 on its interface.
+  # Relayed requests (RELAY-FORW) must arrive on one of them as well.
+  # Empty list = DHCPv6 disabled.
+  interfaces: []
+  workers: 64
+  # How long an advertised address is held for the client's REQUEST.
+  offer_timeout: 60s
+  # How long declined addresses (duplicate address detection) stay blocked.
+  decline_time: 24h
+  # How long expired/released bindings are kept for the previous client.
+  expired_grace: 4h
+  expiry_interval: 10s
+
 audit:
   # How long audit entries are kept (0 = forever). Purged every 6 hours.
   retention: 2160h

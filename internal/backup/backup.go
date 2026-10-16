@@ -25,7 +25,7 @@ var sqliteHeader = []byte("SQLite format 3\x00")
 
 // restoreTables are replaced by a restore (dependency order). The audit log,
 // sessions and the HA state stay local.
-var restoreTables = append(append([]string{}, store.ConfigTables...), "leases")
+var restoreTables = append(append([]string{}, store.ConfigTables...), "leases", "leases6")
 
 // Create writes a consistent backup of the database to w (SQLite file,
 // taken with VACUUM INTO while the server keeps running).

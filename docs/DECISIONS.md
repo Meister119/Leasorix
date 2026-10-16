@@ -895,3 +895,102 @@ gekürzte Fassung einen strikt neueren Stempel und wird nachrepliziert
 (asynchron, bei Ausfall per Resync), sodass beide Server dieselbe Laufzeit
 kennen.
 
+**Nachtrag (Phase 10):** Unter Last trat der Fehler weiter sporadisch auf.
+Ursache: Nach dem Timeout markiert der Server die Verbindung als gestört
+(neue Epoch); der Partner zieht daraufhin die Tabelle – unter Umständen,
+bevor die gekürzte Fassung gespeichert ist. Die anschließende Nachreplikation
+wurde verworfen („nicht verbunden, der Partner zieht ohnehin alles“). Jetzt
+erhöht ein Server seine Epoch auch dann, wenn er eine Änderung mangels
+Verbindung nicht senden kann; der Partner zieht die Tabelle erneut, und der
+Rückweg nach NORMAL wartet, bis er die aktuelle Epoch abgeglichen hat. Das
+schließt das Fenster für alle Änderungen während einer Unterbrechung, nicht
+nur für gekürzte Leases.
+
+
+## D-069 – DHCPv6: Umfang
+
+Phase 10 setzt stateful DHCPv6 nach RFC 8415 um: SOLICIT/ADVERTISE,
+REQUEST, RENEW, REBIND, RELEASE, DECLINE, CONFIRM, INFORMATION-REQUEST,
+Rapid Commit, Server-Präferenz, IA_NA und – weil es im Plan als optional
+genannt ist und sich mit demselben Allokator ergibt – IA_PD
+(Präfix-Delegation). Relays werden auch mehrstufig unterstützt
+(RELAY-FORW/-REPL, Interface-ID, Client-Link-Layer-Adresse nach RFC 6939).
+Nachrichten-Kodierung mit `github.com/insomniacslk/dhcp/dhcpv6` (dieselbe
+Bibliothek wie für DHCPv4).
+
+Bewusst **nicht** umgesetzt (keine erfundenen Features, Aufwand ohne
+Anforderung): Reconfigure (RFC 8415 Kap. 18.2.11, braucht Authentisierung),
+Server-Unicast-Option (Clients müssen Multicast nutzen; direkte Unicasts
+werden mit `UseMulticast` beantwortet), Leasequery, DNS-Updates (AAAA/PTR in
+`ip6.arpa`), Policies/Klassen für IPv6, Lease-Export/-Import für DHCPv6 und
+die Übernahme von DHCPv6-Scopes aus dem netsh-Dump. Router-Advertisements
+sendet Leasorix nicht – das bleibt Aufgabe des Routers.
+
+## D-070 – Eigenes Datenmodell für IPv6
+
+IPv6 bekommt eigene Tabellen (`scopes6`, `exclusions6`, `reservations6`,
+`options6`, `leases6`) und Pakete (`scope6`, `lease6`, `dhcp6`,
+`dhcpopt6`, `ip6`) statt einer Verallgemeinerung des IPv4-Modells: Der
+IPv4-Pfad rechnet durchgängig mit `uint32` (Bitmaps, Bereichsstatistik,
+Policies, Superscopes, BOOTP, HA-Replikation), und ein Umbau hätte den
+getesteten Kern riskiert. Die Konzepte bleiben gleich (Scope, Ausschluss,
+Reservierung, Optionen auf Server-/Scope-/Reservierungsebene, Snapshot,
+Audit, Config-Version), ebenso UI-Aufbau und API-Stil (`/api/v1/v6/…`).
+
+- Adressen und Präfixe werden als kanonischer Text gespeichert (SQLite
+  kennt keine 128-Bit-Zahlen); Bereichsprüfungen laufen in Go.
+- Reservierungen gelten für eine DUID (Hex, normalisiert) und optional eine
+  IAID (`-1` = jede IA) – das DHCPv6-Gegenstück zur MAC.
+- Die Konfigurationstabellen sind Teil von HA-Config-Sync, Konfigurations-
+  Export (`scopes6`, `server_options6`), Replace-Import und Backup; die
+  Bindungen sind im Backup enthalten.
+
+## D-071 – Adressvergabe in großen Bereichen
+
+Ein /64 hat 2^64 Adressen – Bitmaps oder lineares Suchen wie bei IPv4
+scheiden aus. Die Bindungen liegen im Speicher (Map nach Präfix, persistiert
+vor der Antwort); eine neue Adresse wird deterministisch aus der DUID und
+IAID gewählt: Bereiche bis 65 536 Adressen bzw. Präfixe werden ab einem
+client-spezifischen Startpunkt durchsucht (zuerst nie benutzte), größere mit
+64 client-spezifischen Hash-Kandidaten. Derselbe Client bekommt dadurch auch
+nach Ablauf der Bindung oder nach einem Datenverlust tendenziell dieselbe
+Adresse, und Adressen sind nicht vorhersagbar fortlaufend. Vorrang: Reservierung →
+bestehende Bindung bzw. Angebot → Wunsch des Clients (IA-Hint) → frühere
+Bindung → Suche. ADVERTISE hält die Adresse `offer_timeout` für den Client;
+abgelaufene/freigegebene Bindungen bleiben `expired_grace` für den
+bisherigen Client reserviert, per DECLINE gemeldete Adressen `decline_time`
+gesperrt.
+
+## D-072 – Server-DUID, Lebensdauern, Optionen
+
+- Die Server-DUID (DUID-LLT des ersten konfigurierten Interfaces, sonst
+  DUID-LL mit Zufallsadresse) wird einmal erzeugt und lokal gespeichert
+  (`local_state`, nicht repliziert): Sie bleibt bei Hardwaretausch stabil,
+  und HA-Partner haben verschiedene DUIDs, wie es RFC 8415 verlangt.
+- Lebensdauern in Antworten sind die Restlaufzeit der Bindung, höchstens die
+  konfigurierten Werte; T1/T2 sind 50 %/80 % der bevorzugten Lebensdauer.
+  Adressen, die der Client nicht mehr bekommen soll (Scope geändert,
+  Bindung weg), werden in RENEW/REBIND mit Lebensdauer 0 zurückgegeben.
+- Optionen werden nach dem Option-Request des Clients gesendet; ohne
+  Option-Request alle konfigurierten. Protokoll-Optionen (IA, Status,
+  Server-ID, Präferenz, Rapid Commit, Relay-Optionen …) sind nicht
+  konfigurierbar.
+- Der Hostname einer Bindung kommt aus Option 39 (Client FQDN, erstes Label);
+  er dient nur der Anzeige.
+
+## D-073 – Hochverfügbarkeit für DHCPv6 ohne Bindungs-Replikation
+
+Das HA-Protokoll (Phase 6) repliziert IPv4-Leases; eine zweite
+Replikationsstrecke für IPv6 wäre ein erheblicher Ausbau. Stattdessen:
+
+- Clients werden nach einem Hash der DUID aufgeteilt, Adressen und
+  delegierte Präfixe nach einem Hash der Adresse, im Verhältnis des
+  HA-Modus. Jeder Server vergibt nur aus seinem Anteil – auch wenn der
+  Partner nicht erreichbar oder als ausgefallen bestätigt ist. So entstehen
+  ohne Replikation nie doppelte Bindungen.
+- Preis: Fällt ein Server aus, erhalten seine Clients beim REBIND eine neue
+  Adresse bzw. ein neues Präfix vom Partner. Bei IPv6 mit großen Bereichen
+  und mehreren Adressen pro Interface ist das vertretbar; bei delegierten
+  Präfixen ändert sich das Netz hinter dem Router. Dokumentiert in HA.md.
+- Die Konfiguration (Scopes, Reservierungen, Optionen) wird wie bei IPv4
+  vom Config-Leader repliziert.

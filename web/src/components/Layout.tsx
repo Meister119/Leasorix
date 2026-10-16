@@ -11,6 +11,7 @@ const nav = [
   { to: "/leases", label: "Leases" },
   { to: "/policies", label: "Policies & Filter" },
   { to: "/dns", label: "DNS-Updates" },
+  { to: "/ipv6", label: "IPv6 (DHCPv6)" },
   { to: "/ha", label: "Hochverfügbarkeit" },
   { to: "/audit", label: "Audit-Log" },
   { to: "/settings", label: "Benutzer & Einstellungen" },

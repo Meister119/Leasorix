@@ -117,6 +117,30 @@ dessen Records (gleiche DHCID, kein Konflikt). Die Registrierungsliste
 (*DNS-Updates → Registrierungen*) zeigt jeweils den Stand des eigenen
 Servers.
 
+## DHCPv6
+
+Die DHCPv6-Konfiguration (IPv6-Scopes, Ausschlüsse, Reservierungen,
+Optionen) wird wie die IPv4-Konfiguration vom Config-Leader repliziert.
+DHCPv6-**Bindungen** werden dagegen nicht repliziert (D-073):
+
+- Clients werden über einen Hash der DUID aufgeteilt, Adressen und
+  delegierte Präfixe über einen Hash der Adresse – im selben Verhältnis wie
+  bei IPv4 (Load Balance bzw. Hot Standby mit Reserve). Jeder Server vergibt
+  nur aus seinem Anteil, daher entstehen auch ohne Replikation keine
+  doppelten Bindungen.
+- Nachrichten mit der Server-ID eines Servers (REQUEST, RENEW, RELEASE,
+  DECLINE) beantwortet nur dieser Server.
+- Ist der Partner nicht erreichbar (`COMMUNICATION_INTERRUPTED`,
+  `PARTNER_DOWN`), beantwortet ein Server alle Clients, vergibt aber auch dann
+  nur aus seinem Anteil (der ganze Pool nach MCLT wie bei IPv4 entfällt, weil
+  der Server die Bindungen des Partners nicht kennt). Clients des ausgefallenen
+  Servers erhalten beim REBIND eine neue Adresse bzw. ein neues Präfix aus
+  diesem Anteil; die alte Bindung wird mit Lebensdauer 0 beendet. Bei
+  delegierten Präfixen ändern sich damit die Präfixe hinter dem Router.
+- Im Hot-Standby gehört dem Standby nur die Reserve (`standby_reserve_percent`)
+  – bei einem /64 als Bereich mehr als genug, bei kleinen Bereichen oder
+  Delegations-Pools ggf. größer wählen.
+
 ## Fallback: Split Scope (ohne Replikation)
 
 Für zwei unabhängige Server ohne HA-Partnerschaft: Scope öffnen →
@@ -185,3 +209,5 @@ die Konfigurations-Replikation.
   die Reihenfolge von Änderungen basieren auf Zeitstempeln).
 - Admin-Löschungen während einer Netztrennung können beim Abgleich
   zurückkommen (D-048).
+- DHCPv6-Bindungen werden nicht repliziert; bei Ausfall eines Servers
+  wechseln dessen DHCPv6-Clients die Adresse (siehe [DHCPv6](#dhcpv6)).

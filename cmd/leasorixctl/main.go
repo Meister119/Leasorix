@@ -37,6 +37,9 @@ Commands:
   leases import <FILE>                  merge a lease export (admin)
   dns registrations                     DNS registrations of the server
   dns zones                             zones for dynamic DNS updates
+  v6 scopes                             DHCPv6 scopes with bindings in use
+  v6 leases [--scope S] [-q TEXT]       DHCPv6 bindings (addresses and prefixes)
+  v6 leases delete <address>            free a DHCPv6 address or prefix
   ha status                             high availability status
   ha partner-down --yes                 confirm that the partner is down (admin)
   config export [--format yaml|json] [-f FILE]

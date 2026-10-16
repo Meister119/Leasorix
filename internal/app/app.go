@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,12 +19,15 @@ import (
 	"github.com/meister119/leasorix/internal/buildinfo"
 	"github.com/meister119/leasorix/internal/config"
 	"github.com/meister119/leasorix/internal/dhcp4"
+	"github.com/meister119/leasorix/internal/dhcp6"
 	"github.com/meister119/leasorix/internal/dnsupdate"
 	"github.com/meister119/leasorix/internal/ha"
 	"github.com/meister119/leasorix/internal/health"
 	"github.com/meister119/leasorix/internal/lease"
+	"github.com/meister119/leasorix/internal/lease6"
 	"github.com/meister119/leasorix/internal/metrics"
 	"github.com/meister119/leasorix/internal/scope"
+	"github.com/meister119/leasorix/internal/scope6"
 	"github.com/meister119/leasorix/internal/store"
 )
 
@@ -44,7 +48,12 @@ type App struct {
 	auth   *auth.Service
 	ha     *ha.Node
 	dns    *dnsupdate.Updater
-	lock   *store.Lock
+
+	scopes6 *scope6.Store
+	duid6   string
+	leases6 *lease6.Manager
+	dhcp6   *dhcp6.Server
+	lock    *store.Lock
 	// UI is the embedded web UI handler (set by main when built with it).
 	ui http.Handler
 }
@@ -128,17 +137,33 @@ func (a *App) init(ctx context.Context) error {
 	a.metrics.RegisterScopeCollector(a.scopeSamples)
 	a.audit = audit.NewLog(a.db)
 
+	d6 := a.cfg.DHCP6
+	a.scopes6 = scope6.NewStore(a.db)
+	if err := a.scopes6.Load(ctx); err != nil {
+		return fmt.Errorf("load IPv6 scopes: %w", err)
+	}
+	a.leases6 = lease6.NewManager(lease6.Config{
+		OfferTimeout: d6.OfferTimeout, DeclineTime: d6.DeclineTime, ExpiredGrace: d6.ExpiredGrace,
+		ExpiryInterval: d6.ExpiryInterval, AuditEvents: a.cfg.Audit.LeaseEvents,
+	}, a.log.With("component", "lease6"), a.db)
+	if err := a.leases6.Load(ctx); err != nil {
+		return fmt.Errorf("load IPv6 leases: %w", err)
+	}
+	a.scopes6.OnChange(a.leases6.ScopesChanged)
+
 	if a.cfg.HA.Enabled() {
 		n, err := ha.NewNode(ctx, ha.Options{
 			Config: a.cfg.HA, Log: a.log.With("component", "ha"), DB: a.db, Leases: a.leases, Scopes: a.scopes,
-			Metrics: a.metrics.NewHA(), Version: buildinfo.Version,
+			Reload: a.scopes6.Load, Metrics: a.metrics.NewHA(), Version: buildinfo.Version,
 		})
 		if err != nil {
 			return fmt.Errorf("high availability: %w", err)
 		}
 		a.ha = n
 		a.leases.SetCoordinator(n)
+		a.leases6.SetCoordinator(n)
 		a.scopes.OnChange(func(*scope.Snapshot) { n.Kick() })
+		a.scopes6.OnChange(func(*scope6.Snapshot) { n.Kick() })
 	}
 
 	a.dns = dnsupdate.NewUpdater(a.log.With("component", "dns"), a.db, a.scopes, a.leases, dnsupdate.NewClient())
@@ -158,6 +183,26 @@ func (a *App) init(ctx context.Context) error {
 		a.health.Add("dhcp4", a.dhcp4.Ready)
 	} else {
 		a.log.Warn("no dhcp4.interfaces configured; DHCPv4 service is disabled")
+	}
+
+	if len(d6.Interfaces) > 0 {
+		duid, err := dhcp6.ServerDUID(ctx, a.db, d6.Interfaces, time.Now())
+		if err != nil {
+			return fmt.Errorf("DHCPv6 server DUID: %w", err)
+		}
+		dm6 := a.metrics.NewDHCP6()
+		a.leases6.SetEvents(dm6)
+		h6 := dhcp6.NewHandler(a.log.With("component", "dhcp6"), a.scopes6, a.leases6, duid)
+		h6.SetMetrics(dm6)
+		h6.SetFilter(func(mac string) (bool, string) { return a.scopes.Snapshot().Filtered(mac) })
+		if a.ha != nil {
+			h6.SetPartner(a.ha)
+		}
+		a.dhcp6 = dhcp6.NewServer(a.log.With("component", "dhcp6"), h6, d6.Interfaces, d6.Workers)
+		a.dhcp6.SetMetrics(dm6)
+		a.health.Add("dhcp6", a.dhcp6.Ready)
+		a.duid6 = hex.EncodeToString(duid.ToBytes())
+		a.log.Info("DHCPv6 enabled", "server_duid", a.duid6)
 	}
 
 	a.auth = auth.NewService(a.db, auth.Config{
@@ -192,9 +237,13 @@ func (a *App) init(ctx context.Context) error {
 			StartedAt:         time.Now(),
 			Interfaces:        d.Interfaces,
 			ConflictDetection: a.prober != nil,
+			Interfaces6:       d6.Interfaces,
+			ServerDUID6:       a.duid6,
 		},
 		HA:               haDep,
 		DNS:              a.dns,
+		Scopes6:          a.scopes6,
+		Leases6:          a.leases6,
 		UI:               a.ui,
 		TLS:              tlsCfg,
 		LoginMaxFailures: a.cfg.Auth.LoginMaxFailures,
@@ -269,6 +318,10 @@ func (a *App) Run(ctx context.Context) error {
 	g.Go(func() error { return a.leases.Run(gctx) })
 	g.Go(func() error { return a.purgeAudit(gctx) })
 	g.Go(func() error { return a.dns.Run(gctx) })
+	g.Go(func() error { return a.leases6.Run(gctx) })
+	if a.dhcp6 != nil {
+		g.Go(func() error { return a.dhcp6.Run(gctx) })
+	}
 	if a.prober != nil {
 		g.Go(func() error { return a.prober.Run(gctx) })
 	}

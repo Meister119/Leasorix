@@ -212,6 +212,51 @@ test("DNS updates: TSIG key with server snippet, zone, scope settings, registrat
   await expect(row.getByText(/Fehler|ausstehend/)).toBeVisible();
 });
 
+test("IPv6: scope with prefix delegation, option, reservation and export", async ({ page }) => {
+  await login(page, "admin", adminPassword);
+  await page.getByRole("link", { name: "IPv6 (DHCPv6)" }).click();
+  // The E2E server runs without DHCPv6 interfaces; the configuration can still be maintained.
+  await expect(page.getByText(/DHCPv6 ist auf dieser Instanz nicht aktiv/)).toBeVisible();
+  await page.getByRole("button", { name: "Neuer IPv6-Scope" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name", { exact: true }).fill("E2E-v6");
+  await dialog.getByLabel("Präfix (Link)").fill("2001:db8:e2e::/64");
+  await dialog.getByLabel("Startadresse").fill("2001:db8:e2e::100");
+  await dialog.getByLabel("Endadresse").fill("2001:db8:e2e::1ff");
+  await dialog.getByLabel("Delegations-Pool").fill("2001:db8:e2e::/48");
+  await dialog.getByRole("button", { name: "Scope anlegen" }).click();
+  // The server rejects a delegation pool that overlaps the link prefix.
+  await expect(dialog.getByText("must not overlap the link prefix", { exact: true })).toBeVisible();
+  await dialog.getByLabel("Delegations-Pool").fill("2001:db8:e200::/40");
+  await dialog.getByRole("button", { name: "Scope anlegen" }).click();
+  await expect(page.getByRole("heading", { name: "E2E-v6" })).toBeVisible();
+  await expect(page.getByText("delegierbare Präfixe").locator("xpath=following-sibling::dd[1]")).toHaveText("65536");
+
+  await page.getByRole("tab", { name: "Optionen" }).click();
+  await page.getByLabel("Option", { exact: true }).selectOption("23");
+  await page.getByLabel("Wert").fill("2001:db8:e2e::53");
+  await page.getByRole("button", { name: "Setzen" }).click();
+  await expect(page.getByRole("cell", { name: "2001:db8:e2e::53" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Reservierungen" }).click();
+  await page.getByLabel("DUID").fill("00:03:00:01:02:00:00:00:e2:e2");
+  await page.getByLabel("IPv6-Adresse").fill("2001:db8:e2f::10");
+  await page.getByRole("button", { name: "Anlegen" }).click();
+  await expect(page.getByText("must be an address in 2001:db8:e2e::/64", { exact: true })).toBeVisible();
+  await page.getByLabel("IPv6-Adresse").fill("2001:db8:e2e::10");
+  await page.getByRole("button", { name: "Anlegen" }).click();
+  await expect(page.getByRole("cell", { name: "2001:db8:e2e::10" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "0003000102000000e2e2" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();
+  await page.getByRole("tab", { name: "Sicherung & Import" }).click();
+  const [yaml] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "YAML" }).click()]);
+  const doc = readFileSync(await yaml.path(), "utf8");
+  expect(doc).toContain("scopes6:");
+  expect(doc).toContain("prefix: 2001:db8:e2e::/64");
+  expect(doc).toContain("duid: 0003000102000000e2e2");
+});
+
 test("roles: a read-only user cannot change anything", async ({ page }) => {
   await login(page, "admin", adminPassword);
   await page.getByRole("link", { name: "Benutzer & Einstellungen" }).click();

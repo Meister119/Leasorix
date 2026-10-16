@@ -34,6 +34,7 @@ type Config struct {
 	Log     LogConfig   `yaml:"log"`
 	HTTP    HTTPConfig  `yaml:"http"`
 	DHCP4   DHCP4Config `yaml:"dhcp4"`
+	DHCP6   DHCP6Config `yaml:"dhcp6"`
 	Audit   AuditConfig `yaml:"audit"`
 	Auth    AuthConfig  `yaml:"auth"`
 	HA      HAConfig    `yaml:"ha"`
@@ -124,6 +125,45 @@ type DHCP4Config struct {
 	// BOOTPLeaseTime is the lease duration of BOOTP clients (reservations
 	// and scopes with BOOTP enabled).
 	BOOTPLeaseTime time.Duration `yaml:"bootp_lease_time"`
+}
+
+// DHCP6Config configures the DHCPv6 server.
+type DHCP6Config struct {
+	// Interfaces to serve (each gets a socket joined to ff02::1:2).
+	// Relayed traffic must arrive on one of them. Empty = DHCPv6 off.
+	Interfaces []string `yaml:"interfaces"`
+	// Workers bounds the number of messages processed concurrently.
+	Workers int `yaml:"workers"`
+	// OfferTimeout is how long an advertised address is held.
+	OfferTimeout time.Duration `yaml:"offer_timeout"`
+	// DeclineTime blocks declined addresses for this long.
+	DeclineTime time.Duration `yaml:"decline_time"`
+	// ExpiredGrace keeps expired bindings for the previous client.
+	ExpiredGrace time.Duration `yaml:"expired_grace"`
+	// ExpiryInterval is the period of the expiry worker.
+	ExpiryInterval time.Duration `yaml:"expiry_interval"`
+}
+
+func (d *DHCP6Config) validate() []error {
+	var errs []error
+	seen := map[string]bool{}
+	for _, n := range d.Interfaces {
+		if strings.TrimSpace(n) == "" || seen[n] {
+			errs = append(errs, fmt.Errorf("dhcp6.interfaces: empty or duplicate entry %q", n))
+		}
+		seen[n] = true
+	}
+	if d.Workers < 1 {
+		errs = append(errs, errors.New("dhcp6.workers must be at least 1"))
+	}
+	for name, v := range map[string]time.Duration{
+		"offer_timeout": d.OfferTimeout, "decline_time": d.DeclineTime, "expired_grace": d.ExpiredGrace, "expiry_interval": d.ExpiryInterval,
+	} {
+		if v <= 0 {
+			errs = append(errs, fmt.Errorf("dhcp6.%s must be positive", name))
+		}
+	}
+	return errs
 }
 
 // ConflictDetectionConfig configures ICMP conflict detection.
@@ -260,6 +300,13 @@ func Default() Config {
 			ConfigLeader:          HAPrimary,
 			TLS:                   HATLSConfig{Mode: HATLSMutual},
 		},
+		DHCP6: DHCP6Config{
+			Workers:        64,
+			OfferTimeout:   60 * time.Second,
+			DeclineTime:    24 * time.Hour,
+			ExpiredGrace:   4 * time.Hour,
+			ExpiryInterval: 10 * time.Second,
+		},
 		DHCP4: DHCP4Config{
 			Workers:        256,
 			OfferTimeout:   60 * time.Second,
@@ -355,6 +402,7 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("audit.retention must not be negative (0 = keep forever)"))
 	}
 	errs = append(errs, c.DHCP4.validate()...)
+	errs = append(errs, c.DHCP6.validate()...)
 	errs = append(errs, c.HA.validate()...)
 	return errors.Join(errs...)
 }

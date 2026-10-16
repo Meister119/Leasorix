@@ -185,6 +185,8 @@ func isConfigWrite(method, path string) bool {
 	case strings.HasPrefix(p, "/leases"):
 		// Converting a lease creates a reservation (configuration).
 		return strings.HasSuffix(p, "/reservation")
+	case strings.HasPrefix(p, "/v6/leases"):
+		return false
 	}
 	return true
 }

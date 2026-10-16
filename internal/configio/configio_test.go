@@ -47,7 +47,7 @@ func encode(t *testing.T, d *Document, asYAML bool) []byte {
 
 func exportYAML(t *testing.T, s *scope.Store) string {
 	t.Helper()
-	d, err := Export(context.Background(), s, time.Unix(0, 0))
+	d, err := Export(context.Background(), s, nil, time.Unix(0, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestExportImportRoundTrip(t *testing.T) {
 	want := exportYAML(t, src)
 
 	for _, asYAML := range []bool{true, false} {
-		d, err := Export(ctx, src, time.Unix(0, 0))
+		d, err := Export(ctx, src, nil, time.Unix(0, 0))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestImportMergeConflictsAndDryRun(t *testing.T) {
 	ctx := context.Background()
 	_, src := openStore(t)
 	seedConfig(t, src)
-	d, err := Export(ctx, src, time.Now())
+	d, err := Export(ctx, src, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestReplaceKeepsLeasesInCoveredSubnets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	d, err := Export(ctx, s, time.Now())
+	d, err := Export(ctx, s, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestNetshImport(t *testing.T) {
 		if res == nil || res.Hostname != "printer01.example.local" || res.Description != "Printer 1st floor" {
 			t.Fatalf("reservation %+v", res)
 		}
-		exp, err := Export(ctx, s, time.Now())
+		exp, err := Export(ctx, s, nil, time.Now())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -36,6 +36,7 @@ function ImportSummary({ r }: { r: S["ConfigImportResult"] }) {
     [r.mac_filters, "MAC-Filter"],
     [r.superscopes, "Superscopes"],
     [r.dns_zones, "DNS-Zonen"],
+    [r.scopes6, "IPv6-Scopes"],
   ];
   return (
     <Alert kind="success">
@@ -101,7 +102,7 @@ function ConfigExport() {
   return (
     <Section title="Konfiguration exportieren">
       <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
-        Die komplette DHCP-Konfiguration (Scopes, Superscopes, Ausschlüsse, Reservierungen, Optionen, Klassen, Policies, Filter) als Datei.
+        Die komplette DHCP-Konfiguration (Scopes, Superscopes, Ausschlüsse, Reservierungen, Optionen, Klassen, Policies, Filter, DNS-Zonen, IPv6-Scopes) als Datei.
         Benutzer und API-Tokens sind nicht enthalten.
       </p>
       <div className="flex gap-2">

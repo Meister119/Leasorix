@@ -14,7 +14,7 @@ in [DECISIONS.md](DECISIONS.md).
 | 7 – Komfort & Kompatibilität | ✅ abgeschlossen |
 | 8 – Docker & Compose | ✅ abgeschlossen |
 | 9 – DNS-Integration | ✅ abgeschlossen |
-| 10 – DHCPv6 (optional) | offen |
+| 10 – DHCPv6 (optional) | ✅ abgeschlossen |
 
 ---
 
@@ -393,4 +393,74 @@ mTLS mit per CLI erzeugten Zertifikaten)
 - Kein GSS-TSIG (Windows-DNS mit „nur sicheren“ Updates); Windows-DNS nur
   mit unsignierten Updates (D-067).
 - Keine AAAA-Records (kommen mit DHCPv6 in Frage, Phase 10).
+
+## Phase 10 – DHCPv6 (optional)
+
+**Umgesetzt**
+- **Stateful DHCPv6 nach RFC 8415:** SOLICIT/ADVERTISE, REQUEST, RENEW,
+  REBIND, RELEASE, DECLINE, CONFIRM, INFORMATION-REQUEST; Rapid Commit,
+  Server-Präferenz, Server-ID-Regeln, `UseMulticast` für Unicast,
+  Statuscodes (NoAddrsAvail, NoPrefixAvail, NoBinding, NotOnLink).
+- **IA_NA** (Adressen) und **IA_PD** (Präfix-Delegation für Router) mit
+  deterministischer Vergabe auch in großen Bereichen (ganze /64, D-071),
+  Client-Hints, Angebots-Haltezeit, Grace-Zeit für den bisherigen Client,
+  DECLINE-Sperre, Expiry; Bindungen persistent (`leases6`).
+- **Scopes** mit Präfix, Adressbereich, Lebensdauern, Delegations-Pool,
+  Präferenz, Rapid Commit; Ausschlüsse; **Reservierungen per DUID**
+  (optional IAID); Optionen auf Server-/Scope-/Reservierungsebene
+  (Katalog: DNS 23/24, SIP, NIS, SNTP, NTP 56, Boot-URL 59, AFTR 64 …, eigene
+  Codes mit Typ). Eigenes Datenmodell (Migration 00007, D-070).
+- **Server:** Socket pro Interface (`[::]:547`, `ff02::1:2`), Relays auch
+  mehrstufig (link-address, Interface-ID, RFC-6939-Client-MAC), persistente
+  Server-DUID, MAC-Filter für Clients mit bekannter MAC, Metriken
+  `leasorix_dhcp6_*`, Audit (`scope6.*`, `exclusion6.*`, `reservation6.*`,
+  `option6.*`, `lease6.delete`; Bindungs-Ereignisse wie bei IPv4 optional).
+- **HA:** Konfiguration wird repliziert (Config-Sync, Read-only-Partner);
+  Bindungen nicht – Aufteilung von Clients und Adressen nach Hash, jeder
+  Server vergibt nur aus seinem Anteil (D-073).
+- REST-API `/api/v1/v6/…` (Scopes, Ausschlüsse, Reservierungen, Optionen,
+  Bindungen, Statistik), Web-UI-Seite *IPv6 (DHCPv6)* (Scopes mit Detail-
+  ansicht, Reservierungen, Optionen, Leases, Server-Optionen),
+  `leasorixctl v6 scopes|leases`, Konfigurations-Export/-Import
+  (`scopes6`, `server_options6`), Backup/Restore inkl. Bindungen, Bootstrap-
+  Abschnitt `dhcp6`, `make fuzz` um `FuzzHandle6` erweitert.
+- Korrektur HA (IPv4): Änderungen, die während einer kurzen Unterbrechung
+  nicht gesendet werden konnten, gingen verloren, wenn der Partner seinen
+  Abgleich schon vorher gemacht hatte (sporadisch roter HA-Test unter Last).
+  Jetzt erzwingt jede nicht gesendete Änderung einen weiteren Abgleich
+  (Nachtrag D-068, Unit-Test der Zustandsmaschine).
+- Doku: [ADMIN.md](ADMIN.md#12-dhcpv6), [HA.md](HA.md#dhcpv6),
+  ARCHITECTURE, DOCKER, DECISIONS D-069…D-073.
+
+**Tests**
+- Unit: 128-Bit-Arithmetik und Bucket-Verteilung, Scope-Validierung,
+  Reservierungen/Optionen/Snapshot, Allokator (Stabilität pro Client,
+  Erschöpfung, Ausschlüsse, Reservierungen, Hints, PD, /64-Bereich,
+  HA-Anteil, Expiry, Scope-Entfernung), Handler (kompletter Austausch,
+  Renew/Rebind, Release, Rapid Commit, Decline, Information-Request, Relay,
+  Filter, erschöpfter Scope) und Fuzzing des Paketpfads, HA-Aufteilung
+  komplementär, API (Rollen, Read-only-Partner, Validierung), Config-
+  Roundtrip, Bootstrap-Config, `leasorixctl`.
+- Playwright-E2E 9/9 (neu: IPv6-Scope mit Präfix-Delegation,
+  Server-Validierung, Option, Reservierung, Export) ✅
+- Integration: `test/integration/dhcp6_test.go` (Teil von
+  `make test-integration`) mit ISC `dhclient -6` (Adresse, Präfix-Delegation,
+  Release), busybox `udhcpc6`, Go-Client (Solicit/Request/Renew/
+  Information-Request) und einem Relay (RELAY-FORW mit Interface-ID).
+- Alle Unit-Tests (Race-Detector), golangci-lint (auch mit Build-Tag
+  `integration`) und die 17 bestehenden Integrationstests inkl. HA und DNS
+  (BIND/PowerDNS) ✅; der DHCPv6-Integrationstest ist hier übersprungen (s. u.).
+- CI-Workflow: `busybox` für `udhcpc6` installiert, manueller Start per
+  `workflow_dispatch` möglich.
+
+**Offene Punkte / Hinweise**
+- Der Kernel dieser Entwicklungsumgebung ist mit `ipv6.disable=1` gebootet;
+  der DHCPv6-Integrationstest überspringt sich hier und läuft erst in CI
+  (GitHub-Runner mit IPv6). Der Socket-Pfad (`server_linux.go`) ist lokal
+  daher nur über die Handler-Tests und den Build abgedeckt.
+- Nicht umgesetzt (D-069): DNS-Updates für DHCPv6 (AAAA), Policies/Klassen
+  für IPv6, Reconfigure, Server-Unicast, Leasequery, DHCPv6-Lease-Export,
+  netsh-Übernahme von DHCPv6-Scopes.
+- HA: Bei Ausfall eines Servers wechseln dessen DHCPv6-Clients die Adresse
+  (D-073).
 
