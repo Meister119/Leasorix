@@ -3,7 +3,55 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api, unwrap } from "../api/client";
 import { Badge, Card, PageHeader, Progress, Spinner, Table, Td } from "../components/ui";
+import { messages } from "../i18n";
 import { formatDateTime, haStateLabel } from "../lib/format";
+
+const m = messages({
+  en: {
+    subtitle: "Utilization, packets and events at a glance",
+    activeLeases: "Active leases",
+    freeAddresses: "Free addresses",
+    ofUsable: "of {n} usable",
+    pps: "Packets/s",
+    received: "{n} received in total",
+    ha: "High availability",
+    off: "off",
+    partner: "Partner {id}: {status}",
+    connected: "connected",
+    unreachable: "unreachable",
+    single: "Single server",
+    utilization: "Utilization per scope",
+    scope: "Scope",
+    inUse: "In use",
+    utilizationCol: "Utilization",
+    recent: "Recent events",
+    showAll: "Show all",
+    noEvents: "No events yet.",
+    dropped: "Unanswered packets",
+  },
+  de: {
+    subtitle: "Übersicht über Auslastung, Pakete und Ereignisse",
+    activeLeases: "Aktive Leases",
+    freeAddresses: "Freie Adressen",
+    ofUsable: "von {n} nutzbaren",
+    pps: "Pakete/s",
+    received: "{n} empfangen gesamt",
+    ha: "Hochverfügbarkeit",
+    off: "aus",
+    partner: "Partner {id}: {status}",
+    connected: "verbunden",
+    unreachable: "nicht erreichbar",
+    single: "Einzelinstanz",
+    utilization: "Auslastung je Scope",
+    scope: "Scope",
+    inUse: "Belegt",
+    utilizationCol: "Auslastung",
+    recent: "Letzte Ereignisse",
+    showAll: "Alle anzeigen",
+    noEvents: "Noch keine Ereignisse.",
+    dropped: "Unbeantwortete Pakete",
+  },
+});
 
 function sum(m: Record<string, number> | undefined) {
   return Object.values(m ?? {}).reduce((a, b) => a + b, 0);
@@ -48,20 +96,20 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="Übersicht über Auslastung, Pakete und Ereignisse" />
+      <PageHeader title="Dashboard" subtitle={m("subtitle")} />
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Aktive Leases" value={s?.active_leases ?? 0} />
-        <Stat label="Freie Adressen" value={available} hint={`von ${usable} nutzbaren`} />
-        <Stat label="Pakete/s" value={pps === null ? "–" : pps.toFixed(1)} hint={`${sum(s?.packets_received)} empfangen gesamt`} />
+        <Stat label={m("activeLeases")} value={s?.active_leases ?? 0} />
+        <Stat label={m("freeAddresses")} value={available} hint={m("ofUsable", { n: usable })} />
+        <Stat label={m("pps")} value={pps === null ? "–" : pps.toFixed(1)} hint={m("received", { n: sum(s?.packets_received) })} />
         <Stat
-          label="Hochverfügbarkeit"
-          value={ha.data?.enabled ? (haStateLabel[ha.data.state ?? ""] ?? ha.data.state ?? "aktiv") : "aus"}
-          hint={ha.data?.enabled ? `Partner ${ha.data.peer_id ?? "–"}: ${ha.data.connected ? "verbunden" : "nicht erreichbar"}` : "Einzelinstanz"}
+          label={m("ha")}
+          value={ha.data?.enabled ? haStateLabel(ha.data.state ?? "") : m("off")}
+          hint={ha.data?.enabled ? m("partner", { id: ha.data.peer_id ?? "–", status: m(ha.data.connected ? "connected" : "unreachable") }) : m("single")}
         />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Auslastung je Scope">
-          <Table head={["Scope", "Belegt", "Auslastung"]} empty={s?.scopes.length === 0}>
+        <Card title={m("utilization")}>
+          <Table head={[m("scope"), m("inUse"), m("utilizationCol")]} empty={s?.scopes.length === 0}>
             {s?.scopes.map((sc) => (
               <tr key={sc.scope_id}>
                 <Td>
@@ -80,7 +128,7 @@ export function DashboardPage() {
             ))}
           </Table>
         </Card>
-        <Card title="Letzte Ereignisse" actions={<Link to="/audit" className="text-xs text-teal-700 hover:underline dark:text-teal-400">Alle anzeigen</Link>}>
+        <Card title={m("recent")} actions={<Link to="/audit" className="text-xs text-teal-700 hover:underline dark:text-teal-400">{m("showAll")}</Link>}>
           <ul className="divide-y divide-slate-100 text-sm dark:divide-slate-800">
             {events.data?.items.map((e) => (
               <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -93,12 +141,12 @@ export function DashboardPage() {
                 </span>
               </li>
             ))}
-            {events.data?.items.length === 0 && <li className="py-4 text-center text-slate-500">Noch keine Ereignisse.</li>}
+            {events.data?.items.length === 0 && <li className="py-4 text-center text-slate-500">{m("noEvents")}</li>}
           </ul>
         </Card>
       </div>
       {s && Object.keys(s.packets_dropped).length > 0 && (
-        <Card title="Unbeantwortete Pakete" className="mt-6">
+        <Card title={m("dropped")} className="mt-6">
           <div className="flex flex-wrap gap-2">
             {Object.entries(s.packets_dropped).map(([k, v]) => (
               <Badge key={k} color="amber">

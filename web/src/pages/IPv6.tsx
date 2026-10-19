@@ -4,8 +4,241 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api, ApiError, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { Alert, Badge, Button, Card, Input, Modal, PageHeader, Select, Spinner, Table, Tabs, Td, TextArea, Toggle, useFeedback } from "../components/ui";
+import { messages } from "../i18n";
+import { c } from "../i18n/common";
 import { formatDateTime, formatDuration, relativeTime, stateLabel } from "../lib/format";
 import { hasErrors, type Errors } from "../lib/validate";
+
+const m = messages({
+  en: {
+    title: "IPv6 (DHCPv6)",
+    subtitle: "Stateful DHCPv6: addresses (IA_NA) and prefix delegation (IA_PD)",
+    newScope: "New IPv6 scope",
+    inactive1: "DHCPv6 is not active on this instance (no interfaces configured under",
+    inactive2: "). You can still edit the configuration.",
+    scopes: "Scopes",
+    reservations: "Reservations",
+    leases: "Leases",
+    serverOptions: "Server options",
+    serverOptionsTitle: "Server options (DHCPv6)",
+    serverOptionsHint: "apply to all IPv6 scopes",
+    scopeDeleted: "IPv6 scope deleted",
+    scopeCreated: "IPv6 scope “{name}” created",
+    scopeSaved: "IPv6 scope saved",
+    deleteScope: "Delete IPv6 scope “{name}” including its reservations, options and leases?",
+    name: "Name",
+    prefix: "Prefix",
+    addressRange: "Address range",
+    prefixDelegation: "Prefix delegation",
+    lifetime: "Lifetime",
+    status: "Status",
+    inUse: "In use",
+    usedAddresses: "{n} addr.",
+    usedPrefixes: "{n} pref.",
+    nameRequired: "Enter a name",
+    prefixInvalid: "IPv6 prefix, e.g. 2001:db8:1::/64",
+    startEnd: "Enter start and end or leave both empty",
+    rangeOrPd: "Enter an address range and/or prefix delegation",
+    validMin: "at least 60 seconds",
+    preferredInvalid: "positive and not longer than the valid lifetime",
+    namePlaceholder: "e.g. Office LAN v6",
+    prefixLink: "Prefix (link)",
+    prefixFixed: "The prefix of a scope cannot be changed",
+    prefixHint: "Prefix of the network the clients are on",
+    startAddress: "Start address",
+    startHint: "empty = no address assignment",
+    endAddress: "End address",
+    preferredLifetime: "Preferred lifetime (s)",
+    validLifetime: "Valid lifetime (s)",
+    pdPool: "Delegation pool",
+    pdPoolHint: "empty = no prefix delegation",
+    pdLength: "Delegated prefix length",
+    pdLengthHint: "e.g. 56 for a /56 per router",
+    preference: "Server preference (0–255)",
+    preferenceHint: "higher = preferred; 255 = accept immediately",
+    rapidCommit: "Rapid Commit (two-message exchange)",
+    scopeActive: "Scope active",
+    description: "Description",
+    createScope: "Create scope",
+    createNote: "DNS servers (option 23) and the domain search list (option 24) can be set under “Options” after the scope has been created.",
+    overview: "Overview",
+    exclusions: "Exclusions",
+    options: "Options",
+    scopeOptions: "Scope options",
+    scopeOptionsHint: "override server options",
+    statistics: "Statistics",
+    addressesInRange: "Addresses in range",
+    assignedAddresses: "Assigned addresses",
+    declined: "Blocked (decline)",
+    prefixCapacity: "Delegable prefixes",
+    delegatedPrefixes: "Delegated prefixes",
+    settings: "Settings",
+    exclusionAdded: "Exclusion added",
+    exclusionRanges: "Exclusion ranges",
+    exclusionRangesHint: "Addresses are not assigned dynamically",
+    from: "From",
+    to: "To",
+    addressRequired: "Enter an address",
+    toHint: "empty = single address only",
+    duidInvalid: "DUID in hex, e.g. 00:03:00:01:02:00:00:00:00:01",
+    iaidInvalid: "Number or empty (any IA)",
+    ipRequired: "Enter an IPv6 address",
+    scopeRequired: "Select a scope",
+    reservationCreated: "Reservation created",
+    reservationDeleted: "Reservation deleted",
+    reservationSaved: "Reservation saved",
+    newReservation: "New reservation",
+    any: "any",
+    ipv6Address: "IPv6 address",
+    hostname: "Hostname",
+    scope: "Scope",
+    scopePlaceholder: "– Scope –",
+    deleteReservation: "Delete reservation {ip}?",
+    reservationTitle: "Reservation {ip}",
+    iaidHint: "empty = any IA of the client",
+    reservationOptions: "Reservation options (highest priority)",
+    hintIpv6List: "separate multiple addresses with commas, e.g. 2001:db8::53",
+    hintDomainList: "e.g. example.com, corp.example.com",
+    hintString: "text",
+    hintHex: "e.g. 01:0a:ff",
+    hintNtpServers: "addresses or names, separated by commas",
+    optionSaved: "Option saved",
+    optionRemoved: "Option removed",
+    code: "Code",
+    type: "Type",
+    value: "Value",
+    removeOption: "Remove option {code} ({name})?",
+    selectOption: "Select an option",
+    codeRange: "Enter a code from 1 to 65535",
+    option: "Option",
+    otherOption: "other (enter code and type)",
+    leaseDeleted: "Lease deleted",
+    searchHint: "Address, DUID, hostname",
+    addressPrefix: "Address / prefix",
+    kind: "Kind",
+    state: "State",
+    expires: "Expires",
+    kindPrefix: "Prefix",
+    kindAddress: "Address",
+    lifetimes: "preferred until {preferred}, valid until {valid}",
+    deleteLeasePrefix: "Delete lease {label}? The prefix becomes available again immediately.",
+    deleteLeaseAddress: "Delete lease {label}? The address becomes available again immediately.",
+  },
+  de: {
+    title: "IPv6 (DHCPv6)",
+    subtitle: "Stateful DHCPv6: Adressen (IA_NA) und Präfix-Delegation (IA_PD)",
+    newScope: "Neuer IPv6-Scope",
+    inactive1: "DHCPv6 ist auf dieser Instanz nicht aktiv (keine Interfaces unter",
+    inactive2: " konfiguriert). Die Konfiguration lässt sich trotzdem pflegen.",
+    scopes: "Scopes",
+    reservations: "Reservierungen",
+    leases: "Leases",
+    serverOptions: "Server-Optionen",
+    serverOptionsTitle: "Server-Optionen (DHCPv6)",
+    serverOptionsHint: "gelten für alle IPv6-Scopes",
+    scopeDeleted: "IPv6-Scope gelöscht",
+    scopeCreated: "IPv6-Scope „{name}“ angelegt",
+    scopeSaved: "IPv6-Scope gespeichert",
+    deleteScope: "IPv6-Scope „{name}“ samt Reservierungen, Optionen und Leases löschen?",
+    name: "Name",
+    prefix: "Präfix",
+    addressRange: "Adressbereich",
+    prefixDelegation: "Präfix-Delegation",
+    lifetime: "Lebensdauer",
+    status: "Status",
+    inUse: "Belegt",
+    usedAddresses: "{n} Adr.",
+    usedPrefixes: "{n} Präf.",
+    nameRequired: "Name angeben",
+    prefixInvalid: "IPv6-Präfix, z. B. 2001:db8:1::/64",
+    startEnd: "Start und Ende angeben oder beide leer lassen",
+    rangeOrPd: "Adressbereich und/oder Präfix-Delegation angeben",
+    validMin: "mindestens 60 Sekunden",
+    preferredInvalid: "positiv und nicht länger als die gültige Lebensdauer",
+    namePlaceholder: "z. B. Büro-LAN v6",
+    prefixLink: "Präfix (Link)",
+    prefixFixed: "Das Präfix eines Scopes ist unveränderlich",
+    prefixHint: "Präfix des Netzes, in dem die Clients stehen",
+    startAddress: "Startadresse",
+    startHint: "leer = keine Adressvergabe",
+    endAddress: "Endadresse",
+    preferredLifetime: "Bevorzugte Lebensdauer (s)",
+    validLifetime: "Gültige Lebensdauer (s)",
+    pdPool: "Delegations-Pool",
+    pdPoolHint: "leer = keine Präfix-Delegation",
+    pdLength: "Länge delegierter Präfixe",
+    pdLengthHint: "z. B. 56 für /56 je Router",
+    preference: "Server-Präferenz (0–255)",
+    preferenceHint: "höher = bevorzugt; 255 = sofort annehmen",
+    rapidCommit: "Rapid Commit (2-Nachrichten-Austausch)",
+    scopeActive: "Scope aktiv",
+    description: "Beschreibung",
+    createScope: "Scope anlegen",
+    createNote: "DNS-Server (Option 23) und Domänen-Suchliste (Option 24) lassen sich nach dem Anlegen unter „Optionen“ festlegen.",
+    overview: "Übersicht",
+    exclusions: "Ausschlüsse",
+    options: "Optionen",
+    scopeOptions: "Scope-Optionen",
+    scopeOptionsHint: "überschreiben Server-Optionen",
+    statistics: "Statistik",
+    addressesInRange: "Adressen im Bereich",
+    assignedAddresses: "vergebene Adressen",
+    declined: "gesperrt (Decline)",
+    prefixCapacity: "delegierbare Präfixe",
+    delegatedPrefixes: "delegierte Präfixe",
+    settings: "Einstellungen",
+    exclusionAdded: "Ausschluss angelegt",
+    exclusionRanges: "Ausschlussbereiche",
+    exclusionRangesHint: "Adressen werden nicht dynamisch vergeben",
+    from: "Von",
+    to: "Bis",
+    addressRequired: "Adresse angeben",
+    toHint: "leer = nur eine Adresse",
+    duidInvalid: "DUID als Hex, z. B. 00:03:00:01:02:00:00:00:00:01",
+    iaidInvalid: "Zahl oder leer (beliebige IA)",
+    ipRequired: "IPv6-Adresse angeben",
+    scopeRequired: "Scope wählen",
+    reservationCreated: "Reservierung angelegt",
+    reservationDeleted: "Reservierung gelöscht",
+    reservationSaved: "Reservierung gespeichert",
+    newReservation: "Neue Reservierung",
+    any: "beliebig",
+    ipv6Address: "IPv6-Adresse",
+    hostname: "Hostname",
+    scope: "Scope",
+    scopePlaceholder: "– Scope –",
+    deleteReservation: "Reservierung {ip} löschen?",
+    reservationTitle: "Reservierung {ip}",
+    iaidHint: "leer = beliebige IA des Clients",
+    reservationOptions: "Reservierungs-Optionen (höchste Priorität)",
+    hintIpv6List: "mehrere Adressen mit Komma trennen, z. B. 2001:db8::53",
+    hintDomainList: "z. B. example.com, corp.example.com",
+    hintString: "Text",
+    hintHex: "z. B. 01:0a:ff",
+    hintNtpServers: "Adressen oder Namen, mit Komma getrennt",
+    optionSaved: "Option gespeichert",
+    optionRemoved: "Option entfernt",
+    code: "Code",
+    type: "Typ",
+    value: "Wert",
+    removeOption: "Option {code} ({name}) entfernen?",
+    selectOption: "Option auswählen",
+    codeRange: "Code 1–65535 angeben",
+    option: "Option",
+    otherOption: "andere (Code und Typ angeben)",
+    leaseDeleted: "Lease gelöscht",
+    searchHint: "Adresse, DUID, Hostname",
+    addressPrefix: "Adresse / Präfix",
+    kind: "Art",
+    state: "Zustand",
+    expires: "Läuft ab",
+    kindPrefix: "Präfix",
+    kindAddress: "Adresse",
+    lifetimes: "bevorzugt bis {preferred}, gültig bis {valid}",
+    deleteLeasePrefix: "Lease {label} löschen? Das Präfix wird sofort wieder frei.",
+    deleteLeaseAddress: "Lease {label} löschen? Die Adresse wird sofort wieder frei.",
+  },
+});
 
 export function useScopes6() {
   return useQuery({ queryKey: ["scopes6"], queryFn: () => unwrap(api.GET("/v6/scopes")) });
@@ -25,13 +258,13 @@ export function IPv6Page() {
   return (
     <>
       <PageHeader
-        title="IPv6 (DHCPv6)"
-        subtitle="Stateful DHCPv6: Adressen (IA_NA) und Präfix-Delegation (IA_PD)"
+        title={m("title")}
+        subtitle={m("subtitle")}
         actions={
           canWrite &&
           tab === "scopes" && (
             <Button variant="primary" onClick={() => setCreate(true)}>
-              Neuer IPv6-Scope
+              {m("newScope")}
             </Button>
           )
         }
@@ -39,8 +272,8 @@ export function IPv6Page() {
       {info.data && info.data.dhcp6_interfaces.length === 0 && (
         <div className="mb-4">
           <Alert kind="info">
-            DHCPv6 ist auf dieser Instanz nicht aktiv (keine Interfaces unter <code>dhcp6.interfaces</code> konfiguriert). Die Konfiguration lässt sich trotzdem
-            pflegen.
+            {m("inactive1")} <code>dhcp6.interfaces</code>
+            {m("inactive2")}
           </Alert>
         </div>
       )}
@@ -48,17 +281,17 @@ export function IPv6Page() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "scopes", label: "Scopes" },
-          { id: "reservations", label: "Reservierungen" },
-          { id: "leases", label: "Leases" },
-          { id: "options", label: "Server-Optionen" },
+          { id: "scopes", label: m("scopes") },
+          { id: "reservations", label: m("reservations") },
+          { id: "leases", label: m("leases") },
+          { id: "options", label: m("serverOptions") },
         ]}
       />
       {tab === "scopes" && <Scopes6Table />}
       {tab === "reservations" && <Reservations6Table scopeId={0} />}
       {tab === "leases" && <Leases6Table scopeId={0} />}
       {tab === "options" && (
-        <Card title="Server-Optionen (DHCPv6)" actions={<span className="text-xs text-slate-500">gelten für alle IPv6-Scopes</span>}>
+        <Card title={m("serverOptionsTitle")} actions={<span className="text-xs text-slate-500">{m("serverOptionsHint")}</span>}>
           <Options6Editor owner="server" ownerId={0} />
         </Card>
       )}
@@ -79,14 +312,17 @@ function Scopes6Table() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["scopes6"] });
       qc.invalidateQueries({ queryKey: ["stats6"] });
-      toast("IPv6-Scope gelöscht");
+      toast(m("scopeDeleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
   if (scopes.isLoading) return <Spinner />;
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <Table head={["Name", "Präfix", "Adressbereich", "Präfix-Delegation", "Lebensdauer", "Status", "Belegt", ""]} empty={scopes.data?.length === 0}>
+      <Table
+        head={[m("name"), m("prefix"), m("addressRange"), m("prefixDelegation"), m("lifetime"), m("status"), m("inUse"), ""]}
+        empty={scopes.data?.length === 0}
+      >
         {scopes.data?.map((s) => {
           const st = byId.get(s.id);
           return (
@@ -107,11 +343,12 @@ function Scopes6Table() {
               <Td>
                 {formatDuration(s.preferred_lifetime)} / {formatDuration(s.valid_lifetime)}
               </Td>
-              <Td>{s.enabled ? <Badge color="green">aktiv</Badge> : <Badge color="amber">deaktiviert</Badge>}</Td>
+              <Td>{s.enabled ? <Badge color="green">{c("active")}</Badge> : <Badge color="amber">{c("disabled")}</Badge>}</Td>
               <Td className="tabular-nums">
                 {st ? (
                   <>
-                    {st.addresses_in_use} Adr.{s.pd_pool && ` · ${st.prefixes_in_use} Präf.`}
+                    {m("usedAddresses", { n: st.addresses_in_use })}
+                    {s.pd_pool && ` · ${m("usedPrefixes", { n: st.prefixes_in_use })}`}
                   </>
                 ) : (
                   "–"
@@ -122,12 +359,9 @@ function Scopes6Table() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={async () =>
-                      (await confirm(`IPv6-Scope „${s.name}“ samt Reservierungen, Optionen und Leases löschen?`, { danger: true, confirmLabel: "Löschen" })) &&
-                      del.mutate(s.id)
-                    }
+                    onClick={async () => (await confirm(m("deleteScope", { name: s.name }), { danger: true, confirmLabel: c("delete") })) && del.mutate(s.id)}
                   >
-                    Löschen
+                    {c("delete")}
                   </Button>
                 )}
               </Td>
@@ -172,12 +406,12 @@ const emptyScope6: Scope6Form = {
 /** Light client-side checks; the server validates everything again. */
 function validateScope6(f: Scope6Form): Errors {
   const e: Errors = {};
-  if (!f.name.trim()) e.name = "Name angeben";
-  if (!/^[0-9a-fA-F:.]+\/\d{1,3}$/.test(f.prefix.trim())) e.prefix = "IPv6-Präfix, z. B. 2001:db8:1::/64";
-  if (!!f.start.trim() !== !!f.end.trim()) e.end = "Start und Ende angeben oder beide leer lassen";
-  if (!f.start.trim() && !f.pd_pool.trim()) e.start = "Adressbereich und/oder Präfix-Delegation angeben";
-  if (!(f.valid_lifetime >= 60)) e.valid_lifetime = "mindestens 60 Sekunden";
-  if (!(f.preferred_lifetime > 0) || f.preferred_lifetime > f.valid_lifetime) e.preferred_lifetime = "positiv und nicht länger als die gültige Lebensdauer";
+  if (!f.name.trim()) e.name = m("nameRequired");
+  if (!/^[0-9a-fA-F:.]+\/\d{1,3}$/.test(f.prefix.trim())) e.prefix = m("prefixInvalid");
+  if (!!f.start.trim() !== !!f.end.trim()) e.end = m("startEnd");
+  if (!f.start.trim() && !f.pd_pool.trim()) e.start = m("rangeOrPd");
+  if (!(f.valid_lifetime >= 60)) e.valid_lifetime = m("validMin");
+  if (!(f.preferred_lifetime > 0) || f.preferred_lifetime > f.valid_lifetime) e.preferred_lifetime = m("preferredInvalid");
   if (f.preference < 0 || f.preference > 255) e.preference = "0–255";
   return e;
 }
@@ -205,21 +439,30 @@ function Scope6Fields({ f, setF, errors, disabled, fixedPrefix }: { f: Scope6For
   const str = (k: keyof Scope6Form) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Input label="Name" name="name" value={f.name} onChange={str("name")} error={errors.name} disabled={disabled} placeholder="z. B. Büro-LAN v6" />
+      <Input label={m("name")} name="name" value={f.name} onChange={str("name")} error={errors.name} disabled={disabled} placeholder={m("namePlaceholder")} />
       <Input
-        label="Präfix (Link)"
+        label={m("prefixLink")}
         name="prefix"
         value={f.prefix}
         onChange={str("prefix")}
         error={errors.prefix}
         disabled={disabled || fixedPrefix}
         placeholder="2001:db8:1::/64"
-        hint={fixedPrefix ? "Das Präfix eines Scopes ist unveränderlich" : "Präfix des Netzes, in dem die Clients stehen"}
+        hint={fixedPrefix ? m("prefixFixed") : m("prefixHint")}
       />
-      <Input label="Startadresse" name="start" value={f.start} onChange={str("start")} error={errors.start} disabled={disabled} placeholder="2001:db8:1::100" hint="leer = keine Adressvergabe" />
-      <Input label="Endadresse" name="end" value={f.end} onChange={str("end")} error={errors.end} disabled={disabled} placeholder="2001:db8:1::ffff" />
       <Input
-        label="Bevorzugte Lebensdauer (s)"
+        label={m("startAddress")}
+        name="start"
+        value={f.start}
+        onChange={str("start")}
+        error={errors.start}
+        disabled={disabled}
+        placeholder="2001:db8:1::100"
+        hint={m("startHint")}
+      />
+      <Input label={m("endAddress")} name="end" value={f.end} onChange={str("end")} error={errors.end} disabled={disabled} placeholder="2001:db8:1::ffff" />
+      <Input
+        label={m("preferredLifetime")}
         name="preferred_lifetime"
         type="number"
         min={1}
@@ -230,7 +473,7 @@ function Scope6Fields({ f, setF, errors, disabled, fixedPrefix }: { f: Scope6For
         hint={formatDuration(f.preferred_lifetime)}
       />
       <Input
-        label="Gültige Lebensdauer (s)"
+        label={m("validLifetime")}
         name="valid_lifetime"
         type="number"
         min={60}
@@ -241,17 +484,17 @@ function Scope6Fields({ f, setF, errors, disabled, fixedPrefix }: { f: Scope6For
         hint={formatDuration(f.valid_lifetime)}
       />
       <Input
-        label="Delegations-Pool"
+        label={m("pdPool")}
         name="pd_pool"
         value={f.pd_pool}
         onChange={str("pd_pool")}
         error={errors.pd_pool}
         disabled={disabled}
         placeholder="2001:db8:100::/40"
-        hint="leer = keine Präfix-Delegation"
+        hint={m("pdPoolHint")}
       />
       <Input
-        label="Länge delegierter Präfixe"
+        label={m("pdLength")}
         name="pd_length"
         type="number"
         min={1}
@@ -260,10 +503,10 @@ function Scope6Fields({ f, setF, errors, disabled, fixedPrefix }: { f: Scope6For
         onChange={num("pd_length")}
         error={errors.pd_length}
         disabled={disabled || !f.pd_pool.trim()}
-        hint="z. B. 56 für /56 je Router"
+        hint={m("pdLengthHint")}
       />
       <Input
-        label="Server-Präferenz (0–255)"
+        label={m("preference")}
         name="preference"
         type="number"
         min={0}
@@ -272,14 +515,14 @@ function Scope6Fields({ f, setF, errors, disabled, fixedPrefix }: { f: Scope6For
         onChange={num("preference")}
         error={errors.preference}
         disabled={disabled}
-        hint="höher = bevorzugt; 255 = sofort annehmen"
+        hint={m("preferenceHint")}
       />
       <div className="flex flex-col justify-end gap-2 pb-2">
-        <Toggle label="Rapid Commit (2-Nachrichten-Austausch)" checked={f.rapid_commit} onChange={(v) => setF({ ...f, rapid_commit: v })} disabled={disabled} />
-        <Toggle label="Scope aktiv" checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} disabled={disabled} />
+        <Toggle label={m("rapidCommit")} checked={f.rapid_commit} onChange={(v) => setF({ ...f, rapid_commit: v })} disabled={disabled} />
+        <Toggle label={m("scopeActive")} checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} disabled={disabled} />
       </div>
       <div className="sm:col-span-2">
-        <TextArea label="Beschreibung" rows={2} value={f.description} onChange={str("description")} disabled={disabled} />
+        <TextArea label={m("description")} rows={2} value={f.description} onChange={str("description")} disabled={disabled} />
       </div>
     </div>
   );
@@ -297,7 +540,7 @@ function CreateScope6({ onClose }: { onClose: () => void }) {
     onSuccess: (sc) => {
       qc.invalidateQueries({ queryKey: ["scopes6"] });
       qc.invalidateQueries({ queryKey: ["stats6"] });
-      toast(`IPv6-Scope „${sc.name}“ angelegt`);
+      toast(m("scopeCreated", { name: sc.name }));
       navigate(`/ipv6/scopes/${sc.id}`);
     },
     onError: (e) => {
@@ -307,12 +550,12 @@ function CreateScope6({ onClose }: { onClose: () => void }) {
   });
   return (
     <Modal
-      title="Neuer IPv6-Scope"
+      title={m("newScope")}
       onClose={onClose}
       wide
       footer={
         <>
-          <Button onClick={onClose}>Abbrechen</Button>
+          <Button onClick={onClose}>{c("cancel")}</Button>
           <Button
             variant="primary"
             disabled={create.isPending}
@@ -322,14 +565,14 @@ function CreateScope6({ onClose }: { onClose: () => void }) {
               if (!hasErrors(e)) create.mutate();
             }}
           >
-            Scope anlegen
+            {m("createScope")}
           </Button>
         </>
       }
     >
       {error && <Alert>{error}</Alert>}
       <Scope6Fields f={f} setF={setF} errors={errors} />
-      <p className="text-xs text-slate-500">DNS-Server (Option 23) und Domänen-Suchliste (Option 24) lassen sich nach dem Anlegen unter „Optionen“ festlegen.</p>
+      <p className="text-xs text-slate-500">{m("createNote")}</p>
     </Modal>
   );
 }
@@ -352,7 +595,7 @@ export function IPv6ScopeDetailPage() {
             <Link to="/ipv6" className="text-teal-700 hover:underline dark:text-teal-400">
               IPv6
             </Link>{" "}
-            / <span className="font-mono">{s.prefix}</span> {s.enabled ? <Badge color="green">aktiv</Badge> : <Badge color="amber">deaktiviert</Badge>}
+            / <span className="font-mono">{s.prefix}</span> {s.enabled ? <Badge color="green">{c("active")}</Badge> : <Badge color="amber">{c("disabled")}</Badge>}
           </>
         }
       />
@@ -360,17 +603,17 @@ export function IPv6ScopeDetailPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "overview", label: "Übersicht" },
-          { id: "exclusions", label: "Ausschlüsse" },
-          { id: "options", label: "Optionen" },
-          { id: "reservations", label: "Reservierungen" },
-          { id: "leases", label: "Leases" },
+          { id: "overview", label: m("overview") },
+          { id: "exclusions", label: m("exclusions") },
+          { id: "options", label: m("options") },
+          { id: "reservations", label: m("reservations") },
+          { id: "leases", label: m("leases") },
         ]}
       />
       {tab === "overview" && <Overview6 scope={s} />}
       {tab === "exclusions" && <Exclusions6 scope={s} />}
       {tab === "options" && (
-        <Card title="Scope-Optionen" actions={<span className="text-xs text-slate-500">überschreiben Server-Optionen</span>}>
+        <Card title={m("scopeOptions")} actions={<span className="text-xs text-slate-500">{m("scopeOptionsHint")}</span>}>
           <Options6Editor owner="scope" ownerId={s.id} />
         </Card>
       )}
@@ -394,7 +637,7 @@ function Overview6({ scope }: { scope: S["Scope6"] }) {
       qc.invalidateQueries({ queryKey: ["scope6", scope.id] });
       qc.invalidateQueries({ queryKey: ["scopes6"] });
       qc.invalidateQueries({ queryKey: ["stats6"] });
-      toast("IPv6-Scope gespeichert");
+      toast(m("scopeSaved"));
     },
     onError: (e) => {
       if (e instanceof ApiError) setErrors(e.fields);
@@ -404,25 +647,25 @@ function Overview6({ scope }: { scope: S["Scope6"] }) {
   const st = stats.data?.find((x) => x.scope_id === scope.id);
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
-      <Card title="Statistik">
+      <Card title={m("statistics")}>
         {st ? (
           <dl className="grid grid-cols-2 gap-y-1 text-sm">
-            <dt className="text-slate-500">Adressen im Bereich</dt>
+            <dt className="text-slate-500">{m("addressesInRange")}</dt>
             <dd className="tabular-nums">{scope.start ? st.size : "–"}</dd>
-            <dt className="text-slate-500">vergebene Adressen</dt>
+            <dt className="text-slate-500">{m("assignedAddresses")}</dt>
             <dd className="font-semibold tabular-nums">{st.addresses_in_use}</dd>
-            <dt className="text-slate-500">gesperrt (Decline)</dt>
+            <dt className="text-slate-500">{m("declined")}</dt>
             <dd className="tabular-nums">{st.declined}</dd>
-            <dt className="text-slate-500">delegierbare Präfixe</dt>
+            <dt className="text-slate-500">{m("prefixCapacity")}</dt>
             <dd className="tabular-nums">{scope.pd_pool ? st.prefix_capacity : "–"}</dd>
-            <dt className="text-slate-500">delegierte Präfixe</dt>
+            <dt className="text-slate-500">{m("delegatedPrefixes")}</dt>
             <dd className="font-semibold tabular-nums">{scope.pd_pool ? st.prefixes_in_use : "–"}</dd>
           </dl>
         ) : (
           <Spinner />
         )}
       </Card>
-      <Card title="Einstellungen">
+      <Card title={m("settings")}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -435,7 +678,7 @@ function Overview6({ scope }: { scope: S["Scope6"] }) {
           <Scope6Fields f={f} setF={setF} errors={errors} disabled={!canWrite} fixedPrefix />
           {canWrite && (
             <Button type="submit" variant="primary" disabled={save.isPending}>
-              Speichern
+              {c("save")}
             </Button>
           )}
         </form>
@@ -460,7 +703,7 @@ function Exclusions6({ scope }: { scope: S["Scope6"] }) {
       setStart("");
       setEnd("");
       setErrors({});
-      toast("Ausschluss angelegt");
+      toast(m("exclusionAdded"));
     },
     onError: (e) => {
       if (e instanceof ApiError) setErrors(e.fields);
@@ -473,8 +716,8 @@ function Exclusions6({ scope }: { scope: S["Scope6"] }) {
     onError: (e) => toast(errorMessage(e), "error"),
   });
   return (
-    <Card title="Ausschlussbereiche" actions={<span className="text-xs text-slate-500">Adressen werden nicht dynamisch vergeben</span>}>
-      <Table head={["Von", "Bis", ""]} empty={ex.data?.length === 0}>
+    <Card title={m("exclusionRanges")} actions={<span className="text-xs text-slate-500">{m("exclusionRangesHint")}</span>}>
+      <Table head={[m("from"), m("to"), ""]} empty={ex.data?.length === 0}>
         {ex.data?.map((e) => (
           <tr key={e.id}>
             <Td mono>{e.start}</Td>
@@ -482,7 +725,7 @@ function Exclusions6({ scope }: { scope: S["Scope6"] }) {
             <Td className="text-right">
               {canWrite && (
                 <Button size="sm" variant="ghost" onClick={() => del.mutate(e.id)}>
-                  Entfernen
+                  {c("remove")}
                 </Button>
               )}
             </Td>
@@ -494,14 +737,14 @@ function Exclusions6({ scope }: { scope: S["Scope6"] }) {
           className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!start.trim()) return setErrors({ start: "Adresse angeben" });
+            if (!start.trim()) return setErrors({ start: m("addressRequired") });
             add.mutate();
           }}
         >
-          <Input label="Von" value={start} onChange={(e) => setStart(e.target.value)} error={errors.start} placeholder={scope.start || "2001:db8:1::10"} />
-          <Input label="Bis" value={end} onChange={(e) => setEnd(e.target.value)} error={errors.end} hint="leer = nur eine Adresse" />
+          <Input label={m("from")} value={start} onChange={(e) => setStart(e.target.value)} error={errors.start} placeholder={scope.start || "2001:db8:1::10"} />
+          <Input label={m("to")} value={end} onChange={(e) => setEnd(e.target.value)} error={errors.end} hint={m("toHint")} />
           <Button type="submit" variant="primary">
-            Hinzufügen
+            {c("add")}
           </Button>
         </form>
       )}
@@ -524,10 +767,10 @@ function reservation6Body(r: typeof emptyRes6): S["Reservation6Input"] {
 
 function validateRes6(r: typeof emptyRes6): Errors {
   const e: Errors = {};
-  if (!/^[0-9a-fA-F]{2}([:-]?[0-9a-fA-F]{2}){2,129}$/.test(r.duid.trim())) e.duid = "DUID als Hex, z. B. 00:03:00:01:02:00:00:00:00:01";
-  if (r.iaid.trim() !== "" && !/^\d+$/.test(r.iaid.trim())) e.iaid = "Zahl oder leer (beliebige IA)";
-  if (!r.ip.trim().includes(":")) e.ip = "IPv6-Adresse angeben";
-  if (!r.scope_id) e.scope_id = "Scope wählen";
+  if (!/^[0-9a-fA-F]{2}([:-]?[0-9a-fA-F]{2}){2,129}$/.test(r.duid.trim())) e.duid = m("duidInvalid");
+  if (r.iaid.trim() !== "" && !/^\d+$/.test(r.iaid.trim())) e.iaid = m("iaidInvalid");
+  if (!r.ip.trim().includes(":")) e.ip = m("ipRequired");
+  if (!r.scope_id) e.scope_id = m("scopeRequired");
   return e;
 }
 
@@ -551,7 +794,7 @@ export function Reservations6Table({ scopeId }: { scopeId: number }) {
       qc.invalidateQueries({ queryKey: ["reservations6"] });
       setRow({ ...emptyRes6, scope_id: row.scope_id });
       setErrors({});
-      toast("Reservierung angelegt");
+      toast(m("reservationCreated"));
     },
     onError: (e) => {
       if (e instanceof ApiError) setErrors(e.fields);
@@ -562,7 +805,7 @@ export function Reservations6Table({ scopeId }: { scopeId: number }) {
     mutationFn: (id: number) => unwrap(api.DELETE("/v6/reservations/{id}", { params: { path: { id } } })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reservations6"] });
-      toast("Reservierung gelöscht");
+      toast(m("reservationDeleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -570,7 +813,7 @@ export function Reservations6Table({ scopeId }: { scopeId: number }) {
   return (
     <div className="space-y-4">
       {canWrite && (
-        <Card title="Neue Reservierung">
+        <Card title={m("newReservation")}>
           <form
             className="grid gap-3 sm:grid-cols-3 lg:grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] lg:items-end"
             onSubmit={(e) => {
@@ -581,14 +824,14 @@ export function Reservations6Table({ scopeId }: { scopeId: number }) {
             }}
           >
             <Input label="DUID" value={row.duid} onChange={(e) => setRow({ ...row, duid: e.target.value })} error={errors.duid} placeholder="00:03:00:01:…" />
-            <Input label="IAID" value={row.iaid} onChange={(e) => setRow({ ...row, iaid: e.target.value })} error={errors.iaid} placeholder="beliebig" />
-            <Input label="IPv6-Adresse" value={row.ip} onChange={(e) => setRow({ ...row, ip: e.target.value })} error={errors.ip} />
-            <Input label="Hostname" value={row.hostname} onChange={(e) => setRow({ ...row, hostname: e.target.value })} />
+            <Input label="IAID" value={row.iaid} onChange={(e) => setRow({ ...row, iaid: e.target.value })} error={errors.iaid} placeholder={m("any")} />
+            <Input label={m("ipv6Address")} value={row.ip} onChange={(e) => setRow({ ...row, ip: e.target.value })} error={errors.ip} />
+            <Input label={m("hostname")} value={row.hostname} onChange={(e) => setRow({ ...row, hostname: e.target.value })} />
             {scopeId ? (
-              <Input label="Beschreibung" value={row.description} onChange={(e) => setRow({ ...row, description: e.target.value })} />
+              <Input label={m("description")} value={row.description} onChange={(e) => setRow({ ...row, description: e.target.value })} />
             ) : (
-              <Select label="Scope" value={String(row.scope_id)} onChange={(e) => setRow({ ...row, scope_id: Number(e.target.value) })} error={errors.scope_id}>
-                <option value="0">– Scope –</option>
+              <Select label={m("scope")} value={String(row.scope_id)} onChange={(e) => setRow({ ...row, scope_id: Number(e.target.value) })} error={errors.scope_id}>
+                <option value="0">{m("scopePlaceholder")}</option>
                 {scopes.data?.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -597,31 +840,31 @@ export function Reservations6Table({ scopeId }: { scopeId: number }) {
               </Select>
             )}
             <Button type="submit" variant="primary" disabled={add.isPending}>
-              Anlegen
+              {c("create")}
             </Button>
           </form>
         </Card>
       )}
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Table head={["IPv6-Adresse", "DUID", "IAID", "Hostname", "Scope", "Beschreibung", ""]} empty={list.data?.length === 0}>
+        <Table head={[m("ipv6Address"), "DUID", "IAID", m("hostname"), m("scope"), m("description"), ""]} empty={list.data?.length === 0}>
           {list.data?.map((r) => (
             <tr key={r.id}>
               <Td mono>{r.ip}</Td>
               <Td mono className="max-w-xs truncate">
                 {r.duid}
               </Td>
-              <Td mono>{r.iaid === -1 ? "beliebig" : r.iaid}</Td>
+              <Td mono>{r.iaid === -1 ? m("any") : r.iaid}</Td>
               <Td>{r.hostname || "–"}</Td>
               <Td>{scopeById.get(r.scope_id)?.name}</Td>
               <Td className="max-w-xs truncate">{r.description}</Td>
               <Td className="text-right">
                 <div className="flex justify-end gap-1">
                   <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>
-                    {canWrite ? "Bearbeiten" : "Details"}
+                    {canWrite ? c("edit") : c("details")}
                   </Button>
                   {canWrite && (
-                    <Button size="sm" variant="ghost" onClick={async () => (await confirm(`Reservierung ${r.ip} löschen?`, { danger: true })) && del.mutate(r.id)}>
-                      Löschen
+                    <Button size="sm" variant="ghost" onClick={async () => (await confirm(m("deleteReservation", { ip: r.ip }), { danger: true })) && del.mutate(r.id)}>
+                      {c("delete")}
                     </Button>
                   )}
                 </div>
@@ -645,7 +888,7 @@ function EditReservation6({ res, onClose }: { res: S["Reservation6"]; onClose: (
     mutationFn: () => unwrap(api.PUT("/v6/reservations/{id}", { params: { path: { id: res.id } }, body: reservation6Body(f) })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reservations6"] });
-      toast("Reservierung gespeichert");
+      toast(m("reservationSaved"));
       onClose();
     },
     onError: (e) => {
@@ -655,7 +898,7 @@ function EditReservation6({ res, onClose }: { res: S["Reservation6"]; onClose: (
   });
   return (
     <Modal
-      title={`Reservierung ${res.ip}`}
+      title={m("reservationTitle", { ip: res.ip })}
       onClose={onClose}
       wide
       footer={
@@ -669,37 +912,37 @@ function EditReservation6({ res, onClose }: { res: S["Reservation6"]; onClose: (
               if (!hasErrors(e)) save.mutate();
             }}
           >
-            Speichern
+            {c("save")}
           </Button>
         )
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="IPv6-Adresse" value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} error={errors.ip} disabled={!canWrite} />
-        <Input label="Hostname" value={f.hostname} onChange={(e) => setF({ ...f, hostname: e.target.value })} disabled={!canWrite} />
+        <Input label={m("ipv6Address")} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} error={errors.ip} disabled={!canWrite} />
+        <Input label={m("hostname")} value={f.hostname} onChange={(e) => setF({ ...f, hostname: e.target.value })} disabled={!canWrite} />
         <Input label="DUID" value={f.duid} onChange={(e) => setF({ ...f, duid: e.target.value })} error={errors.duid} disabled={!canWrite} />
-        <Input label="IAID" value={f.iaid} onChange={(e) => setF({ ...f, iaid: e.target.value })} error={errors.iaid} disabled={!canWrite} hint="leer = beliebige IA des Clients" />
+        <Input label="IAID" value={f.iaid} onChange={(e) => setF({ ...f, iaid: e.target.value })} error={errors.iaid} disabled={!canWrite} hint={m("iaidHint")} />
         <div className="sm:col-span-2">
-          <Input label="Beschreibung" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canWrite} />
+          <Input label={m("description")} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canWrite} />
         </div>
       </div>
-      <Card title="Reservierungs-Optionen (höchste Priorität)">
+      <Card title={m("reservationOptions")}>
         <Options6Editor owner="reservation" ownerId={res.id} />
       </Card>
     </Modal>
   );
 }
 
-const typeHints6: Record<string, string> = {
-  "ipv6-list": "mehrere Adressen mit Komma trennen, z. B. 2001:db8::53",
-  "domain-list": "z. B. example.com, corp.example.com",
-  string: "Text",
+const typeHints6 = (): Record<string, string> => ({
+  "ipv6-list": m("hintIpv6List"),
+  "domain-list": m("hintDomainList"),
+  string: m("hintString"),
   uint8: "0–255",
   uint16: "0–65535",
   uint32: "0–4294967295",
-  hex: "z. B. 01:0a:ff",
-  "ntp-servers": "Adressen oder Namen, mit Komma getrennt",
-};
+  hex: m("hintHex"),
+  "ntp-servers": m("hintNtpServers"),
+});
 const optionTypes6: S["Option6Type"][] = ["ipv6-list", "domain-list", "string", "uint8", "uint16", "uint32", "hex", "ntp-servers"];
 
 /** Lists and edits the DHCPv6 option values of one owner. */
@@ -724,7 +967,7 @@ export function Options6Editor({ owner, ownerId }: { owner: S["Option6Owner"]; o
       setCustom("");
       setValue("");
       setError("");
-      toast("Option gespeichert");
+      toast(m("optionSaved"));
     },
     onError: (e) => setError(errorMessage(e)),
   });
@@ -732,7 +975,7 @@ export function Options6Editor({ owner, ownerId }: { owner: S["Option6Owner"]; o
     mutationFn: (c: number) => unwrap(api.DELETE("/v6/options/{owner}/{ownerId}/{code}", { params: { path: { owner, ownerId, code: c } } })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: key });
-      toast("Option entfernt");
+      toast(m("optionRemoved"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -741,7 +984,7 @@ export function Options6Editor({ owner, ownerId }: { owner: S["Option6Owner"]; o
   const hintType = code === "other" ? type : selected?.type;
   return (
     <div className="space-y-4">
-      <Table head={["Code", "Name", "Typ", "Wert", ""]} empty={opts.data?.length === 0}>
+      <Table head={[m("code"), m("name"), m("type"), m("value"), ""]} empty={opts.data?.length === 0}>
         {opts.data?.map((o) => (
           <tr key={o.code}>
             <Td mono>{o.code}</Td>
@@ -766,10 +1009,10 @@ export function Options6Editor({ owner, ownerId }: { owner: S["Option6Owner"]; o
                       setValue(o.value);
                     }}
                   >
-                    Bearbeiten
+                    {c("edit")}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={async () => (await confirm(`Option ${o.code} (${o.name}) entfernen?`, { danger: true })) && del.mutate(o.code)}>
-                    Entfernen
+                  <Button size="sm" variant="ghost" onClick={async () => (await confirm(m("removeOption", { code: o.code, name: o.name }), { danger: true })) && del.mutate(o.code)}>
+                    {c("remove")}
                   </Button>
                 </div>
               )}
@@ -782,32 +1025,32 @@ export function Options6Editor({ owner, ownerId }: { owner: S["Option6Owner"]; o
           className="grid gap-3 rounded-md border border-dashed border-slate-300 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] sm:items-end dark:border-slate-700"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!code) return setError("Option auswählen");
+            if (!code) return setError(m("selectOption"));
             if (code === "other") {
               const n = Number(custom);
-              if (!Number.isInteger(n) || n < 1 || n > 65535) return setError("Code 1–65535 angeben");
+              if (!Number.isInteger(n) || n < 1 || n > 65535) return setError(m("codeRange"));
               return save.mutate({ code: n, value, type });
             }
             save.mutate({ code: Number(code), value });
           }}
         >
-          <Select label="Option" value={code} onChange={(e) => setCode(e.target.value)}>
-            <option value="">– auswählen –</option>
+          <Select label={m("option")} value={code} onChange={(e) => setCode(e.target.value)}>
+            <option value="">{c("select")}</option>
             {defs.data?.map((d) => (
               <option key={d.code} value={d.code}>
                 {d.code} – {d.name}
               </option>
             ))}
-            <option value="other">andere (Code und Typ angeben)</option>
+            <option value="other">{m("otherOption")}</option>
           </Select>
-          <Input label="Wert" value={value} onChange={(e) => setValue(e.target.value)} hint={hintType ? `${hintType}: ${typeHints6[hintType]}` : undefined} />
+          <Input label={m("value")} value={value} onChange={(e) => setValue(e.target.value)} hint={hintType ? `${hintType}: ${typeHints6()[hintType]}` : undefined} />
           <Button type="submit" variant="primary" disabled={save.isPending}>
-            Setzen
+            {c("set")}
           </Button>
           {code === "other" && (
             <div className="grid gap-3 sm:col-span-3 sm:grid-cols-2">
-              <Input label="Code" type="number" min={1} max={65535} value={custom} onChange={(e) => setCustom(e.target.value)} />
-              <Select label="Typ" value={type} onChange={(e) => setType(e.target.value as S["Option6Type"])}>
+              <Input label={m("code")} type="number" min={1} max={65535} value={custom} onChange={(e) => setCustom(e.target.value)} />
+              <Select label={m("type")} value={type} onChange={(e) => setType(e.target.value as S["Option6Type"])}>
                 {optionTypes6.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -851,7 +1094,7 @@ export function Leases6Table({ scopeId }: { scopeId: number }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leases6"] });
       qc.invalidateQueries({ queryKey: ["stats6"] });
-      toast("Lease gelöscht");
+      toast(m("leaseDeleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -859,19 +1102,19 @@ export function Leases6Table({ scopeId }: { scopeId: number }) {
   return (
     <div className="space-y-3">
       <div className="w-full max-w-sm">
-        <Input label="Suche" placeholder="Adresse, DUID, Hostname" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Input label={c("search")} placeholder={m("searchHint")} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {leases.isLoading ? (
           <Spinner />
         ) : (
-          <Table head={["Adresse / Präfix", "Art", "DUID", "IAID", "Hostname", "Scope", "Zustand", "Läuft ab", ""]} empty={leases.data?.length === 0}>
+          <Table head={[m("addressPrefix"), m("kind"), "DUID", "IAID", m("hostname"), m("scope"), m("state"), m("expires"), ""]} empty={leases.data?.length === 0}>
             {leases.data?.map((l) => {
               const label = l.kind === "pd" ? `${l.address}/${l.prefix_len}` : l.address;
               return (
                 <tr key={l.address} data-testid={`lease6-${l.address}`}>
                   <Td mono>{label}</Td>
-                  <Td>{l.kind === "pd" ? <Badge color="blue">Präfix</Badge> : <Badge>Adresse</Badge>}</Td>
+                  <Td>{l.kind === "pd" ? <Badge color="blue">{m("kindPrefix")}</Badge> : <Badge>{m("kindAddress")}</Badge>}</Td>
                   <Td mono className="max-w-48 truncate">
                     <span title={l.duid}>{l.duid}</span>
                   </Td>
@@ -879,19 +1122,19 @@ export function Leases6Table({ scopeId }: { scopeId: number }) {
                   <Td>{l.hostname || "–"}</Td>
                   <Td>{scopeName.get(l.scope_id) ?? l.scope_id}</Td>
                   <Td>
-                    <Badge color={stateColor[l.state]}>{stateLabel[l.state]}</Badge>
+                    <Badge color={stateColor[l.state]}>{stateLabel(l.state)}</Badge>
                   </Td>
                   <Td>
-                    <span title={`bevorzugt bis ${formatDateTime(l.preferred_until)}, gültig bis ${formatDateTime(l.expires_at)}`}>{relativeTime(l.expires_at)}</span>
+                    <span title={m("lifetimes", { preferred: formatDateTime(l.preferred_until), valid: formatDateTime(l.expires_at) })}>{relativeTime(l.expires_at)}</span>
                   </Td>
                   <Td className="text-right">
                     {canOperate && (
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={async () => (await confirm(`Lease ${label} löschen? ${l.kind === "pd" ? "Das Präfix" : "Die Adresse"} wird sofort wieder frei.`, { danger: true })) && del.mutate(l.address)}
+                        onClick={async () => (await confirm(m(l.kind === "pd" ? "deleteLeasePrefix" : "deleteLeaseAddress", { label }), { danger: true })) && del.mutate(l.address)}
                       >
-                        Löschen
+                        {c("delete")}
                       </Button>
                     )}
                   </Td>

@@ -1,996 +1,1016 @@
-# Architektur- und Implementierungsentscheidungen
+# Architecture and implementation decisions
 
-Format: kurze ADR-Einträge. Neue Entscheidungen werden unten angehängt, alte
-nicht umgeschrieben, sondern ggf. durch einen neuen Eintrag ersetzt
-("ersetzt D-xxx").
+Format: short ADR entries. New decisions are appended at the bottom; old ones
+are not rewritten but, where necessary, superseded by a new entry
+("supersedes D-xxx").
 
 ---
 
-## D-001 – Sprache Go, Mindestversion 1.26, Toolchain 1.27.2
+## D-001 – Go as the language, minimum version 1.26, toolchain 1.27.2
 
-**Kontext:** PLAN.md schlägt Go 1.23+ vor. Die aktuellen Versionen der
-benötigten Bibliotheken (`golang.org/x/sys`, `modernc.org/sqlite`,
-`prometheus/client_golang`, …) verlangen mindestens Go 1.26.
+**Context:** PLAN.md proposes Go 1.23+. The current versions of the
+required libraries (`golang.org/x/sys`, `modernc.org/sqlite`,
+`prometheus/client_golang`, …) require at least Go 1.26.
 
-**Entscheidung:** `go 1.26.0` als Mindestversion in `go.mod`,
-`toolchain go1.27.2` (neueste stabile Version zum Projektstart) für Builds.
-Go bleibt die Sprache: ein statisches Binary ohne CGO, gute Netzwerk-Libs,
-kleines Image.
+**Decision:** `go 1.26.0` as the minimum version in `go.mod`,
+`toolchain go1.27.2` (latest stable version at project start) for builds.
+Go remains the language: a static binary without CGO, good networking libraries,
+a small image.
 
-**Konsequenz:** golangci-lint muss mit Go ≥ 1.26 gebaut sein (CI nutzt
-v2.14.0). Docker-Build-Stage nutzt `golang:1.27`.
+**Consequence:** golangci-lint must be built with Go ≥ 1.26 (CI uses
+v2.14.0). The Docker build stage uses `golang:1.27`.
 
-## D-002 – Modulpfad
+## D-002 – Module path
 
-`github.com/meister119/leasorix` (entspricht dem GitHub-Repo). Umbenennung
-wäre per `go mod edit -module` + Suchen/Ersetzen jederzeit möglich.
+`github.com/meister119/leasorix` (matches the GitHub repo). Renaming
+is possible at any time via `go mod edit -module` + search/replace.
 
-## D-003 – Bootstrap-Konfiguration (YAML/Env) vs. DHCP-Konfiguration (DB)
+## D-003 – Bootstrap configuration (YAML/env) vs. DHCP configuration (DB)
 
-**Entscheidung:** Die YAML-Datei (`--config`) und `LEASORIX_*`-Variablen
-enthalten nur prozessnahe Einstellungen (Datenverzeichnis, Listen-Adressen,
-Logging, Interfaces, später HA-Peers/TLS). Scopes, Reservierungen, Optionen,
-Policies usw. liegen ausschließlich in der Datenbank und werden über
-REST-API/UI bzw. Import/Export (Phase 7) verwaltet.
+**Decision:** The YAML file (`--config`) and the `LEASORIX_*` variables
+contain only process-level settings (data directory, listen addresses,
+logging, interfaces, later HA peers/TLS). Scopes, reservations, options,
+policies, etc. live exclusively in the database and are managed via the
+REST API/UI or import/export (phase 7).
 
-**Begründung:** Eine einzige "Source of Truth" für DHCP-Konfiguration ist
-Voraussetzung für die Konfig-Replikation im HA-Modus (Phase 6,
-Single-Writer-Prinzip) und für das Audit-Log. Zwei konkurrierende Quellen
-(Datei und UI) würden Konflikte erzeugen.
+**Rationale:** A single "source of truth" for the DHCP configuration is a
+prerequisite for config replication in HA mode (phase 6,
+single-writer principle) and for the audit log. Two competing sources
+(file and UI) would create conflicts.
 
-**Details Env-Overrides:** Name = `LEASORIX_` + YAML-Pfad in Großbuchstaben,
-Ebenen mit `_` verbunden (`http.listen` → `LEASORIX_HTTP_LISTEN`).
-String-Listen kommagetrennt, Dauern im Go-Format (`10s`, `1h`). Unbekannte
-YAML-Schlüssel sind ein Fehler (Tippfehler sollen nicht still ignoriert
-werden).
+**Env override details:** Name = `LEASORIX_` + YAML path in uppercase,
+levels joined with `_` (`http.listen` → `LEASORIX_HTTP_LISTEN`).
+String lists are comma-separated, durations use Go format (`10s`, `1h`). Unknown
+YAML keys are an error (typos should not be silently
+ignored).
 
-## D-004 – SQLite: modernc, WAL, synchronous=FULL, getrennte Pools
+## D-004 – SQLite: modernc, WAL, synchronous=FULL, separate pools
 
-**Entscheidung:**
-- Treiber `modernc.org/sqlite` (pure Go, kein CGO → statisches Binary).
+**Decision:**
+- Driver `modernc.org/sqlite` (pure Go, no CGO → static binary).
 - `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=10s`.
-- `synchronous=FULL`: Ein per ACK bestätigter Lease muss einen Stromausfall
-  überleben, sonst droht nach einem Crash doppelte Vergabe. Performance wird
-  in Phase 2 gemessen; falls nötig wird Group-Commit ergänzt, nicht die
-  Durability gesenkt.
-- Zwei Connection-Pools: Writer mit genau einer Verbindung und
-  `BEGIN IMMEDIATE` (alle Schreibzugriffe prozessintern serialisiert, keine
-  `SQLITE_BUSY`-Deadlocks), Reader-Pool mit `query_only=1`.
+- `synchronous=FULL`: A lease confirmed by an ACK must survive a power
+  failure; otherwise a crash risks duplicate assignment. Performance is
+  measured in phase 2; if necessary, group commit is added rather than
+  lowering durability.
+- Two connection pools: a writer with exactly one connection and
+  `BEGIN IMMEDIATE` (all writes serialized within the process, no
+  `SQLITE_BUSY` deadlocks), and a reader pool with `query_only=1`.
 
-## D-005 – Migrationen mit goose (eingebettete SQL-Dateien)
+## D-005 – Migrations with goose (embedded SQL files)
 
-`github.com/pressly/goose/v3` über die `Provider`-API (kein globaler
-Zustand), Migrationen als `.sql` per `go:embed` im Binary. Migrationen laufen
-bei jedem Start und sind idempotent. Wenige Abhängigkeiten, Down-Migrationen
-möglich.
+`github.com/pressly/goose/v3` via the `Provider` API (no global
+state), migrations as `.sql` files embedded in the binary via `go:embed`. Migrations run
+on every start and are idempotent. Few dependencies, down migrations
+possible.
 
-## D-006 – IPv4-Adressen als INTEGER in der Datenbank
+## D-006 – IPv4 addresses as INTEGER in the database
 
-**Entscheidung:** IPv4-Adressen werden als `INTEGER` (uint32-Wert)
-gespeichert, die API liefert Strings.
+**Decision:** IPv4 addresses are stored as `INTEGER` (uint32 value);
+the API returns strings.
 
-**Begründung:** Bereichsprüfungen ("IP im Pool?", Überlappung von Scopes und
-Exclusions), Sortierung und Statistiken lassen sich direkt in SQL ausdrücken.
-Nachteil: in der rohen DB schlechter lesbar. DHCPv6 (Phase 10) bekommt
-eigene Tabellen mit 16-Byte-BLOBs.
+**Rationale:** Range checks ("IP in the pool?", overlap of scopes and
+exclusions), sorting and statistics can be expressed directly in SQL.
+Drawback: harder to read in the raw DB. DHCPv6 (phase 10) gets
+its own tables with 16-byte BLOBs.
 
-## D-007 – Management-Listener standardmäßig nur auf localhost
+## D-007 – Management listener on localhost only by default
 
-`http.listen` ist per Default `127.0.0.1:8067` (PLAN.md Abschnitt 6). Für
-Zugriff von außen muss explizit eine Management-IP gesetzt werden. Ein
-Listener bedient UI, REST-API, `/healthz`, `/readyz` und `/metrics`.
+`http.listen` defaults to `127.0.0.1:8067` (PLAN.md section 6). For
+external access, a management IP must be set explicitly. One
+listener serves the UI, REST API, `/healthz`, `/readyz` and `/metrics`.
 
-## D-008 – Kein `X-Forwarded-For`-Vertrauen
+## D-008 – No trust in `X-Forwarded-For`
 
-Die chi-Middleware `RealIP` wird nicht verwendet: sie übernimmt
-`X-Forwarded-For` ungeprüft und würde das Login-Rate-Limit (Phase 5) und das
-Audit-Log (Client-IP) fälschbar machen. Falls ein Reverse Proxy unterstützt
-werden soll, kommt eine explizite Liste vertrauenswürdiger Proxys dazu.
+The chi middleware `RealIP` is not used: it accepts
+`X-Forwarded-For` unchecked and would make the login rate limit (phase 5) and the
+audit log (client IP) spoofable. If a reverse proxy is to be
+supported, an explicit list of trusted proxies will be added.
 
-## D-009 – YAML-Bibliothek `go.yaml.in/yaml/v3`
+## D-009 – YAML library `go.yaml.in/yaml/v3`
 
-Offizieller Nachfolger des archivierten `gopkg.in/yaml.v3` (gleiche API,
-gepflegt vom YAML-Org).
+Official successor of the archived `gopkg.in/yaml.v3` (same API,
+maintained by the YAML org).
 
-## D-010 – Linter-Profil
+## D-010 – Linter profile
 
-golangci-lint v2 mit `standard` + bodyclose, errorlint, gosec, misspell,
+golangci-lint v2 with `standard` + bodyclose, errorlint, gosec, misspell,
 noctx, nolintlint, unconvert, copyloopvar, durationcheck, nilerr.
-`gosec G115` (Integer-Konvertierung) ist deaktiviert, weil IPv4-Arithmetik
-ständig zwischen `uint32`/`int64` konvertiert; die Wertebereiche werden in der
-Validierung geprüft. In Tests sind `gosec` und `noctx` aus.
+`gosec G115` (integer conversion) is disabled because IPv4 arithmetic
+constantly converts between `uint32`/`int64`; value ranges are checked during
+validation. In tests, `gosec` and `noctx` are off.
 
 ---
 
-## D-011 – Socket-Modell DHCPv4
+## D-011 – DHCPv4 socket model
 
-**Entscheidung:** Pro konfiguriertem Interface ein UDP-Socket auf
-`0.0.0.0:67` mit `SO_BINDTODEVICE`, `SO_BROADCAST`, `SO_REUSEADDR` und
-`IP_PKTINFO` (Zieladresse → Server-Identifier bei Unicast/Relay;
-Quelladresse beim Senden = Server-Identifier). Antworten an Clients ohne
-Adresse und ohne Broadcast-Flag gehen per `AF_PACKET`-Datagram-Socket
-(Protokoll 0, empfängt nichts) direkt an `chaddr`/`yiaddr` (RFC 2131 4.1).
-Ist das nicht möglich (kein `CAP_NET_RAW`, kein Ethernet), wird auf Broadcast
-zurückgefallen – das erlaubt RFC 2131 ausdrücklich.
+**Decision:** One UDP socket per configured interface on
+`0.0.0.0:67` with `SO_BINDTODEVICE`, `SO_BROADCAST`, `SO_REUSEADDR` and
+`IP_PKTINFO` (destination address → server identifier for unicast/relay;
+source address when sending = server identifier). Replies to clients without
+an address and without the broadcast flag go via an `AF_PACKET` datagram socket
+(protocol 0, receives nothing) directly to `chaddr`/`yiaddr` (RFC 2131 4.1).
+If that is not possible (no `CAP_NET_RAW`, no Ethernet), the server falls back
+to broadcast – which RFC 2131 explicitly allows.
 
-**Konsequenz:** Relays müssen über eines der konfigurierten Interfaces
-erreichbar sein (Pakete auf anderen Interfaces sieht kein Socket).
-Fehlt ein Interface beim Start, wird alle 5 s erneut gebunden; `/readyz`
-meldet bis dahin "not listening".
+**Consequence:** Relays must be reachable via one of the configured interfaces
+(no socket sees packets on other interfaces).
+If an interface is missing at startup, binding is retried every 5 s; until then,
+`/readyz` reports "not listening".
 
-## D-012 – Client-Identität und Reservierungs-Matching
+## D-012 – Client identity and reservation matching
 
-Ein Client wird über Option 61 (Client Identifier) identifiziert, ohne
-Option 61 über `chaddr` (RFC 2131 4.2). Gleiche MAC mit verschiedener
-Client-ID gilt als verschiedene Clients (z. B. PXE vs. Betriebssystem).
-Reservierungen matchen zuerst über die Client-ID, dann über die MAC.
+A client is identified by option 61 (client identifier), or, without
+option 61, by `chaddr` (RFC 2131 4.2). The same MAC with different
+client IDs counts as different clients (e.g. PXE vs. operating system).
+Reservations match on the client ID first, then on the MAC.
 
-## D-013 – Lease-Zustände, Zeiten und Defaults
+## D-013 – Lease states, times and defaults
 
-| Zustand | Bedeutung |
+| State | Meaning |
 |---|---|
-| `active` | gebunden bis `expires_at` |
-| `expired` | abgelaufen, wird `expired_grace` lang für denselben Client vorgehalten |
-| `released` | vom Client freigegeben, Adresse sofort wieder vergebbar, Datensatz für Affinität |
-| `declined` | DECLINE oder Konflikt, gesperrt bis `expires_at` |
+| `active` | bound until `expires_at` |
+| `expired` | expired, held for the same client for `expired_grace` |
+| `released` | released by the client, address immediately available again, record kept for affinity |
+| `declined` | DECLINE or conflict, blocked until `expires_at` |
 
-- `expired_grace` = 4 h (Windows-Parität).
-- `decline_time` = 24 h (Kea-Default "decline-probation-period"). Windows
-  sperrt "BAD_ADDRESS" unbefristet; 24 h ist der Kompromiss zwischen
-  Sicherheit und Pool-Verlust, konfigurierbar.
-- Angebote (OFFER) werden nur im Speicher gehalten (`offer_timeout` 60 s),
-  nicht persistiert: nach einem Neustart sind sie ohnehin wertlos.
-- Lease-Zeit 0 = unbegrenzt (`0xffffffff`, ohne T1/T2). T1 = 50 %, T2 = 87,5 %.
-- Pro Client und Scope gibt es genau eine aktive Bindung; ältere werden beim
-  ACK einer neuen Adresse auf `released` gesetzt.
+- `expired_grace` = 4 h (Windows parity).
+- `decline_time` = 24 h (Kea default "decline-probation-period"). Windows
+  blocks "BAD_ADDRESS" indefinitely; 24 h is the compromise between
+  safety and pool loss, configurable.
+- Offers (OFFER) are kept in memory only (`offer_timeout` 60 s),
+  not persisted: after a restart they are worthless anyway.
+- Lease time 0 = unlimited (`0xffffffff`, without T1/T2). T1 = 50%, T2 = 87.5%.
+- There is exactly one active binding per client and scope; older ones are set
+  to `released` when a new address is ACKed.
 
-## D-014 – Reihenfolge der Adressauswahl
+## D-014 – Order of address selection
 
-Reservierung > laufendes Angebot > bestehender Lease des Clients
-(aktiv vor zuletzt genutzt) > angefragte Adresse (Option 50) > nie benutzte
-Adresse (Cursor, Round-Robin) > freigegebene Adresse (älteste zuerst) >
-abgelaufene Adresse anderer Clients (älteste zuerst, auch innerhalb der
-Grace-Period). Die letzte Stufe greift nur bei erschöpftem Pool – die
-Grace-Period ist eine Präferenz, kein harter Block, damit ein voller Pool
-nicht an vergangenen Leases verhungert.
+Reservation > pending offer > the client's existing lease
+(active before most recently used) > requested address (option 50) > never-used
+address (cursor, round-robin) > released address (oldest first) >
+expired address of other clients (oldest first, even within the
+grace period). The last stage applies only when the pool is exhausted – the
+grace period is a preference, not a hard block, so that a full pool
+does not starve because of past leases.
 
-## D-015 – INIT-REBOOT/RENEW ohne eigenen Datensatz
+## D-015 – INIT-REBOOT/RENEW without a local record
 
-RFC 2131 empfiehlt Schweigen, wenn der Server keinen Datensatz zum Client
-hat. Leasorix bestätigt stattdessen (ACK), wenn die Adresse gültig, frei und
-nicht reserviert ist, und legt den Lease an. NAK, wenn sie einem anderen
-Client gehört, reserviert/ausgeschlossen ist oder im falschen Netz liegt.
-Schweigen nur, wenn für das Link-Netz gar kein Scope existiert.
+RFC 2131 recommends silence if the server has no record of the client.
+Instead, Leasorix confirms (ACK) if the address is valid, free and
+not reserved, and creates the lease. NAK if it belongs to another
+client, is reserved/excluded or is on the wrong network.
+Silence only if no scope exists at all for the link network.
 
-**Begründung:** Nach Datenverlust oder einem Neustart ohne Datensatz würde
-"Schweigen" den Client seine Adresse unbemerkt weiterbenutzen lassen, während
-wir sie als frei betrachten → Duplikate. Mit ACK wird die Bindung erfasst.
-In Phase 6 (HA) wird das um die Pool-Zuständigkeit des Partners ergänzt.
+**Rationale:** After data loss or a restart without a record,
+"silence" would let the client keep using its address unnoticed while
+we consider it free → duplicates. With an ACK, the binding is recorded.
+In phase 6 (HA), this is extended with the partner's pool responsibility.
 
-## D-016 – Reservierungen
+## D-016 – Reservations
 
-- Reservierte Adresse muss im Subnetz liegen (nicht Netz-/Broadcast-Adresse),
-  nicht zwingend im dynamischen Bereich; sie wird nie dynamisch vergeben,
-  auch nicht innerhalb einer Exclusion.
-- Hat ein Client eine Reservierung, bekommt er ausschließlich diese Adresse.
-  Ist sie gerade an einen anderen Client vergeben oder antwortet sie auf den
-  Konflikt-Ping, bekommt der reservierte Client **kein** Angebot (Warnung im
-  Log) statt einer dynamischen Ersatzadresse. Der andere Client erhält beim
-  nächsten Renew ein NAK.
+- A reserved address must be within the subnet (not the network/broadcast address),
+  but not necessarily in the dynamic range; it is never assigned dynamically,
+  not even within an exclusion.
+- If a client has a reservation, it gets only that address.
+  If the address is currently assigned to another client or responds to the
+  conflict ping, the reserved client gets **no** offer (warning in the
+  log) instead of a dynamic substitute address. The other client receives a NAK
+  on its next renew.
 
-## D-017 – Scope-Regeln
+## D-017 – Scope rules
 
-Subnetze dürfen sich nicht überlappen, Präfix /8 bis /30, das Subnetz eines
-bestehenden Scopes ist unveränderlich (wie bei Windows), Exclusions müssen im
-Bereich liegen und dürfen sich nicht überlappen, Lease-Zeit ≥ 10 s oder 0.
-Ein deaktivierter Scope macht keine Angebote mehr und beantwortet Renewals
-mit NAK, damit Clients sich umorientieren.
+Subnets must not overlap, prefix /8 to /30, the subnet of an
+existing scope is immutable (as in Windows), exclusions must lie within the
+range and must not overlap, lease time ≥ 10 s or 0.
+A disabled scope no longer makes offers and answers renewals
+with a NAK so that clients look for a new address.
 
-## D-018 – Link-Auswahl bei Relays
+## D-018 – Link selection for relays
 
-Priorität: Option 118 (Subnet Selection, RFC 3011) > Relay-Sub-Option 5
-(Link Selection, RFC 3527) > `giaddr`. Relay-Sub-Option 11 (Server
-Identifier Override, RFC 5107) wird als Server-ID verwendet. Option 82 wird
-unverändert zurückgegeben (RFC 3046), Option 61 ebenfalls (RFC 6842).
+Priority: option 118 (Subnet Selection, RFC 3011) > relay sub-option 5
+(Link Selection, RFC 3527) > `giaddr`. Relay sub-option 11 (Server
+Identifier Override, RFC 5107) is used as the server ID. Option 82 is
+returned unchanged (RFC 3046), as is option 61 (RFC 6842).
 
-## D-019 – Konflikterkennung
+## D-019 – Conflict detection
 
-Standardmäßig an (500 ms, 1 Versuch) – anders als Windows (Default aus), da
-ein Duplikat teurer ist als die Verzögerung beim ersten Angebot. Geprüft
-werden nur Adressen, die der Client nicht bereits aktiv hält; ein bereits
-geprüftes Angebot wird nicht erneut gepingt. Antwortet die Adresse, wird der
-ARP-Cache geprüft: kommt die Antwort vom anfragenden Client selbst, ist es
-kein Konflikt. Konflikte werden als `declined` (für `decline_time`)
-gespeichert. Raw-ICMP-Socket bevorzugt, Fallback auf unprivilegierten
-ICMP-Socket, sonst wird die Funktion mit Warnung deaktiviert.
+On by default (500 ms, 1 attempt) – unlike Windows (off by default), because
+a duplicate is more costly than the delay on the first offer. Only
+addresses that the client does not already actively hold are checked; an
+offer that has already been checked is not pinged again. If the address responds, the
+ARP cache is checked: if the reply comes from the requesting client itself, it is
+not a conflict. Conflicts are stored as `declined` (for `decline_time`).
+A raw ICMP socket is preferred, with a fallback to an unprivileged
+ICMP socket; otherwise the feature is disabled with a warning.
 
-## D-020 – Persistenz der Leases: Group Commit
+## D-020 – Lease persistence: group commit
 
-Ein ACK wird erst gesendet, wenn der Lease durable in SQLite steht. Alle
-Schreibvorgänge laufen über eine Writer-Goroutine, die gleichzeitige
-Anfragen zu einer Transaktion bündelt (ein `fsync` für viele Leases).
-Entscheidungen fallen im Speicher unter einem Mutex; der Speicher darf dem
-Datenträger nur in die sichere Richtung voraus sein (Adresse gilt schon als
-belegt). Schlägt ein Batch fehl, werden die Anfragen einzeln wiederholt.
+An ACK is sent only once the lease is durably stored in SQLite. All
+writes go through a writer goroutine that batches concurrent
+requests into one transaction (one `fsync` for many leases).
+Decisions are made in memory under a mutex; memory may only be ahead of the
+disk in the safe direction (the address already counts as
+in use). If a batch fails, the requests are retried individually.
 
-## D-021 – BOOTP vorerst ignoriert
+## D-021 – BOOTP ignored for now
 
-Pakete ohne DHCP-Message-Type (BOOTP) werden in Phase 2 verworfen; BOOTP ist
-in Phase 7 optional.
+Packets without a DHCP message type (BOOTP) are dropped in phase 2; BOOTP is
+optional in phase 7.
 
-## D-022 – Integrationstests mit Network Namespaces
+## D-022 – Integration tests with network namespaces
 
-Die Tests unter `test/integration` (Build-Tag `integration`, root nötig)
-bauen pro Test eigene Namespaces + veth-Paare. Der Go-Testclient erzeugt
-seine Sockets per `setns` auf einem gesperrten OS-Thread direkt im
-Client-Namespace; dieselbe Technik dient als `DialContext` für HTTP-Checks
-in den Server-Namespace. Hinweis: busybox `udhcpc -q -R` sendet kein RELEASE
-(beendet sich vor BOUND) – der Test beendet udhcpc daher per SIGTERM.
+The tests under `test/integration` (build tag `integration`, root required)
+set up their own namespaces + veth pairs per test. The Go test client creates
+its sockets via `setns` on a locked OS thread directly in the
+client namespace; the same technique serves as `DialContext` for HTTP checks
+into the server namespace. Note: busybox `udhcpc -q -R` does not send a RELEASE
+(it exits before BOUND) – the test therefore terminates udhcpc with SIGTERM.
 
 ---
 
-## D-023 – Optionsmodell
+## D-023 – Option model
 
-- Optionswerte werden typisiert gespeichert (`ip`, `ip-list`, `string`,
+- Option values are stored typed (`ip`, `ip-list`, `string`,
   `uint8/16/32`, `int32`, `bool`, `hex`, `domain-list`, `routes`) – in
-  kanonischer Textform; die Wire-Kodierung entsteht beim Aufbau des
-  Snapshots. Damit sind DB-Inhalte lesbar und Export/Import (Phase 7) trivial.
-- Built-in-Katalog in `internal/dhcpopt` (RFC 2132 + 3397/3442/4833/8910,
-  Cisco 150, Microsoft 249/252). Weitere Codes nur über eigene
-  Optionsdefinitionen (Code + Name + Typ), z. B. für 224–254.
-- Vom Server verwaltete Codes sind nicht konfigurierbar: 1 (aus dem Subnetz),
-  51 (Lease-Zeit von Scope/Policy), 54, 58/59 (aus der Lease-Zeit), sowie die
-  rein clientseitigen bzw. Relay-Optionen 50, 53, 55, 57, 61, 82, 118.
-- Option 43 wird als `hex` gepflegt (herstellerspezifisch gekapselt).
+  canonical text form; the wire encoding is produced when the
+  snapshot is built. This keeps DB contents readable and makes export/import (phase 7) trivial.
+- Built-in catalog in `internal/dhcpopt` (RFC 2132 + 3397/3442/4833/8910,
+  Cisco 150, Microsoft 249/252). Further codes only via custom
+  option definitions (code + name + type), e.g. for 224–254.
+- Server-managed codes are not configurable: 1 (from the subnet),
+  51 (lease time from scope/policy), 54, 58/59 (from the lease time), as well as the
+  purely client-side or relay options 50, 53, 55, 57, 61, 82, 118.
+- Option 43 is maintained as `hex` (vendor-specific, encapsulated).
 
-## D-024 – Klassen wirken über Policies (keine klassen-qualifizierten Werte)
+## D-024 – Classes take effect via policies (no class-qualified values)
 
-Windows kennt neben Policies auch Optionswerte, die direkt an eine
-Vendor-/User-Class gebunden sind. Leasorix bildet Klassen als benannte
-Definitionen (Typ vendor = Option 60, user = Option 77, Wildcard-Muster) ab,
-die in Policy-Bedingungen referenziert werden (`field: class`). Optionen für
-eine Klasse = Policy mit Bedingung auf die Klasse + Optionswerte an der
-Policy. Das ist ausdrucksstärker (kombinierbar mit MAC/Option 82) und
-vermeidet eine zweite, konkurrierende Vererbungsachse.
+Besides policies, Windows also has option values that are bound directly to a
+vendor/user class. Leasorix models classes as named
+definitions (type vendor = option 60, user = option 77, wildcard patterns)
+that are referenced in policy conditions (`field: class`). Options for
+a class = a policy with a condition on the class + option values on the
+policy. This is more expressive (can be combined with MAC/option 82) and
+avoids a second, competing inheritance axis.
 
-**Vererbung (spezifischste gewinnt):** Server → Scope → Server-Policies →
-Scope-Policies → Reservierung. Innerhalb einer Ebene gewinnt die Policy mit
-der niedrigsten Processing Order.
+**Inheritance (most specific wins):** Server → scope → server policies →
+scope policies → reservation. Within one level, the policy with
+the lowest processing order wins.
 
-## D-025 – Policy-Semantik
+## D-025 – Policy semantics
 
-- Bedingungen auf `mac`, `client_id`, `hostname`, `vendor_class`,
+- Conditions on `mac`, `client_id`, `hostname`, `vendor_class`,
   `user_class`, `class`, `relay_circuit_id`, `relay_remote_id`,
-  `relay_subscriber_id`; Operator `eq`/`ne`; Verknüpfung UND oder ODER auf
-  oberster Ebene (keine verschachtelten Gruppen – konservativ, deckt die
-  Windows-Fälle ab).
-- Wildcards `*` und `?`, Vergleich case-insensitive. Für binäre Felder
-  (Option 82, Client-ID) vergleicht ein Wert mit Präfix `0x` gegen die
-  Hex-Darstellung.
-- Option 77 wird nach RFC 3004 zerlegt; ist der Inhalt kein gültiges
-  RFC-3004-Format (Windows-Clients), gilt er als ein einzelner Eintrag.
-- **IP-Bereiche** nur für Scope-Policies. Adressen in einem Policy-Bereich
-  bekommen ausschließlich passende Clients; nicht passende Clients bekommen
-  den Rest des Scope-Bereichs. Ist der Bereich der passenden Policy(s)
-  erschöpft, gibt es **kein** Ausweichen in den allgemeinen Bereich
-  (die Trennung ist meist gewollt, z. B. VoIP).
-- Lease-Dauer: erste passende Policy mit gesetzter Dauer (Scope-Policies
-  vor Server-Policies, jeweils nach Processing Order), sonst Scope.
-- Mindestens eine Bedingung ist Pflicht; referenzierte Klassen müssen
-  existieren, eine verwendete Klasse kann nicht gelöscht werden, eine
-  Umbenennung wird in die Bedingungen übernommen.
+  `relay_subscriber_id`; operator `eq`/`ne`; combined with AND or OR at the
+  top level (no nested groups – conservative, covers the
+  Windows cases).
+- Wildcards `*` and `?`, case-insensitive comparison. For binary fields
+  (option 82, client ID), a value with the prefix `0x` is compared against the
+  hex representation.
+- Option 77 is parsed per RFC 3004; if the content is not in valid
+  RFC 3004 format (Windows clients), it counts as a single entry.
+- **IP ranges** only for scope policies. Addresses in a policy range
+  go exclusively to matching clients; non-matching clients get
+  the rest of the scope range. If the range of the matching policy (or policies) is
+  exhausted, there is **no** fallback to the general range
+  (the separation is usually intended, e.g. VoIP).
+- Lease duration: the first matching policy with a duration set (scope policies
+  before server policies, each by processing order), otherwise the scope.
+- At least one condition is mandatory; referenced classes must
+  exist, a class in use cannot be deleted, and a
+  rename is carried over into the conditions.
 
-## D-026 – Auslieferung der Optionen
+## D-026 – Option delivery
 
-- Sendet der Client Option 55, werden nur angeforderte Optionen geliefert (in
-  der Reihenfolge der Liste), sonst alle konfigurierten.
-- Optionen 66/67 (bzw. 150) werden zusätzlich in die BOOTP-Header-Felder
-  `sname`/`file`/`siaddr` gespiegelt, weil viele PXE-ROMs nur diese lesen.
-- Überschreitet die Antwort die maximale Nachrichtengröße (Option 57, sonst
-  576 Byte), werden Optionen vom Ende der Request-Liste entfernt und eine
-  Warnung geloggt. Option Overload (52) wird nicht verwendet.
+- If the client sends option 55, only the requested options are delivered (in
+  the order of the list), otherwise all configured ones.
+- Options 66/67 (or 150) are additionally mirrored into the BOOTP header fields
+  `sname`/`file`/`siaddr`, because many PXE ROMs read only those.
+- If the reply exceeds the maximum message size (option 57, otherwise
+  576 bytes), options are removed from the end of the request list and a
+  warning is logged. Option overload (52) is not used.
 
-## D-027 – MAC-Filter
+## D-027 – MAC filters
 
-Allow- und Deny-Liste mit Wildcards, beide standardmäßig deaktiviert
-(Schalter in `settings`). Deny gewinnt vor Allow. Ist die Allow-Liste aktiv,
-werden nur gelistete MACs bedient. Gefilterte Clients werden für alle
-Nachrichtentypen stillschweigend ignoriert (Log auf Info-Level).
+Allow list and deny list with wildcards, both disabled by default
+(switch in `settings`). Deny wins over allow. If the allow list is active,
+only listed MACs are served. Filtered clients are silently ignored for all
+message types (logged at info level).
 
 ---
 
-## D-028 – Audit-Log: atomar mit der Änderung
+## D-028 – Audit log: atomic with the change
 
-- Konfigurationsänderungen schreiben ihren Audit-Eintrag **in derselben
-  Transaktion** wie die Änderung (`scope.Store.rec`). Es gibt also weder
-  Änderungen ohne Eintrag noch Einträge ohne Änderung; abgelehnte Operationen
-  hinterlassen nichts. Details enthalten `before`/`after`.
-- Lease-Events laufen als zusätzliche Ops durch den Group-Commit des
-  Lease-Writers – gleiche Atomarität, kein zusätzlicher fsync.
-- Wer: Actor + Quelle aus dem `context` (`audit.WithActor`). Die API
-  (Phase 5) setzt dort Benutzer und Client-IP; DHCP-Ereignisse laufen als
-  `dhcp` mit Quelle `<interface> [via <giaddr>]`, der Expiry-Worker als
+- Configuration changes write their audit entry **in the same
+  transaction** as the change (`scope.Store.rec`). So there are neither
+  changes without an entry nor entries without a change; rejected operations
+  leave nothing behind. Details contain `before`/`after`.
+- Lease events run as additional ops through the group commit of the
+  lease writer – same atomicity, no additional fsync.
+- Who: actor + source from the `context` (`audit.WithActor`). The API
+  (phase 5) sets the user and client IP there; DHCP events run as
+  `dhcp` with source `<interface> [via <giaddr>]`, the expiry worker as
   `system`.
-- Lease-Renewals werden standardmäßig **nicht** auditiert
-  (`audit.lease_renewals: false`): bei 5000 Clients und 1 h Lease-Zeit wären
-  das ~10 000 Einträge pro Stunde. Zuweisung, Release, Decline, Konflikt und
-  Ablauf werden protokolliert.
-- Aufbewahrung `audit.retention` (Default 90 Tage, 0 = unbegrenzt), Purge
-  beim Start und alle 6 h in Batches à 10 000 Zeilen (kurze Schreibsperren).
+- Lease renewals are **not** audited by default
+  (`audit.lease_renewals: false`): with 5000 clients and a 1 h lease time, that would be
+  ~10,000 entries per hour. Assignment, release, decline, conflict and
+  expiry are logged.
+- Retention `audit.retention` (default 90 days, 0 = unlimited), purge
+  at startup and every 6 h in batches of 10,000 rows (short write locks).
 
-## D-029 – Scope-Statistik
+## D-029 – Scope statistics
 
-Berechnet aus dem In-Memory-Lease-Index (O(Leases + Reservierungen), nicht
-O(Poolgröße)): `usable` = Bereich − Exclusions; `in_use` = aktive Leases im
-nutzbaren Bereich; `reserved` = ungenutzte Reservierungen im nutzbaren
-Bereich; `declined` = gesperrte Adressen; `available` = Rest; Auslastung =
-(usable − available) / usable. Policy-Bereiche werden nicht gesondert
-ausgewiesen.
+Computed from the in-memory lease index (O(leases + reservations), not
+O(pool size)): `usable` = range − exclusions; `in_use` = active leases in the
+usable range; `reserved` = unused reservations in the usable
+range; `declined` = blocked addresses; `available` = the rest; utilization =
+(usable − available) / usable. Policy ranges are not reported
+separately.
 
-## D-030 – Metriken
+## D-030 – Metrics
 
-Eigene Registry (kein globaler Zustand). Paketzähler je Nachrichtentyp
-(empfangen/gesendet), Drops mit Grund (`filtered`, `no_scope`,
+Dedicated registry (no global state). Packet counters per message type
+(received/sent), drops with a reason (`filtered`, `no_scope`,
 `no_address`, `other_server`, `not_ours`, `invalid`, `malformed`, `bootp`,
-…), interne Fehler (`persist`, `send`), Verarbeitungsdauer als Histogramm,
-Lease-Events, Commit-Dauer und Batch-Größe des Group-Commits. Scope- und
-Lease-Gauges werden erst beim Scrape berechnet (Custom Collector), damit der
-DHCP-Pfad nicht für Statistik bezahlt. Der HA-Status folgt mit Phase 6.
+…), internal errors (`persist`, `send`), processing duration as a histogram,
+lease events, commit duration and batch size of the group commit. Scope and
+lease gauges are computed only at scrape time (custom collector), so that the
+DHCP path does not pay for statistics. HA status follows with phase 6.
 
-## D-031 – Logging-Ziel und Rotation
+## D-031 – Logging target and rotation
 
-Default stderr (Container-Standard, Rotation übernimmt Docker/journald).
-Optional `log.file` mit eingebauter Größenrotation (`max_size_mb`,
-`max_backups`) ohne externe Abhängigkeit; jeder Log-Datensatz landet
-vollständig in einer Datei.
+Default stderr (container standard; rotation is handled by Docker/journald).
+Optional `log.file` with built-in size-based rotation (`max_size_mb`,
+`max_backups`) without external dependencies; every log record ends up
+complete in a single file.
 
 ---
 
-## D-032 – OpenAPI zuerst, Code generiert
+## D-032 – OpenAPI first, code generated
 
-- Spezifikation `internal/api/openapi.yaml` (OpenAPI **3.0.3**, weil
-  `oapi-codegen` 3.1 nur teilweise unterstützt).
-- Go: `oapi-codegen` v2.8 (als `go tool` in `go.mod` gepinnt) erzeugt Modelle
-  und das chi-`ServerInterface` (`internal/api/gen`). Die Handler
-  implementieren das Interface; der Compiler erzwingt damit, dass jeder
-  Endpunkt der Spec existiert.
-- TypeScript: `openapi-typescript` erzeugt `web/src/api/schema.d.ts`, der
-  Client ist `openapi-fetch` – Pfade, Parameter und Bodies sind typisiert.
-- Generierter Code wird eingecheckt; die CI prüft per `git diff`, dass er zur
-  Spec passt (`make generate`).
+- Specification `internal/api/openapi.yaml` (OpenAPI **3.0.3**, because
+  `oapi-codegen` supports 3.1 only partially).
+- Go: `oapi-codegen` v2.8 (pinned as a `go tool` in `go.mod`) generates models
+  and the chi `ServerInterface` (`internal/api/gen`). The handlers
+  implement the interface; the compiler thus enforces that every
+  endpoint in the spec exists.
+- TypeScript: `openapi-typescript` generates `web/src/api/schema.d.ts`; the
+  client is `openapi-fetch` – paths, parameters and bodies are typed.
+- Generated code is checked in; CI verifies via `git diff` that it matches the
+  spec (`make generate`).
 
-## D-033 – Authentifizierung und Sessions
+## D-033 – Authentication and sessions
 
-- Passwörter: argon2id mit RFC-9106-Parametern (t=3, m=64 MiB, p=4) im
-  PHC-Format; Parameter stehen im Hash und können später erhöht werden.
-  Mindestlänge 10 Zeichen. Unbekannte Benutzer werden gegen einen
-  Dummy-Hash geprüft (kein Timing-Orakel).
-- Sessions serverseitig: Cookie `leasorix_session` (32 Byte Zufall), in der
-  DB nur als SHA-256. Cookie `HttpOnly`, `SameSite=Strict`, `Secure` sobald
-  TLS aktiv ist. Absolute Laufzeit 12 h, Inaktivität 1 h (konfigurierbar).
-  Passwortwechsel, Deaktivierung und Rollenwechsel beenden Sessions.
-- CSRF: Synchronizer-Token pro Session, Pflicht-Header `X-CSRF-Token` bei
-  allen nicht-GET-Requests mit Cookie-Auth; zusätzlich Origin-Prüfung und
-  Pflicht-`Content-Type: application/json` (Formulare können keine
-  JSON-Requests ohne Preflight senden).
-- API-Tokens `lxt_…` (nur SHA-256 gespeichert, einmalig angezeigt), optional
-  mit Ablauf; Rolle ≤ Rolle des Benutzers, effektive Rolle = Minimum aus
-  Token- und aktueller Benutzerrolle. Kein CSRF für Bearer-Tokens.
-- Der letzte aktive Admin kann nicht gelöscht, deaktiviert oder herabgestuft
-  werden; das eigene Konto kann man nicht löschen.
-- OIDC ist im Plan "optional später" und noch nicht umgesetzt.
+- Passwords: argon2id with RFC 9106 parameters (t=3, m=64 MiB, p=4) in
+  PHC format; the parameters are stored in the hash and can be increased later.
+  Minimum length 10 characters. Unknown users are checked against a
+  dummy hash (no timing oracle).
+- Server-side sessions: cookie `leasorix_session` (32 random bytes), stored in the
+  DB only as SHA-256. Cookie `HttpOnly`, `SameSite=Strict`, `Secure` as soon as
+  TLS is active. Absolute lifetime 12 h, inactivity 1 h (configurable).
+  Password changes, deactivation and role changes end sessions.
+- CSRF: synchronizer token per session, mandatory header `X-CSRF-Token` on
+  all non-GET requests with cookie auth; additionally an Origin check and a
+  mandatory `Content-Type: application/json` (forms cannot send
+  JSON requests without a preflight).
+- API tokens `lxt_…` (only the SHA-256 is stored, shown once), optionally
+  with an expiry; role ≤ the user's role, effective role = minimum of the
+  token role and the current user role. No CSRF for bearer tokens.
+- The last active admin cannot be deleted, deactivated or demoted;
+  users cannot delete their own account.
+- OIDC is "optional, later" in the plan and not implemented yet.
 
-## D-034 – Erststart nur mit Setup-Token
+## D-034 – First start only with a setup token
 
-Solange kein Benutzer existiert, kann der erste Admin nur mit einem
-einmaligen Setup-Token angelegt werden, das beim Start im Log steht
-(`setup_token=…`) oder per `auth.setup_token` vorgegeben wird. Ohne diesen
-Schutz könnte jeder, der die UI vor dem Betreiber erreicht, die Instanz
-übernehmen. Fehlversuche zählen ins Rate-Limit.
+As long as no user exists, the first admin can only be created with a
+one-time setup token that is written to the log at startup
+(`setup_token=…`) or preset via `auth.setup_token`. Without this
+protection, anyone who reaches the UI before the operator could take over the
+instance. Failed attempts count toward the rate limit.
 
-## D-035 – Rollenmodell
+## D-035 – Role model
 
-| Rolle | darf |
+| Role | Allowed to |
 |---|---|
-| `readonly` | alles lesen außer Benutzerverwaltung; eigenes Passwort, eigene (read-only) Tokens |
-| `operator` | zusätzlich DHCP-Konfiguration ändern (Scopes, Reservierungen, Optionen, Policies, Klassen, Filter-Einträge) und Leases löschen/umwandeln |
-| `admin` | zusätzlich Benutzer und `PUT /settings` (u. a. Aktivierung der MAC-Filterlisten) |
+| `readonly` | read everything except user management; own password, own (read-only) tokens |
+| `operator` | additionally change the DHCP configuration (scopes, reservations, options, policies, classes, filter entries) and delete/convert leases |
+| `admin` | additionally users and `PUT /settings` (including enabling the MAC filter lists) |
 
-Die Prüfung erfolgt zentral in einer Middleware anhand Methode + Pfad (eine
-Tabelle, getestet), nicht verstreut in den Handlern.
+The check happens centrally in a middleware based on method + path (one
+table, tested), not scattered across the handlers.
 
-## D-036 – Login-Rate-Limit
+## D-036 – Login rate limit
 
-Max. 10 Fehlversuche je 15 min pro Client-IP **und** pro Benutzername
-(gleitendes Fenster, im Speicher), danach `429` mit `Retry-After`.
-Fehlversuche landen im Audit-Log (`auth.login_failed`). Die Sperre pro
-Benutzername ermöglicht theoretisch ein kurzzeitiges Aussperren eines
-Kontos – bewusst in Kauf genommen (Management-UI im internen Netz, kurzes
-Fenster, Admin kann per API-Token weiterarbeiten).
+Max. 10 failed attempts per 15 min per client IP **and** per username
+(sliding window, in memory), then `429` with `Retry-After`.
+Failed attempts are recorded in the audit log (`auth.login_failed`). The lock per
+username theoretically allows an account to be locked out
+briefly – accepted deliberately (management UI on the internal network, short
+window, an admin can keep working via an API token).
 
-## D-037 – TLS standardmäßig an (selbstsigniert)
+## D-037 – TLS on by default (self-signed)
 
-`http.tls.mode: self-signed` ist Default: beim ersten Start wird ein
-ECDSA-P-256-Zertifikat (825 Tage, SANs localhost/Hostname/Listen-IP) nach
-`<data_dir>/tls` geschrieben (Key 0600). Alternativ `files` (eigenes
-Zertifikat) oder `off` (z. B. hinter einem Reverse Proxy). HSTS nur mit TLS.
-TLS-Handshake-Fehler (Browser vor dem Akzeptieren des Zertifikats, Scanner)
-werden nur auf Debug geloggt.
+`http.tls.mode: self-signed` is the default: on first start, an
+ECDSA P-256 certificate (825 days, SANs localhost/hostname/listen IP) is written to
+`<data_dir>/tls` (key 0600). Alternatively `files` (own
+certificate) or `off` (e.g. behind a reverse proxy). HSTS only with TLS.
+TLS handshake errors (browsers before the certificate is accepted, scanners)
+are logged at debug level only.
 
-## D-038 – Strikte Security-Header
+## D-038 – Strict security headers
 
-CSP ohne `unsafe-inline` (`script-src 'self'; style-src 'self'`), deshalb
-kein Inline-Skript: die Theme-Erkennung liegt in `/theme.js`. Dazu
+CSP without `unsafe-inline` (`script-src 'self'; style-src 'self'`), hence
+no inline script: theme detection lives in `/theme.js`. In addition,
 `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`,
-`Referrer-Policy: no-referrer`, COOP/CORP, `Cache-Control: no-store` für die
-API. `X-Forwarded-For` wird nicht ausgewertet (D-008). `/metrics` ist ohne
-Login erreichbar (Prometheus-Scrape) – Schutz über die Bind-Adresse.
+`Referrer-Policy: no-referrer`, COOP/CORP, `Cache-Control: no-store` for the
+API. `X-Forwarded-For` is not evaluated (D-008). `/metrics` is reachable without
+signing in (Prometheus scrape) – protected via the bind address.
 
-## D-039 – Web-UI
+## D-039 – Web UI
 
 - Vite 8 + React 19 + TypeScript + Tailwind 4, TanStack Query, React Router 7.
-  **TypeScript 5.9** statt 7.0: die native 7er-Linie ist neu, 5.9 ist mit dem
-  gesamten Tooling erprobt (konservative Wahl).
-- Sprache der Oberfläche: Deutsch (wie PLAN und Nutzer); i18n kann später
-  ergänzt werden.
-- Dark/Light: Class-Strategie, Default aus `prefers-color-scheme`, Auswahl
-  wird in `localStorage` gemerkt.
-- Einbettung über `go:embed` hinter Build-Tag `ui` (`make build`). Ohne Tag
-  baut `go build ./...` ohne Node.js und liefert eine Hinweisseite – so muss
-  kein Build-Artefakt eingecheckt werden.
-- Validierung doppelt: `web/src/lib/validate.ts` spiegelt die Backend-Regeln
-  (Präfix /8–/30, Host-Bits, Bereich im Subnetz, Überlappung, MAC-Muster)
-  für sofortiges Feedback; das Backend prüft verbindlich.
-- Der Scope-Assistent schlägt Bereich/Router nur als Platzhalter vor und
-  übernimmt sie erst bei „Weiter“ in leere Felder (kein Überschreiben beim
-  Tippen).
+  **TypeScript 5.9** instead of 7.0: the native 7.x line is new, while 5.9 is proven with
+  the entire tooling (conservative choice).
+- UI language: German (like the PLAN and the users); i18n can be added
+  later.
+- Dark/light: class strategy, default from `prefers-color-scheme`, the choice
+  is remembered in `localStorage`.
+- Embedding via `go:embed` behind the build tag `ui` (`make build`). Without the tag,
+  `go build ./...` builds without Node.js and serves a notice page – so
+  no build artifact has to be checked in.
+- Validation on both sides: `web/src/lib/validate.ts` mirrors the backend rules
+  (prefix /8–/30, host bits, range within the subnet, overlap, MAC pattern)
+  for immediate feedback; the backend check is authoritative.
+- The scope wizard suggests range/router only as placeholders and
+  fills them into empty fields only on "Next" (no overwriting while
+  typing).
 
-## D-040 – Reservierungs-Import (CSV)
+## D-040 – Reservation import (CSV)
 
-Alles-oder-nichts in einer Transaktion; Fehler werden mit Zeilennummer
-gemeldet. Pflichtspalten `scope` (Name oder ID) und `ip`, dazu `mac`
-und/oder `client_id`; Trennzeichen `,` oder `;` (automatisch erkannt), BOM
-wird toleriert. Jede importierte Zeile erzeugt einen Audit-Eintrag.
+All-or-nothing in one transaction; errors are reported with the line number.
+Mandatory columns `scope` (name or ID) and `ip`, plus `mac`
+and/or `client_id`; delimiter `,` or `;` (detected automatically), a BOM
+is tolerated. Each imported row creates an audit entry.
 
-## D-041 – Lease-Aktionen per API/UI
+## D-041 – Lease actions via API/UI
 
-„Lease löschen“ entfernt den Datensatz sofort (Adresse wieder frei, Audit
-`lease.delete` mit dem Benutzer). „In Reservierung umwandeln“ übernimmt IP,
-MAC und Hostname (Client-ID nur, wenn keine MAC bekannt ist).
+"Delete lease" removes the record immediately (address free again, audit
+`lease.delete` with the user). "Convert to reservation" takes over the IP,
+MAC and hostname (client ID only if no MAC is known).
 
-## D-042 – End-to-End-Tests
+## D-042 – End-to-end tests
 
-Playwright gegen den echten Server in einem Network Namespace (Management-
-veth zum Root-Namespace, DHCP-veth zum Client-Namespace), der Test startet
-`udhcpc` im Client-Namespace (`test/e2e/run.sh`, `make test-e2e`). Lokal
-wird das vorinstallierte Chromium verwendet, in der CI per
+Playwright against the real server in a network namespace (management
+veth to the root namespace, DHCP veth to the client namespace); the test starts
+`udhcpc` in the client namespace (`test/e2e/run.sh`, `make test-e2e`). Locally,
+the preinstalled Chromium is used; in CI, it is installed via
 `playwright install`.
 
-## D-043 – HA-Peer-Protokoll: gRPC mit Protobuf
+## D-043 – HA peer protocol: gRPC with Protobuf
 
-Eigenes Protokoll (`internal/ha/pb/ha.proto`) über gRPC, wie im Plan
-vorgesehen. Vier RPCs: `Heartbeat` (Status beider Seiten, auch
-Verbindungsprüfung), `PushLeases` (Lease-Änderungen), `DumpLeases`
-(Stream der ganzen Lease-Tabelle für den Abgleich), `PushConfig`
-(Konfigurations-Snapshot). Jeder Server ist zugleich Server und Client;
-Verbindung über eine feste Peer-Adresse (`ha.peer.address`). Generierter
-Code wird eingecheckt (`make generate`; protoc 3.21 wie in Ubuntu 24.04,
-`protoc-gen-go`/`protoc-gen-go-grpc` als `go tool` mit fester Version), die
-CI prüft die Aktualität. Nachrichten bis 64 MiB, Backoff max. ein
-Heartbeat-Intervall, damit die Verbindung nach einer Partition schnell
-wiederkommt.
+Custom protocol (`internal/ha/pb/ha.proto`) over gRPC, as planned.
+Four RPCs: `Heartbeat` (status of both sides, also serves as a
+connection check), `PushLeases` (lease changes), `DumpLeases`
+(stream of the entire lease table for reconciliation), `PushConfig`
+(configuration snapshot). Each server is both server and client;
+the connection uses a fixed peer address (`ha.peer.address`). Generated
+code is checked in (`make generate`; protoc 3.21 as in Ubuntu 24.04,
+`protoc-gen-go`/`protoc-gen-go-grpc` as a `go tool` with a pinned version), and
+CI checks that it is up to date. Messages up to 64 MiB, backoff at most one
+heartbeat interval, so that the connection comes back quickly after a
+partition.
 
-## D-044 – Absicherung der Peer-Verbindung
+## D-044 – Securing the peer connection
 
-- **mtls** (Default): gemeinsame CA, das Knotenzertifikat trägt die Node-ID
-  als DNS-Name. Der Client prüft den Server gegen `peer.id`, der Server den
-  Client per `VerifyConnection` ebenso – ein gültiges Zertifikat derselben
-  CA für einen anderen Knoten wird abgewiesen. TLS ≥ 1.3. Zertifikate per
-  UI (`POST /ha/certificates`) oder CLI (`leasorixd ha certs`): ECDSA P-256,
-  CA 10 Jahre, Knoten 5 Jahre; der CA-Schlüssel wird nicht gespeichert
-  (neue Knoten = neues Bündel). Ablauf als Metrik, im UI und als Log-Warnung
-  30 Tage vorher.
-- **secret**: TLS 1.3 mit Wegwerf-Zertifikaten, danach – noch vor dem
-  ersten gRPC-Byte – ein gegenseitiger Nachweis
-  `HMAC-SHA256(secret, Label|Rolle|Node-ID|TLS-Exporter)`. Der Exporter-Wert
-  ist an die TLS-Sitzung gebunden; ein Man-in-the-Middle hat zwei Sitzungen
-  und kann den Nachweis weder fälschen noch weiterreichen. Secret ≥ 16
-  Zeichen, bevorzugt aus `shared_secret_file`.
+- **mtls** (default): shared CA; the node certificate carries the node ID
+  as a DNS name. The client verifies the server against `peer.id`, and the server
+  verifies the client the same way via `VerifyConnection` – a valid certificate from the same
+  CA for a different node is rejected. TLS ≥ 1.3. Certificates via the
+  UI (`POST /ha/certificates`) or CLI (`leasorixd ha certs`): ECDSA P-256,
+  CA 10 years, nodes 5 years; the CA key is not stored
+  (new nodes = new bundle). Expiry is exposed as a metric, in the UI and as a log warning
+  30 days in advance.
+- **secret**: TLS 1.3 with throwaway certificates, followed – before the
+  first gRPC byte – by a mutual proof
+  `HMAC-SHA256(secret, label|role|node ID|TLS exporter)`. The exporter value
+  is bound to the TLS session; a man-in-the-middle has two sessions
+  and can neither forge nor relay the proof. Secret ≥ 16
+  characters, preferably from `shared_secret_file`.
 
-## D-045 – Aufteilung von Clients und Adressen
+## D-045 – Splitting clients and addresses
 
-- Load Balance: zuständig für einen Client ist der Primary, wenn
-  `SHA-256(MAC) mod 100 < load_balance_percent`, sonst der Secondary
-  (Hash(MAC) laut Plan; deterministisch, kein Offer-Rennen).
-- Jede freie Adresse gehört genau einem Server: Anteil per
-  Weyl-Folge `frac(ip · φ⁻¹)` statt Hash – zusammenhängende Bereiche werden
-  dadurch fast exakt im gewünschten Verhältnis geteilt, und die Zuordnung
-  hängt nicht von der Konfiguration ab (Ausschlüsse/Reservierungen ändern
-  nichts, kein Umverteilen bei Config-Änderungen).
-- Load Balance: Adressanteil = Client-Anteil. Hot Standby: der Standby
-  besitzt `standby_reserve_percent` (Default 5 %) der Adressen als Reserve,
-  der Primary den Rest.
-- Neue Adressen werden nur aus dem eigenen Anteil vergeben (auch bei
-  Option 50 / INIT-REBOOT). Bestehende aktive Bindungen eines Clients
-  dürfen immer verlängert werden, egal wem die Adresse gehört.
-- Konservativ: statische Reserve statt dynamischem Pool-Rebalancing wie bei
-  ISC-Failover. Folge: im Hot Standby kann der Primary die Reserve nicht
-  nutzen.
+- Load balance: the primary is responsible for a client if
+  `SHA-256(MAC) mod 100 < load_balance_percent`, otherwise the secondary
+  (Hash(MAC) per the plan; deterministic, no offer race).
+- Every free address belongs to exactly one server: the share is determined by a
+  Weyl sequence `frac(ip · φ⁻¹)` instead of a hash – contiguous ranges are
+  thus split almost exactly in the desired ratio, and the assignment
+  does not depend on the configuration (exclusions/reservations change
+  nothing, no redistribution on config changes).
+- Load balance: address share = client share. Hot standby: the standby
+  owns `standby_reserve_percent` (default 5%) of the addresses as a reserve,
+  the primary owns the rest.
+- New addresses are assigned only from the server's own share (also for
+  option 50 / INIT-REBOOT). A client's existing active bindings
+  may always be renewed, regardless of who owns the address.
+- Conservative: a static reserve instead of dynamic pool rebalancing as in
+  ISC failover. Consequence: in hot standby, the primary cannot use the
+  reserve.
 
-## D-046 – Zustandsautomat
+## D-046 – State machine
 
-Zustände laut Plan: NORMAL, COMMUNICATION_INTERRUPTED (CI), PARTNER_DOWN
-(PD), RECOVER, RECOVER_DONE. „Verbunden“ heißt: eigene Heartbeats werden
-beantwortet **und** Heartbeats des Partners kommen an (beides innerhalb
-`communication_timeout`) und die Einstellungen passen zusammen.
+States per the plan: NORMAL, COMMUNICATION_INTERRUPTED (CI), PARTNER_DOWN
+(PD), RECOVER, RECOVER_DONE. "Connected" means: the server's own heartbeats are
+answered **and** the partner's heartbeats arrive (both within
+`communication_timeout`) and the settings match.
 
-- Start immer in RECOVER (kein DHCP-Dienst), außer der Server war in PD.
-  War die Lease-Tabelle vor dem Neustart aktuell (NORMAL/CI/RECOVER_DONE)
-  und ist der Partner nach `communication_timeout` nicht erreichbar, geht er
-  nach CI – nur wenn die Ausfallzeit kürzer als `auto_partner_down` war
-  (sonst könnte der Partner inzwischen den ganzen Pool übernommen haben).
-  Ein Server ohne vollständige Tabelle wartet auf den Partner oder eine
-  manuelle Partner-Down-Bestätigung.
-- RECOVER und RECOVER_DONE beantworten keine DHCP-Anfragen („erst Abgleich,
-  dann Vergabe“). Der Abgleich dauert typisch unter einer Sekunde.
-- Abgleich: jeder Server zieht die komplette Tabelle des Partners
-  (`DumpLeases`) und merged sie (D-048). Damit er gilt, merkt sich der
-  Partner Session-ID und Epoche: die Epoche steigt bei jedem
-  Verbindungsverlust, die Session bei jedem Neustart. NORMAL erst, wenn
-  beide Seiten gegen den jeweils aktuellen Stand abgeglichen haben.
-- CI → PD nur per Operator (`POST /ha/partner-down`, nur ohne Verbindung)
-  oder nach `auto_partner_down` (Default 0 = aus, konservativ: eine
-  Netztrennung darf nicht automatisch zu doppelter Pool-Nutzung führen).
-- PD bleibt bei Rückkehr des Partners aktiv, bis dieser RECOVER_DONE meldet.
-  Sind beide in PD (Partition + Auto-Partner-Down), weicht der Secondary
-  nach RECOVER aus. NORMAL bei Partner in PD → RECOVER.
-- Nach einem fehlgeschlagenen synchronen Lease-Update geht der Server sofort
-  nach CI (neue Epoche) und gleicht nach dem nächsten Heartbeat neu ab.
-- Persistiert (`ha_state`, lokal): Zustand, PD-Zeitpunkt, „zuletzt lebendig“
-  (alle 10 s).
-- `/readyz` hängt nicht vom HA-Zustand ab (ein wartender Partner soll nicht
-  von einem Orchestrator neu gestartet werden); der Zustand steht in
-  `leasorix_ha_state` und in der UI.
+- Always start in RECOVER (no DHCP service), unless the server was in PD.
+  If the lease table was current before the restart (NORMAL/CI/RECOVER_DONE)
+  and the partner is not reachable after `communication_timeout`, the server goes
+  to CI – but only if the downtime was shorter than `auto_partner_down`
+  (otherwise the partner might have taken over the entire pool in the meantime).
+  A server without a complete table waits for the partner or a
+  manual partner-down confirmation.
+- RECOVER and RECOVER_DONE do not answer DHCP requests ("reconcile first,
+  then assign"). Reconciliation typically takes less than a second.
+- Reconciliation: each server pulls the partner's complete table
+  (`DumpLeases`) and merges it (D-048). For the reconciliation to count, the
+  partner remembers the session ID and epoch: the epoch increases on every
+  connection loss, the session on every restart. NORMAL only once
+  both sides have reconciled against each other's current state.
+- CI → PD only by an operator (`POST /ha/partner-down`, only while disconnected)
+  or after `auto_partner_down` (default 0 = off, conservative: a
+  network split must not automatically lead to double use of the pool).
+- PD remains active after the partner returns until the partner reports RECOVER_DONE.
+  If both are in PD (partition + auto partner down), the secondary
+  falls back to RECOVER. NORMAL with the partner in PD → RECOVER.
+- After a failed synchronous lease update, the server immediately goes
+  to CI (new epoch) and reconciles again after the next heartbeat.
+- Persisted (`ha_state`, local): state, PD time, "last alive"
+  (every 10 s).
+- `/readyz` does not depend on the HA state (a waiting partner should not
+  be restarted by an orchestrator); the state is exposed in
+  `leasorix_ha_state` and in the UI.
 
-## D-047 – Lease-Zeiten, MCLT und Replikation
+## D-047 – Lease times, MCLT and replication
 
-- NORMAL + `replication: sync` (Default): eine neue/verlängerte Bindung wird
-  erst zum Partner repliziert, dann lokal durabel gespeichert, dann ACK.
-  Bestätigt der Partner nicht innerhalb `replication_timeout`, wird die
-  Lease auf MCLT gekürzt gespeichert und vergeben (und der Server geht nach
-  CI). Replikation läuft gebündelt (wie der Group-Commit).
-- CI: neue und verlängerte Leases höchstens MCLT (Default 1 h).
-- PD: volle Lease-Zeit; Adressen aus dem Partner-Anteil erst ab
-  PD-Zeitpunkt + MCLT. Der zurückkehrende Partner gleicht vor jeder Vergabe
-  ab (D-046), deshalb ist keine Begrenzung nötig.
-- `async`: volle Lease-Zeit, Replikation im Hintergrund. Schwächere
-  Garantie (bei einem Absturz können die letzten Änderungen fehlen; die
-  ICMP-Konflikterkennung bleibt als Netz) – nur für Performance gedacht.
-- Release, Decline, Konfliktsperren und Admin-Löschungen werden ohne Warten
-  repliziert (sie wirken in die sichere Richtung). Ablauf/Purge macht jeder
-  Server selbst, sie werden nicht repliziert.
+- NORMAL + `replication: sync` (default): a new/renewed binding is
+  first replicated to the partner, then stored durably on the local server, then ACKed.
+  If the partner does not confirm within `replication_timeout`, the
+  lease is stored and assigned shortened to MCLT (and the server goes to
+  CI). Replication is batched (like the group commit).
+- CI: new and renewed leases at most MCLT (default 1 h).
+- PD: full lease time; addresses from the partner's share only from
+  the PD time + MCLT. The returning partner reconciles before any
+  assignment (D-046), so no limit is necessary.
+- `async`: full lease time, replication in the background. Weaker
+  guarantee (after a crash, the most recent changes may be missing; ICMP
+  conflict detection remains as a safety net) – intended only for performance.
+- Releases, declines, conflict blocks and admin deletions are replicated without
+  waiting (they act in the safe direction). Each server handles expiry/purge
+  itself; these are not replicated.
 
-## D-048 – Zusammenführen von Lease-Tabellen
+## D-048 – Merging lease tables
 
-`leases.updated_at` ist jetzt in Millisekunden, `leases.origin` nennt den
-Knoten der letzten Änderung (Migration 00004). Für eine Adresse gewinnt
-(`lease.Wins`, auf beiden Seiten identisch):
+`leases.updated_at` is now in milliseconds, `leases.origin` names the
+node of the last change (migration 00004). For an address, the winner is
+determined as follows (`lease.Wins`, identical on both sides):
 
-1. Datensätze desselben Clients: die neuere Änderung (dann späteres Ende,
-   dann höhere Node-ID).
-2. Verschiedene Clients, nur einer bindet die Adresse (aktiv oder
-   abgelehnt und nicht abgelaufen): der bindende.
-3. Beide binden (echter Konflikt, z. B. nach Split Brain): späteres
-   Lease-Ende, dann höhere Node-ID (Plan). Konflikte werden geloggt, als
-   `lease.ha_conflict` auditiert und gezählt.
-4. Keiner bindet: die neuere Änderung.
+1. Records of the same client: the newer change (then the later end,
+   then the higher node ID).
+2. Different clients, only one binds the address (active or
+   declined and not expired): the binding one.
+3. Both bind (a real conflict, e.g. after a split brain): the later
+   lease end, then the higher node ID (plan). Conflicts are logged, audited as
+   `lease.ha_conflict` and counted.
+4. Neither binds: the newer change.
 
-Einschränkung: Admin-Löschungen werden repliziert, aber nicht als
-Grabstein gespeichert; eine während einer Partition gelöschte Lease kann
-beim Abgleich vom Partner zurückkommen (harmlos: sie läuft regulär aus).
-Der Scope eines empfangenen Datensatzes wird über die Adresse bestimmt.
+Limitation: admin deletions are replicated but not stored as a
+tombstone; a lease deleted during a partition can come back
+from the partner during reconciliation (harmless: it expires normally).
+The scope of a received record is determined by its address.
 
-## D-049 – Konfigurations-Replikation (Single Writer)
+## D-049 – Configuration replication (single writer)
 
-- Leader ist fest konfiguriert (`ha.config_leader`, Default `primary`) und
-  muss auf beiden Servern gleich sein; zwei Leader = Mismatch, keine
-  Verbindung (beide arbeiten dann sicher in CI weiter).
-- Ein Versionszähler (`config_version`) wird per SQLite-Trigger bei jeder
-  Änderung einer Konfigurationstabelle erhöht – so entgeht kein Schreibpfad.
-  Der Leader prüft ihn bei jedem Heartbeat (und sofort nach
-  Scope-Änderungen), erzeugt bei Änderung einen Snapshot (JSON aller
-  Konfigurationstabellen aus einer Lesetransaktion, SHA-256) und schickt
-  ihn, solange der Partner einen anderen Hash meldet.
-- Repliziert werden Scopes, Ausschlüsse, Reservierungen, Optionen,
-  Definitionen, Klassen, Policies, MAC-Filter, Einstellungen sowie Benutzer
-  und API-Tokens (Anmeldung an beiden Servern möglich). Lokal bleiben
-  Leases, Audit-Log, Sessions und HA-Zustand. Token-Nutzung zählt nicht als
-  Änderung.
-- Übernahme auf dem Partner in einer Transaktion mit abgeschalteten
-  Foreign Keys (sonst würde das Ersetzen der Scopes die Leases kaskadierend
-  löschen), danach `foreign_key_check`; Leases außerhalb der neuen Scopes
-  und Sessions geänderter/gelöschter Benutzer werden entfernt. Danach zieht
-  der Partner die Leases neu (Scope-IDs können sich geändert haben). Der
-  Lease-Abgleich des Partners startet erst, wenn seine Konfiguration dem
-  Stand des Leaders entspricht.
-- Partner read-only: die API lehnt Konfigurationsänderungen mit 409 und
-  Hinweis auf den Leader ab (auch Passwort/Tokens, da repliziert); erlaubt
-  bleiben Lease-Aktionen, Login/Logout, HA-Aktionen. Die UI zeigt ein Banner
-  und blendet Bearbeiten-Aktionen aus. Fällt der Leader länger aus, wird
-  der Partner per Konfigurationsdatei zum Leader gemacht.
+- The leader is configured statically (`ha.config_leader`, default `primary`) and
+  must be the same on both servers; two leaders = mismatch, no
+  connection (both then continue to operate safely in CI).
+- A version counter (`config_version`) is incremented by an SQLite trigger on every
+  change to a configuration table – so no write path is missed.
+  The leader checks it on every heartbeat (and immediately after
+  scope changes), creates a snapshot when it has changed (JSON of all
+  configuration tables from one read transaction, SHA-256) and sends
+  it as long as the partner reports a different hash.
+- Replicated: scopes, exclusions, reservations, options,
+  definitions, classes, policies, MAC filters, settings as well as users
+  and API tokens (signing in is possible on both servers). Local only:
+  leases, audit log, sessions and HA state. Token usage does not count as a
+  change.
+- Applied on the partner in one transaction with foreign keys
+  disabled (otherwise replacing the scopes would cascade-delete the
+  leases), followed by `foreign_key_check`; leases outside the new scopes
+  and sessions of changed/deleted users are removed. Afterwards, the
+  partner pulls the leases again (scope IDs may have changed). The
+  partner's lease reconciliation starts only once its configuration matches the
+  leader's state.
+- Read-only partner: the API rejects configuration changes with 409 and
+  a pointer to the leader (including password/tokens, since they are replicated);
+  lease actions, login/logout and HA actions remain allowed. The UI shows a banner
+  and hides edit actions. If the leader is down for an extended period,
+  the partner is made the leader via the configuration file.
 
-## D-050 – Split Scope und Scope-Bundle
+## D-050 – Split scope and scope bundle
 
-Fallback ohne Replikation („Split Scope 80/20“) wie bei Windows über
-Ausschlüsse: dieser Server behält die ersten n % des dynamischen Bereichs
-und schließt den Rest aus; für den zweiten Server entsteht ein
-Scope-Bundle mit dem lokalen Teil als Ausschluss. Bereits vorhandene
-Ausschlüsse werden berücksichtigt (nur Lücken werden ergänzt). Das
-Bundle-Format `leasorix-scope/v1` (Scope, Ausschlüsse, Reservierungen mit
-Optionen, Scope-Optionen, Scope-Policies; Bezüge über Inhalte statt IDs)
-dient auch als Baustein für den Konfigurations-Export in Phase 7. Import
-ist alles-oder-nichts (bei Fehlern wird der angelegte Scope wieder
-entfernt). Bei aktiver HA-Partnerschaft wird der Wizard nicht angeboten.
+Fallback without replication ("split scope 80/20") as in Windows, via
+exclusions: this server keeps the first n% of the dynamic range
+and excludes the rest; for the second server, a
+scope bundle is created with the local part as an exclusion. Existing
+exclusions are taken into account (only gaps are filled in). The
+bundle format `leasorix-scope/v1` (scope, exclusions, reservations with
+options, scope options, scope policies; references by content instead of IDs)
+also serves as a building block for the configuration export in phase 7. Import
+is all-or-nothing (on errors, the newly created scope is removed
+again). While an HA partnership is active, the wizard is not offered.
 
-## D-051 – Notfall-Export/-Import der Lease-Datenbank
+## D-051 – Emergency export/import of the lease database
 
-Format `leasorix-leases/v1` (JSON). Import = Merge nach D-048 (idempotent),
-über die API werden geänderte Datensätze zum Partner repliziert. CLI:
-`leasorixd leases export` liest direkt aus der Datenbank (auch im
-laufenden Betrieb), `leasorixd leases import` nur bei gestopptem Dienst –
-dafür hält `leasorixd` jetzt einen exklusiven Lock (`flock`) auf
-`<data_dir>/leasorixd.lock`; das verhindert auch zwei Daemons auf
-demselben Datenverzeichnis.
+Format `leasorix-leases/v1` (JSON). Import = merge per D-048 (idempotent);
+via the API, changed records are replicated to the partner. CLI:
+`leasorixd leases export` reads directly from the database (even while the
+service is running), `leasorixd leases import` only with the service stopped –
+for this, `leasorixd` now holds an exclusive lock (`flock`) on
+`<data_dir>/leasorixd.lock`; this also prevents two daemons from running on
+the same data directory.
 
-## D-052 – Kein Raft / keine Cluster mit mehr als zwei Knoten
+## D-052 – No Raft / no clusters with more than two nodes
 
-Der Plan nennt einen Raft-Cluster-Modus als optionale spätere Alternative,
-erst nach dem Paar-Modus. Er ist nicht umgesetzt: der Paar-Modus deckt die
-Windows-Failover-Parität ab, ein Raft-Log für Leases würde jede Vergabe an
-ein Quorum binden (mehr Latenz, ein dritter Knoten nötig). Bei Bedarf als
-eigenes Vorhaben nach Phase 9.
+The plan mentions a Raft cluster mode as an optional later alternative,
+only after the pair mode. It is not implemented: the pair mode covers
+Windows failover parity, and a Raft log for leases would tie every assignment to
+a quorum (more latency, a third node required). If needed, it would be a
+separate project after phase 9.
 
 ## D-053 – Superscopes
 
-Eigene Tabelle `superscope_members` (Scope gehört höchstens einem
-Superscope; Löschen auf beiden Seiten kaskadiert sauber, keine Spalte mit
-Fremdschlüssel in `scopes`, damit die Down-Migration ohne Tabellenneubau
-auskommt). Der DHCP-Handler ermittelt die Scopes des Links wie bisher
-(Interface-Adressen bzw. giaddr/118/82.5) und hängt die übrigen Mitglieder
-ihrer Superscopes an (Reihenfolge: gefundener Scope zuerst, dann nach
-Netzadresse). Als Server-Identifier dient weiter eine Adresse des Interfaces.
-Superscopes werden wie alle Konfigurationstabellen per HA repliziert und
-sind Teil von Export/Import (Bezug über den Namen).
+Separate table `superscope_members` (a scope belongs to at most one
+superscope; deletion on either side cascades cleanly, no
+foreign-key column in `scopes`, so that the down migration works without
+rebuilding the table). The DHCP handler determines the link's scopes as before
+(interface addresses or giaddr/118/82.5) and appends the remaining members
+of their superscopes (order: the matched scope first, then by
+network address). An address of the interface continues to serve as the server identifier.
+Like all configuration tables, superscopes are replicated via HA and
+are part of export/import (referenced by name).
 
 ## D-054 – BOOTP
 
-Optional laut Plan, umgesetzt wie bei Windows: Clients mit Reservierung
-bekommen immer eine BOOTREPLY, dynamisches BOOTP aus dem Pool nur bei
-Scopes mit `bootp`. Lease-Dauer global `dhcp4.bootp_lease_time` (Default 30
-Tage wie Windows); der Lease wird normal gespeichert, repliziert und läuft
-ab (BOOTP-Clients erneuern nicht). Antworten enthalten keine DHCP-Optionen
-(53, 51, 54 …); der 64-Byte-Vendor-Bereich (RFC 951/1497) wird nach Priorität
-gefüllt (Maske, Router, DNS, Hostname, Domäne, …), Option 66/67 landen in
-`sname`/`file`/`siaddr`. Policies und HA-Zuständigkeit gelten wie bei DHCP.
+Optional per the plan, implemented as in Windows: clients with a reservation
+always get a BOOTREPLY; dynamic BOOTP from the pool only for
+scopes with `bootp`. The lease duration is global, `dhcp4.bootp_lease_time` (default 30
+days, as in Windows); the lease is stored and replicated normally and
+expires (BOOTP clients do not renew). Replies contain no DHCP options
+(53, 51, 54 …); the 64-byte vendor area (RFC 951/1497) is filled by priority
+(mask, router, DNS, hostname, domain, …), and options 66/67 end up in
+`sname`/`file`/`siaddr`. Policies and HA responsibility apply as for DHCP.
 
-## D-055 – Keine Multicast-Scopes (MADCAP)
+## D-055 – No multicast scopes (MADCAP)
 
-Multicast-Scopes sind laut Plan optional. MADCAP (RFC 2730) ist ein eigenes
-Protokoll (UDP 2535) mit sehr geringer Verbreitung; nicht umgesetzt. Der
-netsh-Importer meldet solche Zeilen als nicht übernommen.
+Multicast scopes are optional per the plan. MADCAP (RFC 2730) is a separate
+protocol (UDP 2535) with very little adoption; not implemented. The
+netsh importer reports such lines as not imported.
 
-## D-056 – Konfigurations-Export/-Import
+## D-056 – Configuration export/import
 
-- Format `leasorix-config/v1`, YAML (Default) oder JSON mit identischen
-  Schlüsseln; Bezüge über Namen statt IDs, damit Dateien zwischen Servern
-  übertragbar sind. Die Scope-Einträge sind Scope-Bundles (D-050).
-- Benutzer und API-Tokens gehören nicht dazu (Geheimnisse); dafür gibt es
-  Backup/Restore.
-- Import über eine temporäre Datenbank: aktuelle Konfiguration hineinkopieren
-  (`merge`) oder leer starten (`replace`), Dokument über die normalen
-  Store-Methoden anwenden (alle Validierungen), Ergebnis in einer
-  Transaktion in die echte Datenbank übernehmen. So ist der Import
-  alles-oder-nichts, ohne jede Validierung doppelt zu implementieren. Ein
-  Audit-Eintrag `config.import` statt Tausender Einzeleinträge.
-- Leases werden danach dem Scope zugeordnet, dessen Subnetz ihre Adresse
-  enthält (IDs können sich ändern); das gilt jetzt allgemein auch im
-  Lease-Manager (`ScopesChanged`) und beim HA-Config-Sync.
-- Dry-Run validiert gegen den aktuellen Stand ohne Änderung. Import nur für
-  Admins, auf einem HA-Partner gesperrt (read-only).
+- Format `leasorix-config/v1`, YAML (default) or JSON with identical
+  keys; references by name instead of IDs, so that files can be transferred
+  between servers. The scope entries are scope bundles (D-050).
+- Users and API tokens are not included (secrets); backup/restore
+  covers those.
+- Import via a temporary database: copy the current configuration into it
+  (`merge`) or start empty (`replace`), apply the document via the normal
+  store methods (all validations), then transfer the result into the real database
+  in one transaction. This makes the import
+  all-or-nothing without implementing every validation twice. One
+  audit entry `config.import` instead of thousands of individual entries.
+- Afterwards, leases are assigned to the scope whose subnet contains their address
+  (IDs may change); this now applies generally, also in the
+  lease manager (`ScopesChanged`) and in HA config sync.
+- A dry run validates against the current state without making changes. Import only for
+  admins; blocked on an HA partner (read-only).
 
-## D-057 – Importer für `netsh dhcp server dump`
+## D-057 – Importer for `netsh dhcp server dump`
 
-Der Plan nennt netsh oder ISC-dhcpd.conf als optionalen Importer; gewählt
-wurde netsh (Windows-Parität ist das Ziel des Projekts, Umsteiger kommen
-typischerweise von Windows). Der Konverter erzeugt ein
-`leasorix-config/v1`-Dokument, das wie jeder Import geprüft wird. UTF-16
-(PowerShell-Umleitung) wird erkannt. Standard-Optionsdefinitionen und die
-eingebauten Windows-Klassen werden übersprungen; Optionswerte werden gegen
-den Optionstyp validiert und bei Fehlern mit Warnung ausgelassen statt den
-Import abzubrechen. Nicht übernommene Zeilen (klassenspezifische Werte,
-DNS-Updates, Multicast, DHCPv6, Server-Einstellungen ohne Gegenstück)
-werden mit Zeilennummer bzw. zusammengefasst gemeldet.
+The plan mentions netsh or ISC dhcpd.conf as an optional importer; netsh was
+chosen (Windows parity is the project's goal, and people switching
+typically come from Windows). The converter produces a
+`leasorix-config/v1` document that is checked like any import. UTF-16
+(PowerShell redirection) is detected. Standard option definitions and the
+built-in Windows classes are skipped; option values are validated against
+the option type and, on errors, omitted with a warning instead of aborting the
+import. Lines that are not imported (class-specific values,
+DNS updates, multicast, DHCPv6, server settings without a counterpart)
+are reported with their line number or in summary form.
 
-## D-058 – Backup und Restore
+## D-058 – Backup and restore
 
-- Backup = vollständige SQLite-Kopie per `VACUUM INTO` über eine eigene
-  Verbindung (konsistent, blockiert keine Schreiber). Enthält
-  Passwort-Hashes → nur Admins.
-- Restore ist logisch: das hochgeladene Backup wird in eine temporäre Datei
-  geschrieben, geprüft (SQLite-Header, Leasorix-Tabellen, Schemaversion –
-  neuere Versionen werden abgelehnt), Trigger/Views daraus entfernt (eine
-  präparierte Datei soll beim Lesen nichts ausführen), auf das aktuelle
-  Schema migriert und Konfiguration, Benutzer, API-Tokens und Leases in einer
-  Transaktion übernommen. Audit-Log und HA-Zustand bleiben lokal, alle
-  Sitzungen enden. Danach werden Scope-Snapshot und Lease-Manager neu
-  geladen – kein Neustart nötig.
-- Der Plan nennt `leasorix backup/restore`; umgesetzt als
-  `leasorixd backup|restore` (das Daemon-Binary besitzt die Datenbank;
-  `restore` offline mit Datenverzeichnis-Lock) und `leasorixctl
-  backup|restore` über die API.
+- Backup = a complete SQLite copy via `VACUUM INTO` over a separate
+  connection (consistent, does not block writers). Contains
+  password hashes → admins only.
+- Restore is logical: the uploaded backup is written to a temporary file,
+  checked (SQLite header, Leasorix tables, schema version –
+  newer versions are rejected), stripped of triggers/views (a
+  crafted file must not execute anything when read), migrated to the current
+  schema, and configuration, users, API tokens and leases are taken over in one
+  transaction. Audit log and HA state remain local; all
+  sessions end. Afterwards, the scope snapshot and lease manager are
+  reloaded – no restart needed.
+- The plan mentions `leasorix backup/restore`; implemented as
+  `leasorixd backup|restore` (the daemon binary owns the database;
+  `restore` runs offline with the data directory lock) and `leasorixctl
+  backup|restore` via the API.
 
 ## D-059 – `leasorixctl`
 
-Eigenes Binary auf Basis des aus der OpenAPI-Spec generierten Go-Clients
-(`client: true` im oapi-codegen-Config). Authentifizierung nur per API-Token
-(keine Sessions/CSRF), Konfiguration über Flags oder `LEASORIX_URL`,
-`LEASORIX_TOKEN`, `LEASORIX_CA`/`LEASORIX_INSECURE`, Ausgabe als Tabelle
-oder JSON (`-o json`). Destruktive Befehle (`ha partner-down`, `restore`)
-verlangen `--yes`.
+Separate binary based on the Go client generated from the OpenAPI spec
+(`client: true` in the oapi-codegen config). Authentication only via API token
+(no sessions/CSRF), configuration via flags or `LEASORIX_URL`,
+`LEASORIX_TOKEN`, `LEASORIX_CA`/`LEASORIX_INSECURE`, output as a table
+or JSON (`-o json`). Destructive commands (`ha partner-down`, `restore`)
+require `--yes`.
 
-## D-060 – Container-Image
+## D-060 – Container image
 
-- Multi-Stage-Build: UI mit Node, beide Binaries mit Go (statisch,
-  `CGO_ENABLED=0`, `-trimpath`), Laufzeit-Image
-  `gcr.io/distroless/static-debian12:nonroot` (keine Shell, kein
-  Paketmanager, ca. 50 MB). Alpine wäre die Alternative gewesen; distroless
-  hat die kleinere Angriffsfläche und reicht, weil nichts im Image eine Shell
-  braucht.
-- Die Build-Stages laufen auf `$BUILDPLATFORM` und kompilieren für
-  `$TARGETARCH` – Multi-Arch (amd64/arm64) ohne QEMU.
-- Der Healthcheck ist ein Unterkommando (`leasorixd healthcheck`, fragt
-  `/readyz`), weil distroless kein `curl` hat. `leasorixctl` ist im Image
-  enthalten.
-- Basis-Images sind Build-Argumente (Registry-Mirror), eine Proxy-CA kann als
-  optionales BuildKit-Secret übergeben werden und landet nicht im Image.
-- Unbekannte Argumente an `leasorixd` sind jetzt ein Fehler, statt
-  stillschweigend den Server zu starten (`leasorixd version` war vorher
-  ein Serverstart); `version` gibt es zusätzlich zu `--version`.
+- Multi-stage build: UI with Node, both binaries with Go (static,
+  `CGO_ENABLED=0`, `-trimpath`), runtime image
+  `gcr.io/distroless/static-debian12:nonroot` (no shell, no
+  package manager, approx. 50 MB). Alpine would have been the alternative; distroless
+  has the smaller attack surface and is sufficient because nothing in the image needs a
+  shell.
+- The build stages run on `$BUILDPLATFORM` and compile for
+  `$TARGETARCH` – multi-arch (amd64/arm64) without QEMU.
+- The health check is a subcommand (`leasorixd healthcheck`, queries
+  `/readyz`), because distroless has no `curl`. `leasorixctl` is included in the
+  image.
+- Base images are build arguments (registry mirror); a proxy CA can be
+  passed as an optional BuildKit secret and does not end up in the image.
+- Unknown arguments to `leasorixd` are now an error instead of
+  silently starting the server (`leasorixd version` used to
+  start the server); `version` exists in addition to `--version`.
 
-## D-061 – Rechte über File-Capabilities, nonroot
+## D-061 – Privileges via file capabilities, nonroot
 
-Docker vererbt einem nicht-root-Benutzer keine Capabilities (keine
-Ambient-Capabilities). Damit `leasorixd` als UID 65532 Port 67 binden und
-`AF_PACKET`/ICMP nutzen kann, bekommt das Binary die File-Capabilities
-`cap_net_bind_service,cap_net_raw=ep`. Gesetzt werden sie von einem kleinen
-Go-Helfer (`deploy/docker/setcap`, schreibt `security.capability` direkt),
-damit die Build-Stage weder `libcap` noch Paketquellen braucht. `NET_ADMIN`
-ist nicht nötig. Folgen (verifiziert, in DOCKER.md dokumentiert):
+Docker does not pass capabilities on to a non-root user (no
+ambient capabilities). So that `leasorixd` can bind port 67 as UID 65532 and
+use `AF_PACKET`/ICMP, the binary gets the file capabilities
+`cap_net_bind_service,cap_net_raw=ep`. They are set by a small
+Go helper (`deploy/docker/setcap`, writes `security.capability` directly),
+so that the build stage needs neither `libcap` nor package sources. `NET_ADMIN`
+is not required. Consequences (verified, documented in DOCKER.md):
 
-- Beide Capabilities müssen im Bounding-Set des Containers bleiben, sonst
-  verweigert der Kernel `execve` – auch für Einmal-Kommandos.
-- `no-new-privileges` ist verträglich: der Kernel begrenzt File-Capabilities
-  dann auf das bisherige Permitted-Set, das Docker aus `cap_add` füllt.
-- Root im Container ist keine Alternative: mit `cap_drop: [ALL]` fehlt root
-  der Schreibzugriff auf `/data` (UID 65532).
+- Both capabilities must remain in the container's bounding set; otherwise
+  the kernel refuses `execve` – even for one-off commands.
+- `no-new-privileges` is compatible: the kernel then limits file capabilities
+  to the existing permitted set, which Docker fills from `cap_add`.
+- Root in the container is not an alternative: with `cap_drop: [ALL]`, root
+  lacks write access to `/data` (UID 65532).
 
-## D-062 – Compose-Varianten und Defaults
+## D-062 – Compose variants and defaults
 
-- Drei Dateien statt Profilen: `docker-compose.yml` (Host-Netzwerk, die
-  einfachste funktionierende Variante), `docker-compose.macvlan.yml` und
-  `docker-compose.ha.yml` (macvlan, zwei Container). Ein Bridge-Netz wird
-  nicht angeboten: ohne L2-Zugang erreichen Broadcast-DISCOVERs den
-  Container nicht; Bridge + Relay ist nicht getestet und daher nicht
-  dokumentiert als unterstützt.
-- Sichere Defaults: `cap_drop: [ALL]` + die zwei nötigen Capabilities,
-  `read_only` mit `tmpfs: /tmp`, `no-new-privileges`, `restart:
-  unless-stopped`. Im Host-Modus lauscht die UI per Default nur auf
-  `127.0.0.1` – die Management-Adresse muss bewusst gesetzt werden.
-- Das HA-Compose erzeugt die mTLS-Zertifikate mit einem Einmal-Dienst
-  (`ha certs --if-missing`) in einem gemeinsamen Volume; beide Server warten
-  per `service_completed_successfully` darauf. Beide Container auf einem
-  Host sind als Test-/Einstiegsvariante gedacht, die Verteilung auf zwei
-  Hosts ist dokumentiert.
-- Der Test (`make test-docker`) nutzt veth-Paare und Network Namespaces als
-  Client-LAN, nie das echte Netz (PLAN-Regel).
+- Three files instead of profiles: `docker-compose.yml` (host network, the
+  simplest working variant), `docker-compose.macvlan.yml` and
+  `docker-compose.ha.yml` (macvlan, two containers). A bridge network is
+  not offered: without L2 access, broadcast DISCOVERs do not reach the
+  container; bridge + relay is not tested and is therefore not
+  documented as supported.
+- Secure defaults: `cap_drop: [ALL]` + the two required capabilities,
+  `read_only` with `tmpfs: /tmp`, `no-new-privileges`, `restart:
+  unless-stopped`. In host mode, the UI listens only on
+  `127.0.0.1` by default – the management address must be set deliberately.
+- The HA compose file creates the mTLS certificates with a one-shot service
+  (`ha certs --if-missing`) in a shared volume; both servers wait for it
+  via `service_completed_successfully`. Running both containers on one
+  host is intended as a test/starter variant; distributing them across two
+  hosts is documented.
+- The test (`make test-docker`) uses veth pairs and network namespaces as the
+  client LAN, never the real network (PLAN rule).
 
-## D-063 – Image-Veröffentlichung
+## D-063 – Image publishing
 
-`release.yml` baut mit Buildx für `linux/amd64` und `linux/arm64` und
-veröffentlicht mit dem `GITHUB_TOKEN` in der GitHub Container Registry
-(`ghcr.io/<owner>/leasorix`): Tags `v1.2.3` → `1.2.3`, `1.2`, `latest`;
-`main` → `edge`; Pull Requests bauen nur. Kein Docker Hub (eigener
-Account/Secret nötig, Rate-Limits). Der CI-Workflow hat zusätzlich einen
-Job, der das Image baut und `make test-docker` ausführt.
+`release.yml` builds with Buildx for `linux/amd64` and `linux/arm64` and
+publishes to the GitHub Container Registry using the `GITHUB_TOKEN`
+(`ghcr.io/<owner>/leasorix`): tags `v1.2.3` → `1.2.3`, `1.2`, `latest`;
+`main` → `edge`; pull requests only build. No Docker Hub (would need a separate
+account/secret, rate limits). The CI workflow additionally has a
+job that builds the image and runs `make test-docker`.
 
-## D-057 (Nachtrag Phase 9) – netsh `set dnsconfig`
+## D-057 (Addendum, phase 9) – netsh `set dnsconfig`
 
-Der netsh-Importer übernimmt jetzt `set dnsconfig Enable Update Lookup
-NonDyn` auf Server- und Scope-Ebene (Server-Einstellung gilt für Scopes ohne
-eigene): `Enable=0` → nie, `Update=1` oder `NonDyn=1` → immer, sonst „auf
-Anforderung des Clients“; `Lookup` → Records beim Lease-Ende entfernen.
-`NonDyn` (Updates auch für Clients ohne Option 81) hat in Leasorix kein
-eigenes Gegenstück; „immer“ ist die nächstliegende Abbildung. Zonen und
-Schlüssel stehen nicht im Dump (Warnung).
+The netsh importer now imports `set dnsconfig Enable Update Lookup
+NonDyn` at server and scope level (the server setting applies to scopes without
+their own setting): `Enable=0` → never, `Update=1` or `NonDyn=1` → always, otherwise
+"on client request"; `Lookup` → "Remove records when the lease ends".
+`NonDyn` (updates also for clients without option 81) has no direct
+counterpart in Leasorix; "always" is the closest mapping. Zones and
+keys are not included in the dump (warning).
 
-## D-064 – DNS-Updates: Architektur
+## D-064 – DNS updates: architecture
 
-- Bibliothek `github.com/miekg/dns` für RFC-2136-Nachrichten und TSIG statt
-  eigener DNS-Kodierung (verbreitet, stabil, unterstützt alle
-  TSIG-Algorithmen und den DHCID-Typ).
-- Der DHCP-Pfad wartet nie auf DNS: Beim ACK berechnet der Handler nur die
-  Entscheidung (Name, A/PTR, Antwort-Option 81) und übergibt sie dem
-  Updater (`Bound`, nur Speicher). Ein Hintergrund-Worker sendet die Updates
-  (bis zu 4 parallel) mit Wiederholungen (30 s, verdoppelnd bis 1 h).
-- Zustand pro Adresse in `dns_registrations` (gewollt / tatsächlich
-  eingetragen, getrennt nach A mit DHCID und PTR). Damit überleben
-  ausstehende Löschungen einen Neustart, und Umbenennungen entfernen erst den
-  alten Namen. Die Tabelle ist lokal (nicht repliziert, nicht im Export).
-- Lease-Ende (Release, Ablauf, Löschen, Scope entfernt, Restore) erkennt ein
-  periodischer Abgleich (alle 15 s) gegen die Lease-Tabelle statt Hooks an
-  jeder Stelle des Lease-Managers – ein Mechanismus für alle Fälle, auch für
-  während einer Downtime abgelaufene Leases. Löschversuche werden nach 12
-  Fehlschlägen aufgegeben (geloggt).
-- Zonen und Schlüssel liegen im Scope-Snapshot; HA-Config-Sync und Restore
-  laden sie ohne eigenen Mechanismus neu.
+- Library `github.com/miekg/dns` for RFC 2136 messages and TSIG instead of
+  a custom DNS encoding (widely used, stable, supports all
+  TSIG algorithms and the DHCID type).
+- The DHCP path never waits for DNS: on ACK, the handler only computes the
+  decision (name, A/PTR, option 81 in the reply) and hands it to the
+  updater (`Bound`, memory only). A background worker sends the updates
+  (up to 4 in parallel) with retries (30 s, doubling up to 1 h).
+- State per address in `dns_registrations` (desired / actually
+  registered, separately for A with DHCID and PTR). This way, pending
+  deletions survive a restart, and renames remove the old name
+  first. The table is local (not replicated, not in the export).
+- Lease end (release, expiry, deletion, scope removed, restore) is detected by a
+  periodic reconciliation (every 15 s) against the lease table instead of hooks at
+  every point in the lease manager – one mechanism for all cases, including
+  leases that expired during downtime. Deletion attempts are given up after 12
+  failures (logged).
+- Zones and keys live in the scope snapshot; HA config sync and restore
+  reload them without a separate mechanism.
 
-## D-065 – DNS-Updates: Namen und Modi
+## D-065 – DNS updates: names and modes
 
-- Modi wie Windows: nie / auf Anforderung des Clients / immer. „Auf
-  Anforderung“ folgt RFC 4702 (Option 81: S=1 → A+PTR, S=0 → nur PTR, N=1 →
-  nichts); ohne Option 81 keine Registrierung. „Immer“ registriert A+PTR für
-  jeden Client mit Namen (Option 81 oder 12) und setzt in der Antwort das
-  O-Bit, wenn es den Wunsch des Clients übersteuert.
-- Der Name ist immer das erste (bereinigte) Label des Client-Namens plus die
-  Scope-Domäne (Fallback: Option 15). Vollqualifizierte Client-Namen in
-  anderen Zonen werden nicht übernommen – ein Client soll sich nicht in
-  beliebige Zonen eintragen können, für die der Server Schreibrechte hat.
-- Option 81 wird in OFFER und ACK beantwortet (RCODE1/2 = 255, Kodierung wie
-  vom Client), auch im Modus „nie“ (dann mit N-Bit). Option 81 ist dadurch
-  „managed“ und nicht mehr als Optionswert konfigurierbar. Fehlt Option 12,
-  übernimmt die Lease den Namen aus Option 81.
-- Neue Scopes haben „nie“ als Standard (Windows: „auf Anforderung“), damit
-  ein Update auf diese Version oder das Anlegen einer Zone keine Updates in
-  bestehenden Scopes auslöst. TTL automatisch ein Drittel der Lease-Dauer
-  (1 min … 1 Tag).
-- BOOTP-Clients werden nicht registriert.
+- Modes as in Windows: never / on client request / always. "On client
+  request" follows RFC 4702 (option 81: S=1 → A+PTR, S=0 → PTR only, N=1 →
+  nothing); without option 81, there is no registration. "Always" registers A+PTR for
+  every client with a name (option 81 or 12) and sets the O bit in the
+  reply if this overrides the client's request.
+- The name is always the first (sanitized) label of the client name plus the
+  scope domain (fallback: option 15). Fully qualified client names in
+  other zones are not accepted – a client must not be able to register itself in
+  arbitrary zones for which the server has write permission.
+- Option 81 is answered in OFFER and ACK (RCODE1/2 = 255, encoding as
+  used by the client), even in "never" mode (then with the N bit). As a result, option 81 is
+  "managed" and no longer configurable as an option value. If option 12 is missing,
+  the lease takes the name from option 81.
+- New scopes default to "never" (Windows: "on client request"), so that
+  updating to this version or creating a zone does not trigger updates in
+  existing scopes. The TTL is automatically one third of the lease duration
+  (1 min … 1 day).
+- BOOTP clients are not registered.
 
-## D-066 – Namensschutz mit DHCID
+## D-066 – Name protection with DHCID
 
-Name Protection nach RFC 4701/4703 (DHCID-Record mit SHA-256 über
-Client-Kennung und Namen; Client-ID, DUID nach RFC 4361 oder
-Hardware-Adresse): Ein Name wird nur angelegt, wenn er frei ist, oder
-aktualisiert, wenn er die eigene DHCID trägt; manuell angelegte Namen und
-Namen anderer Clients bleiben unangetastet. Löschen ebenfalls nur mit
-passender DHCID; PTR-Records werden nur gelöscht, wenn sie noch auf den
-eigenen Namen zeigen. Standard **an** (Windows: aus) – die sichere Variante;
-pro Scope abschaltbar (dann ersetzt Leasorix vorhandene A-Records). Ein
-Konflikt wird geloggt, auditiert (`dns.conflict`) und erst bei der nächsten
-Verlängerung des Leases erneut versucht, nicht in einer Schleife. Weil die
-DHCID nur vom Client abhängt, können beide HA-Server denselben Namen
-aktualisieren.
+Name protection per RFC 4701/4703 (DHCID record with a SHA-256 over the
+client identifier and the name; client ID, DUID per RFC 4361 or
+hardware address): a name is only created if it is free, or
+updated if it carries the client's own DHCID; manually created names and
+names of other clients are left untouched. Deletion likewise only with a
+matching DHCID; PTR records are only deleted if they still point to the
+client's own name. Default **on** (Windows: off) – the safe option;
+can be turned off per scope (Leasorix then replaces existing A records). A
+conflict is logged, audited (`dns.conflict`) and retried only at the next
+renewal of the lease, not in a loop. Because the
+DHCID depends only on the client, both HA servers can update the same name.
 
-## D-067 – TSIG-Schlüssel
+## D-067 – TSIG keys
 
-- Das Geheimnis wird im Klartext in der Datenbank gespeichert – für die
-  HMAC-Berechnung nötig (anders als Passwörter, die nur gehasht werden). Die
-  API gibt es nie aus (nur schreiben), Änderungen nur durch Admins, Audit
-  ohne Geheimnis.
-- Schlüssel sind wie Benutzer nicht Teil des Konfigurations-Exports (Zonen
-  verweisen per Name darauf), werden aber per HA repliziert und sind im
-  Backup enthalten.
-- Algorithmen: HMAC-SHA256 (Standard), -SHA384/-512/-224 sowie -SHA1/-MD5
-  für ältere Server; Mindestlänge 16 Byte. Zonen ohne Schlüssel sind
-  möglich (unsignierte Updates), weil Windows-DNS kein TSIG beherrscht;
-  GSS-TSIG (Kerberos) ist nicht umgesetzt.
+- The secret is stored in plain text in the database – this is required for the
+  HMAC computation (unlike passwords, which are only stored hashed). The
+  API never returns it (write-only), only admins can change it, and the audit entry
+  omits the secret.
+- Like users, keys are not part of the configuration export (zones
+  reference them by name), but they are replicated via HA and included in the
+  backup.
+- Algorithms: HMAC-SHA256 (default), -SHA384/-512/-224 as well as -SHA1/-MD5
+  for older servers; minimum length 16 bytes. Zones without a key are
+  possible (unsigned updates), because Windows DNS does not support TSIG;
+  GSS-TSIG (Kerberos) is not implemented.
 
-## D-068 – Korrektur HA: gekürzte Leases nachreplizieren
+## D-068 – HA fix: re-replicate shortened leases
 
-Gefunden beim Phase-9-Testlauf (sporadisch roter Unit-Test). Bestätigt der
-Partner eine synchrone Replikation nicht rechtzeitig, kürzt der vergebende
-Server den Lease auf MCLT – der Partner kann die lange Fassung aber trotzdem
-gespeichert haben. Bisher blieb sie dort stehen (gleicher Änderungsstempel,
-längere Laufzeit gewinnt), die Tabellen divergierten. Jetzt bekommt die
-gekürzte Fassung einen strikt neueren Stempel und wird nachrepliziert
-(asynchron, bei Ausfall per Resync), sodass beide Server dieselbe Laufzeit
-kennen.
+Found during the phase 9 test run (a sporadically failing unit test). If the
+partner does not confirm a synchronous replication in time, the assigning
+server shortens the lease to MCLT – but the partner may have stored the long version
+anyway. Until now, that version remained there (same change timestamp,
+the longer duration wins), and the tables diverged. Now the
+shortened version gets a strictly newer timestamp and is re-replicated
+(asynchronously, via resync if that fails), so that both servers know the same
+duration.
 
-**Nachtrag (Phase 10):** Unter Last trat der Fehler weiter sporadisch auf.
-Ursache: Nach dem Timeout markiert der Server die Verbindung als gestört
-(neue Epoch); der Partner zieht daraufhin die Tabelle – unter Umständen,
-bevor die gekürzte Fassung gespeichert ist. Die anschließende Nachreplikation
-wurde verworfen („nicht verbunden, der Partner zieht ohnehin alles“). Jetzt
-erhöht ein Server seine Epoch auch dann, wenn er eine Änderung mangels
-Verbindung nicht senden kann; der Partner zieht die Tabelle erneut, und der
-Rückweg nach NORMAL wartet, bis er die aktuelle Epoch abgeglichen hat. Das
-schließt das Fenster für alle Änderungen während einer Unterbrechung, nicht
-nur für gekürzte Leases.
+**Addendum (phase 10):** Under load, the error still occurred sporadically.
+Cause: after the timeout, the server marks the connection as disrupted
+(new epoch); the partner then pulls the table – possibly
+before the shortened version has been stored. The subsequent re-replication
+was discarded ("not connected, the partner pulls everything anyway"). Now
+a server also increments its epoch when it cannot send a change because there
+is no connection; the partner pulls the table again, and the
+return to NORMAL waits until it has reconciled the current epoch. This
+closes the window for all changes made during an interruption, not
+just for shortened leases.
 
 
-## D-069 – DHCPv6: Umfang
+## D-069 – DHCPv6: feature set
 
-Phase 10 setzt stateful DHCPv6 nach RFC 8415 um: SOLICIT/ADVERTISE,
+Phase 10 implements stateful DHCPv6 per RFC 8415: SOLICIT/ADVERTISE,
 REQUEST, RENEW, REBIND, RELEASE, DECLINE, CONFIRM, INFORMATION-REQUEST,
-Rapid Commit, Server-Präferenz, IA_NA und – weil es im Plan als optional
-genannt ist und sich mit demselben Allokator ergibt – IA_PD
-(Präfix-Delegation). Relays werden auch mehrstufig unterstützt
-(RELAY-FORW/-REPL, Interface-ID, Client-Link-Layer-Adresse nach RFC 6939).
-Nachrichten-Kodierung mit `github.com/insomniacslk/dhcp/dhcpv6` (dieselbe
-Bibliothek wie für DHCPv4).
+Rapid Commit, server preference, IA_NA and – because the plan lists it as
+optional and it comes almost for free with the same allocator – IA_PD
+(prefix delegation). Relays are supported, including multiple relay hops
+(RELAY-FORW/-REPL, Interface-ID, client link-layer address per RFC 6939).
+Message encoding with `github.com/insomniacslk/dhcp/dhcpv6` (the same
+library as for DHCPv4).
 
-Bewusst **nicht** umgesetzt (keine erfundenen Features, Aufwand ohne
-Anforderung): Reconfigure (RFC 8415 Kap. 18.2.11, braucht Authentisierung),
-Server-Unicast-Option (Clients müssen Multicast nutzen; direkte Unicasts
-werden mit `UseMulticast` beantwortet), Leasequery, DNS-Updates (AAAA/PTR in
-`ip6.arpa`), Policies/Klassen für IPv6, Lease-Export/-Import für DHCPv6 und
-die Übernahme von DHCPv6-Scopes aus dem netsh-Dump. Router-Advertisements
-sendet Leasorix nicht – das bleibt Aufgabe des Routers.
+Deliberately **not** implemented (no invented features, effort without a
+requirement): Reconfigure (RFC 8415 sec. 18.2.11, requires authentication),
+the Server Unicast option (clients must use multicast; direct unicasts
+are answered with `UseMulticast`), Leasequery, DNS updates (AAAA/PTR in
+`ip6.arpa`), policies/classes for IPv6, lease export/import for DHCPv6 and
+importing DHCPv6 scopes from the netsh dump. Leasorix does not send router
+advertisements – that remains the router's job.
 
-## D-070 – Eigenes Datenmodell für IPv6
+## D-070 – Separate data model for IPv6
 
-IPv6 bekommt eigene Tabellen (`scopes6`, `exclusions6`, `reservations6`,
-`options6`, `leases6`) und Pakete (`scope6`, `lease6`, `dhcp6`,
-`dhcpopt6`, `ip6`) statt einer Verallgemeinerung des IPv4-Modells: Der
-IPv4-Pfad rechnet durchgängig mit `uint32` (Bitmaps, Bereichsstatistik,
-Policies, Superscopes, BOOTP, HA-Replikation), und ein Umbau hätte den
-getesteten Kern riskiert. Die Konzepte bleiben gleich (Scope, Ausschluss,
-Reservierung, Optionen auf Server-/Scope-/Reservierungsebene, Snapshot,
-Audit, Config-Version), ebenso UI-Aufbau und API-Stil (`/api/v1/v6/…`).
+IPv6 gets its own tables (`scopes6`, `exclusions6`, `reservations6`,
+`options6`, `leases6`) and packages (`scope6`, `lease6`, `dhcp6`,
+`dhcpopt6`, `ip6`) instead of a generalization of the IPv4 model: the
+IPv4 path uses `uint32` throughout (bitmaps, range statistics,
+policies, superscopes, BOOTP, HA replication), and a rework would have put the
+tested core at risk. The concepts stay the same (scope, exclusion,
+reservation, options at server/scope/reservation level, snapshot,
+audit, config version), as do the UI structure and API style (`/api/v1/v6/…`).
 
-- Adressen und Präfixe werden als kanonischer Text gespeichert (SQLite
-  kennt keine 128-Bit-Zahlen); Bereichsprüfungen laufen in Go.
-- Reservierungen gelten für eine DUID (Hex, normalisiert) und optional eine
-  IAID (`-1` = jede IA) – das DHCPv6-Gegenstück zur MAC.
-- Die Konfigurationstabellen sind Teil von HA-Config-Sync, Konfigurations-
-  Export (`scopes6`, `server_options6`), Replace-Import und Backup; die
-  Bindungen sind im Backup enthalten.
+- Addresses and prefixes are stored as canonical text (SQLite
+  has no 128-bit integers); range checks run in Go.
+- Reservations apply to a DUID (hex, normalized) and optionally an
+  IAID (`-1` = any IA) – the DHCPv6 counterpart of the MAC.
+- The configuration tables are part of HA config sync, the configuration
+  export (`scopes6`, `server_options6`), replace import and backup; the
+  bindings are included in the backup.
 
-## D-071 – Adressvergabe in großen Bereichen
+## D-071 – Address assignment in large ranges
 
-Ein /64 hat 2^64 Adressen – Bitmaps oder lineares Suchen wie bei IPv4
-scheiden aus. Die Bindungen liegen im Speicher (Map nach Präfix, persistiert
-vor der Antwort); eine neue Adresse wird deterministisch aus der DUID und
-IAID gewählt: Bereiche bis 65 536 Adressen bzw. Präfixe werden ab einem
-client-spezifischen Startpunkt durchsucht (zuerst nie benutzte), größere mit
-64 client-spezifischen Hash-Kandidaten. Derselbe Client bekommt dadurch auch
-nach Ablauf der Bindung oder nach einem Datenverlust tendenziell dieselbe
-Adresse, und Adressen sind nicht vorhersagbar fortlaufend. Vorrang: Reservierung →
-bestehende Bindung bzw. Angebot → Wunsch des Clients (IA-Hint) → frühere
-Bindung → Suche. ADVERTISE hält die Adresse `offer_timeout` für den Client;
-abgelaufene/freigegebene Bindungen bleiben `expired_grace` für den
-bisherigen Client reserviert, per DECLINE gemeldete Adressen `decline_time`
-gesperrt.
+A /64 has 2^64 addresses – bitmaps or a linear search as with IPv4
+are not an option. The bindings are held in memory (map by prefix, persisted
+before the reply); a new address is chosen deterministically from the DUID and
+IAID: ranges of up to 65,536 addresses or prefixes are searched starting from a
+client-specific starting point (never-used ones first), larger ones via
+64 client-specific hash candidates. As a result, the same client tends to get the
+same address even after its binding has expired or after data loss, and addresses
+are not predictably sequential. Precedence: reservation →
+existing binding or offer → the client's request (IA hint) → previous
+binding → search. ADVERTISE holds the address for the client for `offer_timeout`;
+expired/released bindings stay reserved for the
+previous client for `expired_grace`, and addresses reported via DECLINE are blocked
+for `decline_time`.
 
-## D-072 – Server-DUID, Lebensdauern, Optionen
+## D-072 – Server DUID, lifetimes, options
 
-- Die Server-DUID (DUID-LLT des ersten konfigurierten Interfaces, sonst
-  DUID-LL mit Zufallsadresse) wird einmal erzeugt und lokal gespeichert
-  (`local_state`, nicht repliziert): Sie bleibt bei Hardwaretausch stabil,
-  und HA-Partner haben verschiedene DUIDs, wie es RFC 8415 verlangt.
-- Lebensdauern in Antworten sind die Restlaufzeit der Bindung, höchstens die
-  konfigurierten Werte; T1/T2 sind 50 %/80 % der bevorzugten Lebensdauer.
-  Adressen, die der Client nicht mehr bekommen soll (Scope geändert,
-  Bindung weg), werden in RENEW/REBIND mit Lebensdauer 0 zurückgegeben.
-- Optionen werden nach dem Option-Request des Clients gesendet; ohne
-  Option-Request alle konfigurierten. Protokoll-Optionen (IA, Status,
-  Server-ID, Präferenz, Rapid Commit, Relay-Optionen …) sind nicht
-  konfigurierbar.
-- Der Hostname einer Bindung kommt aus Option 39 (Client FQDN, erstes Label);
-  er dient nur der Anzeige.
+- The server DUID (DUID-LLT of the first configured interface, otherwise
+  DUID-LL with a random address) is generated once and stored locally
+  (`local_state`, not replicated): it stays stable when hardware is replaced,
+  and HA partners have different DUIDs, as RFC 8415 requires.
+- Lifetimes in replies are the remaining time of the binding, at most the
+  configured values; T1/T2 are 50%/80% of the preferred lifetime.
+  Addresses the client should no longer get (scope changed,
+  binding gone) are returned in RENEW/REBIND with a lifetime of 0.
+- Options are sent according to the client's Option Request; without an
+  Option Request, all configured options are sent. Protocol options (IA, status,
+  server ID, preference, Rapid Commit, relay options …) are not
+  configurable.
+- The hostname of a binding comes from option 39 (Client FQDN, first label);
+  it is used for display only.
 
-## D-073 – Hochverfügbarkeit für DHCPv6 ohne Bindungs-Replikation
+## D-073 – High availability for DHCPv6 without binding replication
 
-Das HA-Protokoll (Phase 6) repliziert IPv4-Leases; eine zweite
-Replikationsstrecke für IPv6 wäre ein erheblicher Ausbau. Stattdessen:
+The HA protocol (phase 6) replicates IPv4 leases; a second
+replication path for IPv6 would be a substantial extension. Instead:
 
-- Clients werden nach einem Hash der DUID aufgeteilt, Adressen und
-  delegierte Präfixe nach einem Hash der Adresse, im Verhältnis des
-  HA-Modus. Jeder Server vergibt nur aus seinem Anteil – auch wenn der
-  Partner nicht erreichbar oder als ausgefallen bestätigt ist. So entstehen
-  ohne Replikation nie doppelte Bindungen.
-- Preis: Fällt ein Server aus, erhalten seine Clients beim REBIND eine neue
-  Adresse bzw. ein neues Präfix vom Partner. Bei IPv6 mit großen Bereichen
-  und mehreren Adressen pro Interface ist das vertretbar; bei delegierten
-  Präfixen ändert sich das Netz hinter dem Router. Dokumentiert in HA.md.
-- Die Konfiguration (Scopes, Reservierungen, Optionen) wird wie bei IPv4
-  vom Config-Leader repliziert.
+- Clients are split by a hash of the DUID, addresses and
+  delegated prefixes by a hash of the address, in the ratio of the
+  HA mode. Each server assigns only from its own share – even if the
+  partner is unreachable or has been confirmed as down. This way,
+  duplicate bindings never occur, even without replication.
+- The price: if a server fails, its clients receive a new
+  address or prefix from the partner on REBIND. With IPv6's large ranges
+  and multiple addresses per interface, this is acceptable; with delegated
+  prefixes, the network behind the router changes. Documented in HA.md.
+- The configuration (scopes, reservations, options) is replicated
+  by the config leader, as with IPv4.
+
+## D-074 – English by default, German in the UI
+
+Supersedes the language point of D-039. Everything in the repository is
+English: README, documentation, code, API, CLI, logs, URLs and paths. The web
+UI is English by default and can be switched to German.
+
+- Own small translation layer (`web/src/i18n`) instead of a library such as
+  i18next: two languages, no plural rules beyond simple variants, no runtime
+  loading. Each module declares its texts next to the code with
+  `messages({ en, de })`; the compiler checks that the German table has
+  exactly the keys of the English one, so a missing translation is a build
+  error.
+- The language is chosen in the header (and on the sign-in page) and stored
+  per browser (`localStorage`, like the color scheme); `<html lang>` follows
+  it. Changing the language remounts the app below the providers, so texts
+  outside components (tables, labels) are re-evaluated without extra
+  plumbing.
+- Texts from the server (validation messages, option names of the catalog,
+  audit actions) stay English: they are part of the API and the logs.
+- Dates and numbers are formatted with the locale of the chosen language.

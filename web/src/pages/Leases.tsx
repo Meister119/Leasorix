@@ -3,19 +3,56 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { api, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { Badge, Button, Input, PageHeader, Select, Spinner, Table, Td, useFeedback } from "../components/ui";
+import { messages } from "../i18n";
+import { c } from "../i18n/common";
 import { downloadFile, fileStamp } from "../lib/download";
-import { formatDateTime, relativeTime, stateLabel } from "../lib/format";
+import { formatDateTime, relativeTime, stateLabel, stateLabels } from "../lib/format";
 import { useScopes } from "./Scopes";
+
+const m = messages({
+  en: {
+    title: "Leases",
+    subtitle: "Assigned and recently used addresses",
+    scope: "Scope",
+    allScopes: "All scopes",
+    exported: "{n} leases exported",
+    reservationCreated: "Reservation for {ip} created",
+    deleted: "Lease deleted",
+    searchHint: "IP, MAC, hostname, client ID",
+    state: "State",
+    hostname: "Hostname",
+    expires: "Expires",
+    reserved: "reserved",
+    toReservation: "Convert to reservation",
+    confirmDelete: "Delete lease {ip}? The address becomes available again immediately.",
+  },
+  de: {
+    title: "Leases",
+    subtitle: "Vergebene und zuletzt genutzte Adressen",
+    scope: "Scope",
+    allScopes: "Alle Scopes",
+    exported: "{n} Leases exportiert",
+    reservationCreated: "Reservierung für {ip} angelegt",
+    deleted: "Lease gelöscht",
+    searchHint: "IP, MAC, Hostname, Client-ID",
+    state: "Zustand",
+    hostname: "Hostname",
+    expires: "Läuft ab",
+    reserved: "reserviert",
+    toReservation: "In Reservierung umwandeln",
+    confirmDelete: "Lease {ip} löschen? Die Adresse wird sofort wieder frei.",
+  },
+});
 
 export function LeasesPage() {
   const scopes = useScopes();
   const [scopeId, setScopeId] = useState(0);
   return (
     <>
-      <PageHeader title="Leases" subtitle="Vergebene und zuletzt genutzte Adressen" actions={<LeaseExportButton />} />
+      <PageHeader title={m("title")} subtitle={m("subtitle")} actions={<LeaseExportButton />} />
       <div className="mb-4 max-w-xs">
-        <Select label="Scope" value={String(scopeId)} onChange={(e) => setScopeId(Number(e.target.value))}>
-          <option value="0">Alle Scopes</option>
+        <Select label={m("scope")} value={String(scopeId)} onChange={(e) => setScopeId(Number(e.target.value))}>
+          <option value="0">{m("allScopes")}</option>
           {scopes.data?.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} ({s.subnet})
@@ -39,7 +76,7 @@ export function LeaseExportButton() {
         try {
           const data = await unwrap(api.GET("/leases/export"));
           downloadFile(`leasorix-leases-${fileStamp()}.json`, JSON.stringify(data, null, 2));
-          toast(`${data.leases.length} Leases exportiert`);
+          toast(m("exported", { n: data.leases.length }));
         } catch (e) {
           toast(errorMessage(e), "error");
         } finally {
@@ -47,7 +84,7 @@ export function LeaseExportButton() {
         }
       }}
     >
-      Exportieren
+      {c("export")}
     </Button>
   );
 }
@@ -91,7 +128,7 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
     mutationFn: (ip: string) => unwrap(api.POST("/leases/{ip}/reservation", { params: { path: { ip } }, body: {} })),
     onSuccess: (r) => {
       refresh();
-      toast(`Reservierung für ${r.ip} angelegt`);
+      toast(m("reservationCreated", { ip: r.ip }));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -99,7 +136,7 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
     mutationFn: (ip: string) => unwrap(api.DELETE("/leases/{ip}", { params: { path: { ip } } })),
     onSuccess: () => {
       refresh();
-      toast("Lease gelöscht");
+      toast(m("deleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -109,12 +146,12 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-full max-w-sm">
-          <Input label="Suche" placeholder="IP, MAC, Hostname, Client-ID" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input label={c("search")} placeholder={m("searchHint")} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="w-44">
-          <Select label="Zustand" value={state} onChange={(e) => setState(e.target.value as S["LeaseState"] | "")}>
-            <option value="">alle</option>
-            {Object.entries(stateLabel).map(([k, v]) => (
+          <Select label={m("state")} value={state} onChange={(e) => setState(e.target.value as S["LeaseState"] | "")}>
+            <option value="">{c("all")}</option>
+            {stateLabels().map(([k, v]) => (
               <option key={k} value={k}>
                 {v}
               </option>
@@ -126,17 +163,17 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
         {leases.isLoading ? (
           <Spinner />
         ) : (
-          <Table head={["IP", "MAC", "Hostname", "Scope", "Zustand", "Läuft ab", ""]} empty={leases.data?.items.length === 0}>
+          <Table head={["IP", "MAC", m("hostname"), m("scope"), m("state"), m("expires"), ""]} empty={leases.data?.items.length === 0}>
             {leases.data?.items.map((l) => (
               <tr key={l.ip} data-testid={`lease-${l.ip}`}>
                 <Td mono>
-                  {l.ip} {l.reserved && <Badge color="teal">reserviert</Badge>}
+                  {l.ip} {l.reserved && <Badge color="teal">{m("reserved")}</Badge>}
                 </Td>
                 <Td mono>{l.mac}</Td>
                 <Td>{l.hostname || "–"}</Td>
                 <Td>{l.scope_name}</Td>
                 <Td>
-                  <Badge color={stateColor[l.state]}>{stateLabel[l.state]}</Badge>
+                  <Badge color={stateColor[l.state]}>{stateLabel(l.state)}</Badge>
                 </Td>
                 <Td>
                   <span title={formatDateTime(l.expires_at)}>{relativeTime(l.expires_at)}</span>
@@ -146,15 +183,15 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
                     <div className="flex justify-end gap-1">
                       {canWrite && !l.reserved && l.state !== "declined" && (
                         <Button size="sm" variant="ghost" onClick={() => convert.mutate(l.ip)}>
-                          In Reservierung umwandeln
+                          {m("toReservation")}
                         </Button>
                       )}
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={async () => (await confirm(`Lease ${l.ip} löschen? Die Adresse wird sofort wieder frei.`, { danger: true })) && del.mutate(l.ip)}
+                        onClick={async () => (await confirm(m("confirmDelete", { ip: l.ip }), { danger: true })) && del.mutate(l.ip)}
                       >
-                        Löschen
+                        {c("delete")}
                       </Button>
                     </div>
                   )}
@@ -166,14 +203,12 @@ export function LeasesTable({ scopeId }: { scopeId: number }) {
       </div>
       {total > pageSize && (
         <div className="flex items-center justify-end gap-2 text-sm">
-          <span className="text-slate-500">
-            {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} von {total}
-          </span>
+          <span className="text-slate-500">{c("page", { from: page * pageSize + 1, to: Math.min((page + 1) * pageSize, total), total })}</span>
           <Button size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
-            Zurück
+            {c("back")}
           </Button>
           <Button size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(page + 1)}>
-            Weiter
+            {c("next")}
           </Button>
         </div>
       )}

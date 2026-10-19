@@ -17,15 +17,15 @@ test.use({ viewport: { width: 1440, height: 900 } });
 const officeClients = [
   "nb-anna",
   "nb-ben",
-  "pc-empfang",
-  "pc-buchhaltung",
+  "pc-reception",
+  "pc-accounting",
   "ws-cad01",
   "ws-cad02",
   "macbook-eva",
   "iphone-david",
-  "tablet-lager",
+  "tablet-warehouse",
   "pc-meeting1",
-  "beamer-og1",
+  "projector-1f",
   "thinclient-03",
   "nb-frank",
   "nb-greta",
@@ -36,7 +36,7 @@ function runClients() {
     const mac = `02:4c:58:00:10:${(i + 1).toString(16).padStart(2, "0")}`;
     return `ip link add m${i} link c0 type macvlan mode bridge && ip link set m${i} address ${mac} up && udhcpc -i m${i} -f -q -n -t 5 -T 1 -s /bin/true -x hostname:${name}`;
   });
-  // A network boot client: matched by the PXE-Boot policy.
+  // A network boot client: matched by the PXE boot policy.
   lines.push(
     "ip link add mp link c0 type macvlan mode bridge && ip link set mp address 02:4c:58:00:20:01 up && udhcpc -i mp -f -q -n -t 5 -T 1 -s /bin/true -V PXEClient:Arch:00007:UNDI:003016",
   );
@@ -97,43 +97,50 @@ test("README screenshots", async ({ page }) => {
   runClients();
 
   await page.goto("/");
-  await expect(page.getByText("Auslastung je Scope")).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Labor A" }).first()).toBeVisible();
+  await expect(page.getByText("Utilization per scope")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Lab A" }).first()).toBeVisible();
   await shot(page, "dashboard");
 
   await page.getByRole("link", { name: "Scopes" }).click();
-  await expect(page.getByRole("link", { name: "Gäste-WLAN" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Guest Wi-Fi" })).toBeVisible();
   await shot(page, "scopes");
 
-  await page.getByRole("link", { name: "Büro-LAN" }).click();
-  await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Office LAN" }).click();
+  await expect(page.getByText("available", { exact: true })).toBeVisible();
   await shot(page, "scope-detail");
   await page.getByRole("tab", { name: "Policies" }).click();
-  await expect(page.getByText("PXE-Boot").first()).toBeVisible();
+  await expect(page.getByText("PXE boot").first()).toBeVisible();
   await shot(page, "scope-policies");
 
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Leases" }).click();
-  await page.getByLabel("Scope").selectOption({ label: "Büro-LAN (10.77.0.0/16)" });
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Leases" }).click();
+  await page.getByLabel("Scope").selectOption({ label: "Office LAN (10.77.0.0/16)" });
   await expect(page.getByRole("cell", { name: "nb-anna" })).toBeVisible();
   await shot(page, "leases");
 
-  await page.getByRole("link", { name: "DNS-Updates" }).click();
-  await page.getByRole("tab", { name: "TSIG-Schlüssel" }).click();
-  await page.getByRole("button", { name: "Schlüssel hinzufügen" }).click();
-  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("dhcp-firma");
-  await page.getByRole("dialog").getByRole("button", { name: "Speichern" }).click();
+  await page.getByRole("link", { name: "DNS updates" }).click();
+  await page.getByRole("tab", { name: "TSIG keys" }).click();
+  await page.getByRole("button", { name: "Add key" }).click();
+  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("dhcp-corp");
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("dialog").getByLabel("BIND (named.conf)")).toBeVisible();
   await shot(page, "dns-key");
-  await page.getByRole("dialog").getByRole("button", { name: "Fertig" }).click();
-  await expect(page.getByText("Schlüssel gespeichert")).toBeHidden({ timeout: 15_000 });
+  await page.getByRole("dialog").getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("Key saved")).toBeHidden({ timeout: 15_000 });
 
   await page.getByRole("link", { name: "IPv6 (DHCPv6)" }).click();
-  await page.getByRole("link", { name: "Büro-LAN v6" }).click();
-  await expect(page.getByText("delegierbare Präfixe")).toBeVisible();
+  await page.getByRole("link", { name: "Office LAN v6" }).click();
+  await expect(page.getByText("Delegable prefixes")).toBeVisible();
   await shot(page, "ipv6");
 
   await page.getByRole("link", { name: "Dashboard" }).click();
-  await expect(page.getByText("Auslastung je Scope")).toBeVisible();
-  await page.getByRole("button", { name: "Farbschema wechseln" }).click();
+  await expect(page.getByText("Utilization per scope")).toBeVisible();
+  await page.getByRole("button", { name: "Switch color scheme" }).click();
   await shot(page, "dashboard-dark");
+
+  // The German UI, light again.
+  await page.getByRole("button", { name: "Switch color scheme" }).click();
+  await page.getByLabel("Language").selectOption("de");
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Scopes" }).click();
+  await expect(page.getByRole("button", { name: "Neuer Scope" })).toBeVisible();
+  await shot(page, "scopes-de");
 });
