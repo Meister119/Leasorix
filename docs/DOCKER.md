@@ -11,8 +11,12 @@ and runs as the unprivileged user `nonroot` (UID/GID 65532).
 | `deploy/docker-compose.macvlan.yml` | macvlan | one server with its own IP/MAC on the LAN |
 | `deploy/docker-compose.ha.yml` | macvlan | two servers as an HA pair (including certificates) |
 
-Image: `ghcr.io/meister119/leasorix:<version>` or `:latest` (see
-[Building the image](#building-the-image) for a local build).
+Image: `ghcr.io/meister119/leasorix:<version>` or `:latest`, prebuilt for
+linux/amd64 and linux/arm64 – nothing has to be built on the server. The
+Compose files are in `deploy/` and attached to every release (pinned to
+its version, without the build section). Image tags, updates and access to
+a private repository: [INSTALL.md](INSTALL.md); a local build:
+[Building the image](#building-the-image).
 
 ## Why not a bridge network?
 
@@ -26,13 +30,23 @@ tested and is not supported.
 
 ## Quick start (host network)
 
+In the directory with `docker-compose.yml` (from the release, or
+`deploy/` of a checkout):
+
 ```sh
-cd deploy
-export LEASORIX_DHCP4_INTERFACES=eth0               # host interface(s), comma-separated
-export LEASORIX_HTTP_LISTEN=192.168.1.10:8067       # management address (default: localhost only)
+cat > .env <<'EOF'
+LEASORIX_DHCP4_INTERFACES=eth0
+LEASORIX_HTTP_LISTEN=192.168.1.10:8067
+EOF
 docker compose up -d
 docker compose logs leasorix | grep setup_token     # one-time setup token
 ```
+
+`LEASORIX_DHCP4_INTERFACES` names the host interface(s), comma-separated;
+`LEASORIX_HTTP_LISTEN` is the management address (default: localhost
+only). Compose reads `.env` on every command, so the values also apply to
+later updates; the variables of the other Compose files below can be put
+there the same way.
 
 Then open `https://192.168.1.10:8067/` (the certificate is self-signed at
 first), use the setup token to create the first administrator, and set up a
@@ -216,6 +230,8 @@ docker compose exec -e LEASORIX_TOKEN=lxt_… leasorix \
 docker compose pull && docker compose up -d                       # update (migration runs on start)
 ```
 
+Updating to a pinned version: [INSTALL.md](INSTALL.md#updating-docker).
+
 The `--url` of `leasorixctl` must match the listen address (with
 `LEASORIX_HTTP_LISTEN=192.168.1.10:8067`, use that address). Restoring
 works while running via the UI, the API, or `leasorixctl restore`; offline,
@@ -246,8 +262,10 @@ LEASORIX_IMAGE=leasorix:latest docker compose -f deploy/docker-compose.yml up -d
   `docker buildx build -f deploy/Dockerfile --platform linux/amd64,linux/arm64 .`
 - Releases: for a tag `v1.2.3`, `.github/workflows/release.yml` builds the
   images for amd64/arm64 and publishes them as `1.2.3`, `1.2`, and
-  `latest` to the GitHub Container Registry; commits to `main` are
-  published as `edge`.
+  `latest` to the GitHub Container Registry, and creates the GitHub
+  release with the binaries and Compose files (`make dist`); commits to
+  `main` are published as `edge`. See
+  [INSTALL.md](INSTALL.md#publishing-a-release-maintainers).
 
 ## Tests
 
