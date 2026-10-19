@@ -489,3 +489,27 @@ mTLS with certificates generated via CLI)
 - README with feature overview, screenshots (`make screenshots`, demo data
   in `test/screenshots/demo.yaml`) and an architecture diagram.
 
+
+## Addendum – Ready-made releases
+
+**Implemented**
+- `.github/workflows/release.yml`: on a version tag the image (amd64,
+  arm64; `1.2.3`, `1.2`, `latest`) and a GitHub release with the binaries,
+  Compose files pinned to the version and `SHA256SUMS`; release notes are
+  generated from the merged pull requests (D-075). Pull requests that touch
+  the release build everything without publishing.
+- `make dist`: release archives `leasorix_<version>_linux_<arch>.tar.gz`
+  with `leasorixd` (UI embedded), `leasorixctl`, the example configuration
+  and the systemd unit `deploy/systemd/leasorixd.service`.
+- `docs/INSTALL.md`: installation from a release with Docker (no checkout,
+  settings in `.env`) or as binaries with systemd, updates, image tags,
+  access to a private repository, publishing a release. README and
+  DOCKER.md point to it.
+
+**Tested**
+- `make dist` for amd64 and arm64, checksums, Compose files of the release
+  validated with `docker compose config`; release step simulated.
+- systemd unit in a container with systemd as PID 1: the installation steps
+  of INSTALL.md, service runs as `leasorix` with exactly the two
+  capabilities, `/readyz` ok, a DHCP client (udhcpc over a veth pair) gets a
+  lease, backup and restore as the service user.

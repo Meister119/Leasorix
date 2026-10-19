@@ -1014,3 +1014,33 @@ UI is English by default and can be switched to German.
 - Texts from the server (validation messages, option names of the catalog,
   audit actions) stay English: they are part of the API and the logs.
 - Dates and numbers are formatted with the locale of the chosen language.
+
+## D-075 – Ready-made releases: image, binaries, systemd
+
+Leasorix is installed from a release; building on the server is not
+needed.
+
+- A version tag `v1.2.3` publishes the multi-arch image (amd64, arm64) as
+  `1.2.3`, `1.2` and `latest`, and a GitHub release with the binaries,
+  the Compose files and `SHA256SUMS`. The release is only created after the
+  image has been pushed, so the pull command in the notes always works.
+  Tags with a suffix become pre-releases and do not move `latest`.
+- The archives are built by `make dist` (the same target locally and in
+  CI): per platform `leasorixd` with the embedded UI, `leasorixctl`, the
+  example configuration and a systemd unit. Only Linux amd64/arm64 – the
+  same platforms as the image; DHCP raw sockets are Linux-only anyway.
+- The Compose files of a release are pinned to its version and have no
+  build section, so a downloaded file never falls back to a build that
+  cannot work without the sources. In the repository they keep the build
+  section and `latest`.
+- systemd unit with a static system user `leasorix` instead of
+  `DynamicUser=`: HA certificates and keys in `/etc/leasorix` can be given
+  to a fixed group, and offline commands (`backup`, `restore`) run as the
+  same user, so file ownership stays correct. Hardened like the container:
+  only `CAP_NET_BIND_SERVICE` and `CAP_NET_RAW`, `NoNewPrivileges`,
+  `ProtectSystem=strict` with `/var/lib/leasorix` as the only writable
+  data path.
+- Visibility of the image follows GitHub: while the repository or the
+  package is private, `docker pull` needs a login (`read:packages`); the
+  owner can make the package public independently of the repository
+  (INSTALL.md).

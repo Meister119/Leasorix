@@ -1,0 +1,56 @@
+# systemd unit for a Leasorix server installed from a release archive.
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin leasorix
+#   sudo install -m 0644 leasorixd.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now leasorixd
+#   sudo journalctl -u leasorixd | grep setup_token     # one-time setup token
+#
+# leasorixd runs as the unprivileged user "leasorix" with only the two
+# capabilities DHCP needs (see docs/INSTALL.md). The data directory
+# /var/lib/leasorix (data_dir in the configuration) is created by systemd.
+[Unit]
+Description=Leasorix DHCP server
+Documentation=https://github.com/meister119/leasorix
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=leasorix
+Group=leasorix
+ExecStart=/usr/local/bin/leasorixd --config /etc/leasorix/leasorix.yml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# NET_BIND_SERVICE: port 67 (and 547); NET_RAW: replies to clients without
+# an address (AF_PACKET) and ICMP conflict detection.
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=yes
+
+StateDirectory=leasorix
+StateDirectoryMode=0750
+LogsDirectory=leasorix
+UMask=0027
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
