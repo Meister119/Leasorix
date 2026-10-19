@@ -4,16 +4,126 @@ import { Link, useNavigate } from "react-router";
 import { api, ApiError, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { Alert, Badge, Button, Input, Modal, PageHeader, Progress, Select, Spinner, Table, Td, TextArea, useFeedback } from "../components/ui";
+import { messages } from "../i18n";
+import { c } from "../i18n/common";
 import { readJSONFile } from "../lib/download";
 import { formatDuration } from "../lib/format";
 import { broadcastOf, formatIPv4, hasErrors, networkOf, parsePrefix, validateRange, validateScope, type Errors } from "../lib/validate";
 
-export const leaseTimes = [
-  { v: 3600, l: "1 Stunde" },
-  { v: 8 * 3600, l: "8 Stunden" },
-  { v: 86400, l: "1 Tag" },
-  { v: 8 * 86400, l: "8 Tage" },
-  { v: 0, l: "unbegrenzt" },
+const m = messages({
+  en: {
+    hour1: "1 hour",
+    hours8: "8 hours",
+    day1: "1 day",
+    days8: "8 days",
+    title: "Scopes",
+    subtitle: "IPv4 ranges that are assigned dynamically",
+    imported: "Scope “{name}” imported",
+    deleted: "Scope deleted",
+    newScope: "New scope",
+    name: "Name",
+    subnet: "Subnet",
+    range: "Range",
+    leaseTime: "Lease duration",
+    status: "Status",
+    utilization: "Utilization",
+    superscope: "Superscope",
+    deleteConfirm: "Delete scope “{name}” including its reservations, policies, options and leases?",
+    ssCreated: "Superscope created – assign scopes to it in each scope under “Settings”",
+    ssDeleted: "Superscope deleted",
+    superscopes: "Superscopes",
+    ssInfo:
+      "A superscope groups scopes that serve the same physical network (several IP networks on one segment). When a scope is exhausted, clients receive addresses from the other members.",
+    scopes: "Scopes",
+    ssDeleteConfirm: "Delete superscope “{name}”? The scopes are kept.",
+    newSuperscope: "New superscope",
+    ssPlaceholder: "e.g. Building A",
+    stepBasics: "Basics",
+    stepNetwork: "Network",
+    stepOptions: "Options",
+    stepExclusions: "Exclusions",
+    stepSummary: "Summary",
+    created: "Scope “{name}” created",
+    createdPartly: " – the scope was created, please check its details.",
+    wizardTitle: "New scope – {step} ({n}/{total})",
+    createScope: "Create scope",
+    steps: "Steps",
+    namePlaceholder: "e.g. Office LAN",
+    description: "Description",
+    start: "Start address",
+    end: "End address",
+    suggestionHint: "leave empty to use the suggestion",
+    router: "Router (option 3)",
+    dns: "DNS servers (option 6)",
+    domain: "Domain (option 15)",
+    moreOptions: "More options can be set in the scope after it has been created.",
+    exclusionInfo: "Optional: exclude an address range from assignment (e.g. for static devices).",
+    exStart: "Exclusion start",
+    exEnd: "Exclusion end",
+    summaryOptions: "Router / DNS / domain",
+    exclusion: "Exclusion",
+  },
+  de: {
+    hour1: "1 Stunde",
+    hours8: "8 Stunden",
+    day1: "1 Tag",
+    days8: "8 Tage",
+    title: "Scopes",
+    subtitle: "IPv4-Bereiche, die dynamisch vergeben werden",
+    imported: "Scope „{name}“ importiert",
+    deleted: "Scope gelöscht",
+    newScope: "Neuer Scope",
+    name: "Name",
+    subnet: "Subnetz",
+    range: "Bereich",
+    leaseTime: "Lease-Dauer",
+    status: "Status",
+    utilization: "Auslastung",
+    superscope: "Superscope",
+    deleteConfirm: "Scope „{name}“ samt Reservierungen, Policies, Optionen und Leases löschen?",
+    ssCreated: "Superscope angelegt – Scopes im Scope unter „Einstellungen“ zuordnen",
+    ssDeleted: "Superscope gelöscht",
+    superscopes: "Superscopes",
+    ssInfo:
+      "Ein Superscope fasst Scopes zusammen, die dasselbe physische Netz versorgen (mehrere IP-Netze auf einem Segment). Ist ein Scope erschöpft, erhalten Clients Adressen aus den anderen Mitgliedern.",
+    scopes: "Scopes",
+    ssDeleteConfirm: "Superscope „{name}“ löschen? Die Scopes bleiben erhalten.",
+    newSuperscope: "Neuer Superscope",
+    ssPlaceholder: "z. B. Gebäude A",
+    stepBasics: "Grunddaten",
+    stepNetwork: "Netz",
+    stepOptions: "Optionen",
+    stepExclusions: "Ausschlüsse",
+    stepSummary: "Zusammenfassung",
+    created: "Scope „{name}“ angelegt",
+    createdPartly: " – der Scope wurde angelegt, bitte die Details prüfen.",
+    wizardTitle: "Neuer Scope – {step} ({n}/{total})",
+    createScope: "Scope anlegen",
+    steps: "Schritte",
+    namePlaceholder: "z. B. Büro-LAN",
+    description: "Beschreibung",
+    start: "Startadresse",
+    end: "Endadresse",
+    suggestionHint: "leer lassen für Vorschlag",
+    router: "Router (Option 3)",
+    dns: "DNS-Server (Option 6)",
+    domain: "Domäne (Option 15)",
+    moreOptions: "Weitere Optionen lassen sich nach dem Anlegen im Scope festlegen.",
+    exclusionInfo: "Optional: einen Adressbereich von der Vergabe ausschließen (z. B. für statische Geräte).",
+    exStart: "Ausschluss von",
+    exEnd: "Ausschluss bis",
+    summaryOptions: "Router / DNS / Domäne",
+    exclusion: "Ausschluss",
+  },
+});
+
+/** The lease durations offered in scope forms, with labels in the active language. */
+export const leaseTimes = () => [
+  { v: 3600, l: m("hour1") },
+  { v: 8 * 3600, l: m("hours8") },
+  { v: 86400, l: m("day1") },
+  { v: 8 * 86400, l: m("days8") },
+  { v: 0, l: c("unlimited") },
 ];
 
 export function useScopes() {
@@ -37,7 +147,7 @@ export function ScopesPage() {
     onSuccess: (sc) => {
       qc.invalidateQueries({ queryKey: ["scopes"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
-      toast(`Scope „${sc.name}“ importiert`);
+      toast(m("imported", { name: sc.name }));
       navigate(`/scopes/${sc.id}`);
     },
     onError: (e) => toast(errorMessage(e), "error"),
@@ -47,7 +157,7 @@ export function ScopesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["scopes"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
-      toast("Scope gelöscht");
+      toast(m("deleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -58,13 +168,13 @@ export function ScopesPage() {
   return (
     <>
       <PageHeader
-        title="Scopes"
-        subtitle="IPv4-Bereiche, die dynamisch vergeben werden"
+        title={m("title")}
+        subtitle={m("subtitle")}
         actions={
           canWrite && (
             <div className="flex gap-2">
               <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
-                Importieren…
+                {c("import")}
                 <input
                   type="file"
                   accept="application/json,.json"
@@ -78,7 +188,7 @@ export function ScopesPage() {
                 />
               </label>
               <Button variant="primary" onClick={() => setWizard(true)}>
-                Neuer Scope
+                {m("newScope")}
               </Button>
             </div>
           )
@@ -88,7 +198,7 @@ export function ScopesPage() {
         <Spinner />
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <Table head={["Name", "Subnetz", "Bereich", "Lease-Dauer", "Status", "Auslastung", ""]} empty={scopes.data?.length === 0}>
+          <Table head={[m("name"), m("subnet"), m("range"), m("leaseTime"), m("status"), m("utilization"), ""]} empty={scopes.data?.length === 0}>
             {scopes.data?.map((s) => (
               <tr key={s.id}>
                 <Td>
@@ -97,7 +207,7 @@ export function ScopesPage() {
                   </Link>
                   {s.superscope_id !== 0 && (
                     <span className="ml-2">
-                      <Badge color="blue">{ssName.get(s.superscope_id) ?? "Superscope"}</Badge>
+                      <Badge color="blue">{ssName.get(s.superscope_id) ?? m("superscope")}</Badge>
                     </span>
                   )}
                   {s.bootp && (
@@ -111,7 +221,7 @@ export function ScopesPage() {
                   {s.start} – {s.end}
                 </Td>
                 <Td>{formatDuration(s.lease_time)}</Td>
-                <Td>{s.enabled ? <Badge color="green">aktiv</Badge> : <Badge color="amber">deaktiviert</Badge>}</Td>
+                <Td>{s.enabled ? <Badge color="green">{c("active")}</Badge> : <Badge color="amber">{c("disabled")}</Badge>}</Td>
                 <Td className="w-44">
                   <Progress percent={util.get(s.id) ?? 0} />
                 </Td>
@@ -121,11 +231,11 @@ export function ScopesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={async () =>
-                        (await confirm(`Scope „${s.name}“ samt Reservierungen, Policies, Optionen und Leases löschen?`, { danger: true, confirmLabel: "Löschen" })) &&
+                        (await confirm(m("deleteConfirm", { name: s.name }), { danger: true, confirmLabel: c("delete") })) &&
                         del.mutate(s.id)
                       }
                     >
-                      Löschen
+                      {c("delete")}
                     </Button>
                   )}
                 </Td>
@@ -156,7 +266,7 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
     onSuccess: () => {
       setName("");
       refresh();
-      toast("Superscope angelegt – Scopes im Scope unter „Einstellungen“ zuordnen");
+      toast(m("ssCreated"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -164,7 +274,7 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
     mutationFn: (id: number) => unwrap(api.DELETE("/superscopes/{id}", { params: { path: { id } } })),
     onSuccess: () => {
       refresh();
-      toast("Superscope gelöscht");
+      toast(m("ssDeleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -173,13 +283,10 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
   if (!canWrite && (list.data?.length ?? 0) === 0) return null;
   return (
     <div className="mt-8">
-      <h2 className="mb-1 text-lg font-semibold">Superscopes</h2>
-      <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
-        Ein Superscope fasst Scopes zusammen, die dasselbe physische Netz versorgen (mehrere IP-Netze auf einem Segment). Ist ein Scope erschöpft,
-        erhalten Clients Adressen aus den anderen Mitgliedern.
-      </p>
+      <h2 className="mb-1 text-lg font-semibold">{m("superscopes")}</h2>
+      <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">{m("ssInfo")}</p>
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Table head={["Name", "Scopes", "Auslastung", ""]} empty={list.data?.length === 0}>
+        <Table head={[m("name"), m("scopes"), m("utilization"), ""]} empty={list.data?.length === 0}>
           {list.data?.map((ss) => {
             const members = ss.scope_ids.map((id) => byId.get(id)).filter((s): s is S["Scope"] => !!s);
             const usable = ss.scope_ids.reduce((a, id) => a + (stat.get(id)?.usable ?? 0), 0);
@@ -189,11 +296,11 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
                 <Td className="font-medium">{ss.name}</Td>
                 <Td>
                   {members.length === 0 ? (
-                    <span className="text-slate-500">keine</span>
+                    <span className="text-slate-500">{c("none")}</span>
                   ) : (
-                    members.map((m) => (
-                      <Link key={m.id} to={`/scopes/${m.id}`} className="mr-3 font-mono text-xs text-teal-700 hover:underline dark:text-teal-400">
-                        {m.subnet}
+                    members.map((sc) => (
+                      <Link key={sc.id} to={`/scopes/${sc.id}`} className="mr-3 font-mono text-xs text-teal-700 hover:underline dark:text-teal-400">
+                        {sc.subnet}
                       </Link>
                     ))
                   )}
@@ -207,10 +314,10 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
                       size="sm"
                       variant="ghost"
                       onClick={async () =>
-                        (await confirm(`Superscope „${ss.name}“ löschen? Die Scopes bleiben erhalten.`, { danger: true, confirmLabel: "Löschen" })) && del.mutate(ss.id)
+                        (await confirm(m("ssDeleteConfirm", { name: ss.name }), { danger: true, confirmLabel: c("delete") })) && del.mutate(ss.id)
                       }
                     >
-                      Löschen
+                      {c("delete")}
                     </Button>
                   )}
                 </Td>
@@ -228,10 +335,10 @@ function Superscopes({ scopes, util }: { scopes: S["Scope"][]; util: S["ScopeSta
           }}
         >
           <div className="w-64">
-            <Input label="Neuer Superscope" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Gebäude A" />
+            <Input label={m("newSuperscope")} value={name} onChange={(e) => setName(e.target.value)} placeholder={m("ssPlaceholder")} />
           </div>
           <Button type="submit" disabled={!name.trim() || add.isPending}>
-            Anlegen
+            {c("create")}
           </Button>
         </form>
       )}
@@ -253,9 +360,8 @@ interface WizardState {
   exEnd: string;
 }
 
-const steps = ["Grunddaten", "Netz", "Optionen", "Ausschlüsse", "Zusammenfassung"];
-
 function ScopeWizard({ existing, onClose }: { existing: { name: string; subnet: string }[]; onClose: () => void }) {
+  const steps = [m("stepBasics"), m("stepNetwork"), m("stepOptions"), m("stepExclusions"), m("stepSummary")];
   const [step, setStep] = useState(0);
   const [s, setS] = useState<WizardState>({
     name: "",
@@ -332,11 +438,11 @@ function ScopeWizard({ existing, onClose }: { existing: { name: string; subnet: 
       }
       qc.invalidateQueries({ queryKey: ["scopes"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
-      toast(`Scope „${sc.name}“ angelegt`);
+      toast(m("created", { name: sc.name }));
       navigate(`/scopes/${id}`);
     } catch (e) {
       if (e instanceof ApiError && Object.keys(e.fields).length) setErrors(e.fields);
-      setError(errorMessage(e) + (id ? " – der Scope wurde angelegt, bitte die Details prüfen." : ""));
+      setError(errorMessage(e) + (id ? m("createdPartly") : ""));
       if (id) qc.invalidateQueries({ queryKey: ["scopes"] });
     } finally {
       setBusy(false);
@@ -345,25 +451,25 @@ function ScopeWizard({ existing, onClose }: { existing: { name: string; subnet: 
 
   return (
     <Modal
-      title={`Neuer Scope – ${steps[step]} (${step + 1}/${steps.length})`}
+      title={m("wizardTitle", { step: steps[step], n: step + 1, total: steps.length })}
       onClose={onClose}
       wide
       footer={
         <>
-          {step > 0 && <Button onClick={() => setStep(step - 1)}>Zurück</Button>}
+          {step > 0 && <Button onClick={() => setStep(step - 1)}>{c("back")}</Button>}
           {step < steps.length - 1 ? (
             <Button variant="primary" onClick={() => validateStep() && setStep(step + 1)}>
-              Weiter
+              {c("next")}
             </Button>
           ) : (
             <Button variant="primary" onClick={create} disabled={busy}>
-              Scope anlegen
+              {m("createScope")}
             </Button>
           )}
         </>
       }
     >
-      <ol className="flex flex-wrap gap-2 text-xs" aria-label="Schritte">
+      <ol className="flex flex-wrap gap-2 text-xs" aria-label={m("steps")}>
         {steps.map((t, i) => (
           <li key={t} className={i === step ? "font-semibold text-teal-700 dark:text-teal-400" : "text-slate-500"}>
             {i + 1}. {t}
@@ -373,19 +479,19 @@ function ScopeWizard({ existing, onClose }: { existing: { name: string; subnet: 
       {error && <Alert>{error}</Alert>}
       {step === 0 && (
         <>
-          <Input label="Name" name="name" value={s.name} onChange={set("name")} error={errors.name} placeholder="z. B. Büro-LAN" />
-          <TextArea label="Beschreibung" name="description" value={s.description} onChange={set("description")} rows={2} />
+          <Input label={m("name")} name="name" value={s.name} onChange={set("name")} error={errors.name} placeholder={m("namePlaceholder")} />
+          <TextArea label={m("description")} name="description" value={s.description} onChange={set("description")} rows={2} />
         </>
       )}
       {step === 1 && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <Input label="Subnetz" name="subnet" value={s.subnet} onChange={set("subnet")} error={errors.subnet} placeholder="192.168.1.0/24" />
+            <Input label={m("subnet")} name="subnet" value={s.subnet} onChange={set("subnet")} error={errors.subnet} placeholder="192.168.1.0/24" />
           </div>
-          <Input label="Startadresse" name="start" value={s.start} onChange={set("start")} error={errors.start} placeholder={suggestion?.start} hint={suggestion && !s.start ? "leer lassen für Vorschlag" : undefined} />
-          <Input label="Endadresse" name="end" value={s.end} onChange={set("end")} error={errors.end} placeholder={suggestion?.end} />
-          <Select label="Lease-Dauer" name="lease_time" value={String(s.lease_time)} onChange={(e) => setS({ ...s, lease_time: Number(e.target.value) })} error={errors.lease_time}>
-            {leaseTimes.map((t) => (
+          <Input label={m("start")} name="start" value={s.start} onChange={set("start")} error={errors.start} placeholder={suggestion?.start} hint={suggestion && !s.start ? m("suggestionHint") : undefined} />
+          <Input label={m("end")} name="end" value={s.end} onChange={set("end")} error={errors.end} placeholder={suggestion?.end} />
+          <Select label={m("leaseTime")} name="lease_time" value={String(s.lease_time)} onChange={(e) => setS({ ...s, lease_time: Number(e.target.value) })} error={errors.lease_time}>
+            {leaseTimes().map((t) => (
               <option key={t.v} value={t.v}>
                 {t.l}
               </option>
@@ -395,34 +501,34 @@ function ScopeWizard({ existing, onClose }: { existing: { name: string; subnet: 
       )}
       {step === 2 && (
         <>
-          <Input label="Router (Option 3)" name="router" value={s.router} onChange={set("router")} placeholder={suggestion?.router ?? "192.168.1.1"} />
-          <Input label="DNS-Server (Option 6)" name="dns" value={s.dns} onChange={set("dns")} placeholder="192.168.1.53, 9.9.9.9" />
-          <Input label="Domäne (Option 15)" name="domain" value={s.domain} onChange={set("domain")} placeholder="example.local" />
-          <p className="text-xs text-slate-500">Weitere Optionen lassen sich nach dem Anlegen im Scope festlegen.</p>
+          <Input label={m("router")} name="router" value={s.router} onChange={set("router")} placeholder={suggestion?.router ?? "192.168.1.1"} />
+          <Input label={m("dns")} name="dns" value={s.dns} onChange={set("dns")} placeholder="192.168.1.53, 9.9.9.9" />
+          <Input label={m("domain")} name="domain" value={s.domain} onChange={set("domain")} placeholder="example.local" />
+          <p className="text-xs text-slate-500">{m("moreOptions")}</p>
         </>
       )}
       {step === 3 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <p className="text-sm text-slate-600 sm:col-span-2 dark:text-slate-400">Optional: einen Adressbereich von der Vergabe ausschließen (z. B. für statische Geräte).</p>
-          <Input label="Ausschluss von" name="exStart" value={s.exStart} onChange={set("exStart")} error={errors.start} />
-          <Input label="Ausschluss bis" name="exEnd" value={s.exEnd} onChange={set("exEnd")} error={errors.end} />
+          <p className="text-sm text-slate-600 sm:col-span-2 dark:text-slate-400">{m("exclusionInfo")}</p>
+          <Input label={m("exStart")} name="exStart" value={s.exStart} onChange={set("exStart")} error={errors.start} />
+          <Input label={m("exEnd")} name="exEnd" value={s.exEnd} onChange={set("exEnd")} error={errors.end} />
         </div>
       )}
       {step === 4 && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <dt className="text-slate-500">Name</dt>
+          <dt className="text-slate-500">{m("name")}</dt>
           <dd>{s.name}</dd>
-          <dt className="text-slate-500">Subnetz</dt>
+          <dt className="text-slate-500">{m("subnet")}</dt>
           <dd className="font-mono">{s.subnet}</dd>
-          <dt className="text-slate-500">Bereich</dt>
+          <dt className="text-slate-500">{m("range")}</dt>
           <dd className="font-mono">
             {s.start} – {s.end}
           </dd>
-          <dt className="text-slate-500">Lease-Dauer</dt>
+          <dt className="text-slate-500">{m("leaseTime")}</dt>
           <dd>{formatDuration(s.lease_time)}</dd>
-          <dt className="text-slate-500">Router / DNS / Domäne</dt>
+          <dt className="text-slate-500">{m("summaryOptions")}</dt>
           <dd className="font-mono">{[s.router, s.dns, s.domain].map((v) => v || "–").join(" / ")}</dd>
-          <dt className="text-slate-500">Ausschluss</dt>
+          <dt className="text-slate-500">{m("exclusion")}</dt>
           <dd className="font-mono">{s.exStart ? `${s.exStart} – ${s.exEnd}` : "–"}</dd>
         </dl>
       )}

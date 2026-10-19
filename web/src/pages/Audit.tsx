@@ -2,7 +2,47 @@ import { Fragment, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { api, unwrap } from "../api/client";
 import { Badge, Button, Input, PageHeader, Spinner, Table, Td } from "../components/ui";
+import { messages } from "../i18n";
 import { formatDateTime } from "../lib/format";
+
+const m = messages({
+  en: {
+    title: "Audit log",
+    subtitle: "Who changed what and when – including lease events",
+    user: "User",
+    userHint: "e.g. admin, dhcp",
+    action: "Action (prefix)",
+    actionHint: "e.g. lease. or scope.create",
+    objectType: "Object type",
+    objectTypeHint: "scope, lease, user …",
+    filter: "Filter",
+    time: "Time",
+    source: "Source",
+    actionCol: "Action",
+    object: "Object",
+    hideDetails: "Hide details",
+    details: "Details",
+    older: "Load older",
+  },
+  de: {
+    title: "Audit-Log",
+    subtitle: "Wer hat was wann geändert – inklusive Lease-Ereignissen",
+    user: "Benutzer",
+    userHint: "z. B. admin, dhcp",
+    action: "Aktion (Präfix)",
+    actionHint: "z. B. lease. oder scope.create",
+    objectType: "Objekttyp",
+    objectTypeHint: "scope, lease, user …",
+    filter: "Filtern",
+    time: "Zeit",
+    source: "Quelle",
+    actionCol: "Aktion",
+    object: "Objekt",
+    hideDetails: "Details ausblenden",
+    details: "Details",
+    older: "Ältere laden",
+  },
+});
 
 export function AuditPage() {
   const [actor, setActor] = useState("");
@@ -34,7 +74,7 @@ export function AuditPage() {
 
   return (
     <>
-      <PageHeader title="Audit-Log" subtitle="Wer hat was wann geändert – inklusive Lease-Ereignissen" />
+      <PageHeader title={m("title")} subtitle={m("subtitle")} />
       <form
         className="mb-4 grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
         onSubmit={(e) => {
@@ -42,18 +82,18 @@ export function AuditPage() {
           setFilter({ actor, action, objectType });
         }}
       >
-        <Input label="Benutzer" value={actor} onChange={(e) => setActor(e.target.value)} placeholder="z. B. admin, dhcp" />
-        <Input label="Aktion (Präfix)" value={action} onChange={(e) => setAction(e.target.value)} placeholder="z. B. lease. oder scope.create" />
-        <Input label="Objekttyp" value={objectType} onChange={(e) => setObjectType(e.target.value)} placeholder="scope, lease, user …" />
+        <Input label={m("user")} value={actor} onChange={(e) => setActor(e.target.value)} placeholder={m("userHint")} />
+        <Input label={m("action")} value={action} onChange={(e) => setAction(e.target.value)} placeholder={m("actionHint")} />
+        <Input label={m("objectType")} value={objectType} onChange={(e) => setObjectType(e.target.value)} placeholder={m("objectTypeHint")} />
         <Button type="submit" variant="primary">
-          Filtern
+          {m("filter")}
         </Button>
       </form>
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {q.isLoading ? (
           <Spinner />
         ) : (
-          <Table head={["Zeit", "Benutzer", "Quelle", "Aktion", "Objekt", ""]} empty={items.length === 0}>
+          <Table head={[m("time"), m("user"), m("source"), m("actionCol"), m("object"), ""]} empty={items.length === 0}>
             {items.map((e) => (
               <Fragment key={e.id}>
                 <tr>
@@ -69,7 +109,7 @@ export function AuditPage() {
                   <Td className="text-right">
                     {e.details && (
                       <Button size="sm" variant="ghost" onClick={() => setOpen(open === e.id ? null : e.id)}>
-                        {open === e.id ? "Details ausblenden" : "Details"}
+                        {open === e.id ? m("hideDetails") : m("details")}
                       </Button>
                     )}
                   </Td>
@@ -89,7 +129,7 @@ export function AuditPage() {
       {q.hasNextPage && (
         <div className="mt-4 flex justify-center">
           <Button onClick={() => q.fetchNextPage()} disabled={q.isFetchingNextPage}>
-            Ältere laden
+            {m("older")}
           </Button>
         </div>
       )}

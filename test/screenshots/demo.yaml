@@ -4,70 +4,70 @@
 format: leasorix-config/v1
 settings: {mac_filter_allow_enabled: false, mac_filter_deny_enabled: true}
 classes:
-  - {name: PXE-Clients, type: vendor, data: "PXEClient*", description: Netzwerk-Boot (BIOS/UEFI)}
-  - {name: Yealink-Telefone, type: vendor, data: "yealink*", description: VoIP-Tischtelefone}
+  - {name: PXE clients, type: vendor, data: "PXEClient*", description: Network boot (BIOS/UEFI)}
+  - {name: Yealink phones, type: vendor, data: "yealink*", description: VoIP desk phones}
 server_options:
   - {code: 6, value: "10.77.0.53, 10.77.0.54"}
-  - {code: 15, value: firma.lan}
+  - {code: 15, value: corp.lan}
   - {code: 42, value: 10.77.0.123}
 mac_filters:
-  - {list: deny, pattern: "de:ad:be:ef:*", description: Gesperrte Testgeräte}
+  - {list: deny, pattern: "de:ad:be:ef:*", description: Blocked test devices}
 superscopes:
-  - {name: Labor, description: Zwei IP-Netze auf dem Labor-Segment}
+  - {name: Lab, description: Two IP networks on the lab segment}
 dns_zones:
-  - {name: firma.lan, server: 10.77.0.53}
+  - {name: corp.lan, server: 10.77.0.53}
   - {name: 77.10.in-addr.arpa, server: 10.77.0.53}
 scopes:
   - scope:
-      name: Büro-LAN
-      description: Arbeitsplätze und Drucker EG/1. OG
+      name: Office LAN
+      description: Workstations and printers, ground and first floor
       subnet: 10.77.0.0/16
       start: 10.77.10.100
       end: 10.77.10.160
       lease_time: 28800
       enabled: true
-      dns: {mode: client, domain: firma.lan, cleanup: true, protect: true}
+      dns: {mode: client, domain: corp.lan, cleanup: true, protect: true}
     exclusions: [{start: 10.77.10.100, end: 10.77.10.109}]
     reservations:
-      - {ip: 10.77.10.20, mac: "00:15:5d:0a:0b:0c", hostname: drucker-eg, description: Kyocera Multifunktionsdrucker}
-      - {ip: 10.77.10.21, mac: "00:15:5d:0a:0b:0d", hostname: drucker-og1, description: Kyocera Multifunktionsdrucker}
+      - {ip: 10.77.10.20, mac: "00:15:5d:0a:0b:0c", hostname: printer-gf, description: Kyocera multifunction printer}
+      - {ip: 10.77.10.21, mac: "00:15:5d:0a:0b:0d", hostname: printer-1f, description: Kyocera multifunction printer}
       - {ip: 10.77.10.30, mac: "3c:52:82:11:22:33", hostname: nas01, description: Synology NAS}
     options: [{code: 3, value: 10.77.0.1}]
     policies:
-      - name: PXE-Boot
-        description: iPXE für Netzwerk-Installationen
+      - name: PXE boot
+        description: iPXE for network installations
         order: 1
         enabled: true
         operator: or
-        conditions: [{field: class, operator: eq, value: PXE-Clients}]
+        conditions: [{field: class, operator: eq, value: PXE clients}]
         options: [{code: 66, value: 10.77.0.40}, {code: 67, value: ipxe.efi}]
-  - scope: {name: Gäste-WLAN, description: "Captive Portal, nur Internet", subnet: 10.20.0.0/22, start: 10.20.0.10, end: 10.20.3.250, lease_time: 3600, enabled: true}
+  - scope: {name: Guest Wi-Fi, description: "Captive portal, internet only", subnet: 10.20.0.0/22, start: 10.20.0.10, end: 10.20.3.250, lease_time: 3600, enabled: true}
     exclusions: []
     reservations: []
     options: [{code: 3, value: 10.20.0.1}, {code: 6, value: "9.9.9.9, 149.112.112.112"}]
     policies: []
-  - scope: {name: VoIP, description: Tischtelefone (Yealink), subnet: 10.30.0.0/24, start: 10.30.0.50, end: 10.30.0.250, lease_time: 691200, enabled: true}
+  - scope: {name: VoIP, description: Desk phones (Yealink), subnet: 10.30.0.0/24, start: 10.30.0.50, end: 10.30.0.250, lease_time: 691200, enabled: true}
     exclusions: []
     reservations: []
     options: [{code: 3, value: 10.30.0.1}]
     policies:
-      - name: Provisionierung
+      - name: Provisioning
         order: 1
         enabled: true
         operator: and
-        conditions: [{field: class, operator: eq, value: Yealink-Telefone}]
-        options: [{code: 66, value: "http://prov.firma.lan/yealink"}]
-  - scope: {name: Labor A, subnet: 192.168.50.0/24, start: 192.168.50.10, end: 192.168.50.200, lease_time: 3600, enabled: true, bootp: true, superscope: Labor}
+        conditions: [{field: class, operator: eq, value: Yealink phones}]
+        options: [{code: 66, value: "http://prov.corp.lan/yealink"}]
+  - scope: {name: Lab A, subnet: 192.168.50.0/24, start: 192.168.50.10, end: 192.168.50.200, lease_time: 3600, enabled: true, bootp: true, superscope: Lab}
     exclusions: []
     reservations: []
     options: [{code: 3, value: 192.168.50.1}]
     policies: []
-  - scope: {name: Labor B, subnet: 192.168.51.0/24, start: 192.168.51.10, end: 192.168.51.200, lease_time: 3600, enabled: true, superscope: Labor}
+  - scope: {name: Lab B, subnet: 192.168.51.0/24, start: 192.168.51.10, end: 192.168.51.200, lease_time: 3600, enabled: true, superscope: Lab}
     exclusions: []
     reservations: []
     options: [{code: 3, value: 192.168.51.1}]
     policies: []
-  - scope: {name: Server-VLAN, description: "Nur Reservierungen, dynamische Vergabe pausiert", subnet: 10.40.0.0/24, start: 10.40.0.100, end: 10.40.0.199, lease_time: 86400, enabled: false}
+  - scope: {name: Server VLAN, description: "Reservations only, dynamic assignment paused", subnet: 10.40.0.0/24, start: 10.40.0.100, end: 10.40.0.199, lease_time: 86400, enabled: false}
     exclusions: []
     reservations: []
     options: [{code: 3, value: 10.40.0.1}]
@@ -75,8 +75,8 @@ scopes:
 server_options6:
   - {code: 23, value: "2001:db8:77::53"}
 scopes6:
-  - name: Büro-LAN v6
-    description: Adressen und /56-Präfixe für Etagen-Router
+  - name: Office LAN v6
+    description: Addresses and /56 prefixes for floor routers
     prefix: "2001:db8:77::/64"
     start: "2001:db8:77::1000"
     end: "2001:db8:77::ffff"
@@ -89,8 +89,8 @@ scopes6:
     reservations:
       - {duid: "00:03:00:01:3c:52:82:11:22:33", ip: "2001:db8:77::30", hostname: nas01}
     options:
-      - {code: 24, value: firma.lan}
-  - name: Gäste-WLAN v6
+      - {code: 24, value: corp.lan}
+  - name: Guest Wi-Fi v6
     prefix: "2001:db8:20::/64"
     start: "2001:db8:20::100"
     end: "2001:db8:20::ffff"
