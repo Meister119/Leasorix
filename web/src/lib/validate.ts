@@ -1,12 +1,51 @@
 // Client side validation. The backend validates everything again; these
 // checks give immediate feedback in forms.
 
+import { messages } from "../i18n";
+
+const m = messages({
+  en: {
+    nameRequired: "Name is required",
+    subnetFormat: "Enter the subnet in the format 192.168.1.0/24",
+    prefixLength: "Prefix length must be between /8 and /30",
+    hostBits: "Host bits set – the network address is {net}",
+    overlap: "Overlaps with scope “{name}” ({subnet})",
+    invalidIPv4: "Not a valid IPv4 address",
+    notInSubnet: "Not in the subnet",
+    netOrBroadcast: "Network or broadcast address",
+    endBeforeStart: "End is before start",
+    leaseTime: "0 (unlimited) or at least 10 seconds",
+    outsideRange: "Must be within the scope range {start} – {end}",
+    notUsable: "Not a usable address in {subnet}",
+    macOrClientId: "Enter a MAC address or client ID",
+    invalidMAC: "Invalid MAC address",
+    clientIdHex: "Enter the client ID in hex",
+  },
+  de: {
+    nameRequired: "Name ist erforderlich",
+    subnetFormat: "Subnetz im Format 192.168.1.0/24 angeben",
+    prefixLength: "Präfixlänge muss zwischen /8 und /30 liegen",
+    hostBits: "Host-Bits gesetzt – Netzadresse ist {net}",
+    overlap: "Überschneidet sich mit Scope „{name}“ ({subnet})",
+    invalidIPv4: "Keine gültige IPv4-Adresse",
+    notInSubnet: "Liegt nicht im Subnetz",
+    netOrBroadcast: "Netz- oder Broadcast-Adresse",
+    endBeforeStart: "Ende liegt vor dem Anfang",
+    leaseTime: "0 (unbegrenzt) oder mindestens 10 Sekunden",
+    outsideRange: "Muss im Scope-Bereich {start} – {end} liegen",
+    notUsable: "Keine nutzbare Adresse in {subnet}",
+    macOrClientId: "MAC-Adresse oder Client-ID angeben",
+    invalidMAC: "Ungültige MAC-Adresse",
+    clientIdHex: "Client-ID als Hex angeben",
+  },
+});
+
 export function parseIPv4(s: string): number | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s.trim());
-  if (!m) return null;
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s.trim());
+  if (!match) return null;
   let v = 0;
   for (let i = 1; i <= 4; i++) {
-    const part = m[i];
+    const part = match[i];
     if (part.length > 1 && part.startsWith("0")) return null;
     const n = Number(part);
     if (n > 255) return null;
@@ -67,36 +106,36 @@ export interface ScopeForm {
  * the subnet, no overlap with other scopes). */
 export function validateScope(f: ScopeForm, others: { name: string; subnet: string }[] = []): Errors {
   const e: Errors = {};
-  if (!f.name.trim()) e.name = "Name ist erforderlich";
+  if (!f.name.trim()) e.name = m("nameRequired");
   const p = parsePrefix(f.subnet);
   if (!p) {
-    e.subnet = "Subnetz im Format 192.168.1.0/24 angeben";
+    e.subnet = m("subnetFormat");
   } else if (p.bits < 8 || p.bits > 30) {
-    e.subnet = "Präfixlänge muss zwischen /8 und /30 liegen";
+    e.subnet = m("prefixLength");
   } else if (networkOf(p) !== p.network) {
-    e.subnet = `Host-Bits gesetzt – Netzadresse ist ${formatIPv4(networkOf(p))}/${p.bits}`;
+    e.subnet = m("hostBits", { net: `${formatIPv4(networkOf(p))}/${p.bits}` });
   } else {
     const clash = others.find((o) => {
       const op = parsePrefix(o.subnet);
       return op !== null && overlaps(p, op);
     });
-    if (clash) e.subnet = `Überschneidet sich mit Scope „${clash.name}“ (${clash.subnet})`;
+    if (clash) e.subnet = m("overlap", { name: clash.name, subnet: clash.subnet });
   }
   const start = parseIPv4(f.start);
   const end = parseIPv4(f.end);
-  if (start === null) e.start = "Keine gültige IPv4-Adresse";
-  if (end === null) e.end = "Keine gültige IPv4-Adresse";
+  if (start === null) e.start = m("invalidIPv4");
+  if (end === null) e.end = m("invalidIPv4");
   if (p && start !== null && !e.subnet) {
-    if (!inSubnet(p, start)) e.start = "Liegt nicht im Subnetz";
-    else if (start === networkOf(p) || start === broadcastOf(p)) e.start = "Netz- oder Broadcast-Adresse";
+    if (!inSubnet(p, start)) e.start = m("notInSubnet");
+    else if (start === networkOf(p) || start === broadcastOf(p)) e.start = m("netOrBroadcast");
   }
   if (p && end !== null && !e.subnet) {
-    if (!inSubnet(p, end)) e.end = "Liegt nicht im Subnetz";
-    else if (end === networkOf(p) || end === broadcastOf(p)) e.end = "Netz- oder Broadcast-Adresse";
+    if (!inSubnet(p, end)) e.end = m("notInSubnet");
+    else if (end === networkOf(p) || end === broadcastOf(p)) e.end = m("netOrBroadcast");
   }
-  if (start !== null && end !== null && !e.start && !e.end && start > end) e.end = "Ende liegt vor dem Anfang";
+  if (start !== null && end !== null && !e.start && !e.end && start > end) e.end = m("endBeforeStart");
   if (!Number.isInteger(f.lease_time) || (f.lease_time !== 0 && f.lease_time < 10)) {
-    e.lease_time = "0 (unbegrenzt) oder mindestens 10 Sekunden";
+    e.lease_time = m("leaseTime");
   }
   return e;
 }
@@ -106,13 +145,13 @@ export function validateRange(start: string, end: string, within?: { start: stri
   const e: Errors = {};
   const s = parseIPv4(start);
   const en = parseIPv4(end);
-  if (s === null) e.start = "Keine gültige IPv4-Adresse";
-  if (en === null) e.end = "Keine gültige IPv4-Adresse";
-  if (s !== null && en !== null && s > en) e.end = "Ende liegt vor dem Anfang";
+  if (s === null) e.start = m("invalidIPv4");
+  if (en === null) e.end = m("invalidIPv4");
+  if (s !== null && en !== null && s > en) e.end = m("endBeforeStart");
   if (within && s !== null && en !== null && !e.end) {
     const lo = parseIPv4(within.start)!;
     const hi = parseIPv4(within.end)!;
-    if (s < lo || en > hi) e.start = `Muss im Scope-Bereich ${within.start} – ${within.end} liegen`;
+    if (s < lo || en > hi) e.start = m("outsideRange", { start: within.start, end: within.end });
   }
   return e;
 }
@@ -135,14 +174,14 @@ export function validateReservation(
 ): Errors {
   const e: Errors = {};
   const ip = parseIPv4(r.ip);
-  if (ip === null) e.ip = "Keine gültige IPv4-Adresse";
+  if (ip === null) e.ip = m("invalidIPv4");
   else if (subnet) {
     const p = parsePrefix(subnet);
-    if (p && (!inSubnet(p, ip) || ip === networkOf(p) || ip === broadcastOf(p))) e.ip = `Keine nutzbare Adresse in ${subnet}`;
+    if (p && (!inSubnet(p, ip) || ip === networkOf(p) || ip === broadcastOf(p))) e.ip = m("notUsable", { subnet });
   }
-  if (!r.mac.trim() && !r.client_id.trim()) e.mac = "MAC-Adresse oder Client-ID angeben";
-  if (r.mac.trim() && normalizeMAC(r.mac) === null) e.mac = "Ungültige MAC-Adresse";
-  if (r.client_id.trim() && !/^([0-9a-fA-F]{2}[:-]?)+$/.test(r.client_id.trim())) e.client_id = "Client-ID als Hex angeben";
+  if (!r.mac.trim() && !r.client_id.trim()) e.mac = m("macOrClientId");
+  if (r.mac.trim() && normalizeMAC(r.mac) === null) e.mac = m("invalidMAC");
+  if (r.client_id.trim() && !/^([0-9a-fA-F]{2}[:-]?)+$/.test(r.client_id.trim())) e.client_id = m("clientIdHex");
   return e;
 }
 

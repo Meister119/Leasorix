@@ -993,3 +993,24 @@ replication path for IPv6 would be a substantial extension. Instead:
   prefixes, the network behind the router changes. Documented in HA.md.
 - The configuration (scopes, reservations, options) is replicated
   by the config leader, as with IPv4.
+
+## D-074 – English by default, German in the UI
+
+Supersedes the language point of D-039. Everything in the repository is
+English: README, documentation, code, API, CLI, logs, URLs and paths. The web
+UI is English by default and can be switched to German.
+
+- Own small translation layer (`web/src/i18n`) instead of a library such as
+  i18next: two languages, no plural rules beyond simple variants, no runtime
+  loading. Each module declares its texts next to the code with
+  `messages({ en, de })`; the compiler checks that the German table has
+  exactly the keys of the English one, so a missing translation is a build
+  error.
+- The language is chosen in the header (and on the sign-in page) and stored
+  per browser (`localStorage`, like the color scheme); `<html lang>` follows
+  it. Changing the language remounts the app below the providers, so texts
+  outside components (tables, labels) are re-evaluated without extra
+  plumbing.
+- Texts from the server (validation messages, option names of the catalog,
+  audit actions) stay English: they are part of the API and the logs.
+- Dates and numbers are formatted with the locale of the chosen language.

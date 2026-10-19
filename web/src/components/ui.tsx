@@ -12,6 +12,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
+import { c } from "../i18n/common";
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
@@ -217,7 +218,7 @@ export function Table({ head, children, empty }: { head: ReactNode[]; children: 
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">{children}</tbody>
       </table>
-      {empty && <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Keine Einträge vorhanden.</p>}
+      {empty && <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">{c("noEntries")}</p>}
     </div>
   );
 }
@@ -241,7 +242,7 @@ export function Progress({ percent }: { percent: number }) {
 
 export function Spinner() {
   return (
-    <div className="flex justify-center p-8" role="status" aria-label="Lädt">
+    <div className="flex justify-center p-8" role="status" aria-label={c("loading")}>
       <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-teal-600" />
     </div>
   );
@@ -299,7 +300,7 @@ export function Modal({ title, onClose, children, footer, wide }: { title: strin
       <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className={cx("w-full rounded-lg bg-white shadow-xl dark:bg-slate-900", wide ? "max-w-3xl" : "max-w-lg")}>
         <header className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <h2 className="font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Schließen">
+          <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={c("close")}>
             ✕
           </button>
         </header>
@@ -360,13 +361,13 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </div>
       {pending && (
         <Modal
-          title="Bitte bestätigen"
+          title={c("confirmTitle")}
           onClose={() => close(false)}
           footer={
             <>
-              <Button onClick={() => close(false)}>Abbrechen</Button>
+              <Button onClick={() => close(false)}>{c("cancel")}</Button>
               <Button variant={pending.danger ? "danger" : "primary"} onClick={() => close(true)}>
-                {pending.label ?? "Bestätigen"}
+                {pending.label ?? c("confirm")}
               </Button>
             </>
           }

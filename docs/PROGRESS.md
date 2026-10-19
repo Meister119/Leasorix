@@ -477,3 +477,15 @@ mTLS with certificates generated via CLI)
   netsh import of DHCPv6 scopes.
 - HA: when a server fails, its DHCPv6 clients change their address
   (D-073).
+
+## Addendum – English by default, German UI
+
+**Implemented**
+- README and all documents translated to English; code, API, CLI, logs,
+  URLs and paths were already English.
+- Web UI: English by default, German selectable in the header and on the
+  sign-in page (stored per browser). Translation layer `web/src/i18n` with
+  per-module text tables checked by the compiler (D-074).
+- README with feature overview, screenshots (`make screenshots`, demo data
+  in `test/screenshots/demo.yaml`) and an architecture diagram.
+

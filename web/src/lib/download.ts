@@ -1,3 +1,10 @@
+import { messages } from "../i18n";
+
+const m = messages({
+  en: { notJson: "{name} is not a valid JSON file" },
+  de: { notJson: "{name} ist keine gültige JSON-Datei" },
+});
+
 /** Offers content as file download. */
 export function downloadFile(name: string, content: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -22,6 +29,6 @@ export async function readJSONFile<T = unknown>(f: File): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Error(`${f.name} ist keine gültige JSON-Datei`);
+    throw new Error(m("notJson", { name: f.name }));
   }
 }

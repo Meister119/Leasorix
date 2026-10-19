@@ -30,11 +30,11 @@ describe("validateScope", () => {
   });
   it("rejects bad input like the backend", () => {
     expect(validateScope({ ...ok, name: " " }).name).toBeDefined();
-    expect(validateScope({ ...ok, subnet: "192.168.1.1/24" }).subnet).toMatch(/Host-Bits/);
-    expect(validateScope({ ...ok, subnet: "10.0.0.0/31" }).subnet).toMatch(/Präfix/);
-    expect(validateScope({ ...ok, start: "192.168.2.1" }).start).toMatch(/Subnetz/);
-    expect(validateScope({ ...ok, end: "192.168.1.255" }).end).toMatch(/Broadcast/);
-    expect(validateScope({ ...ok, start: "192.168.1.201" }).end).toMatch(/vor dem Anfang/);
+    expect(validateScope({ ...ok, subnet: "192.168.1.1/24" }).subnet).toMatch(/Host bits/);
+    expect(validateScope({ ...ok, subnet: "10.0.0.0/31" }).subnet).toMatch(/Prefix/);
+    expect(validateScope({ ...ok, start: "192.168.2.1" }).start).toMatch(/subnet/);
+    expect(validateScope({ ...ok, end: "192.168.1.255" }).end).toMatch(/broadcast/);
+    expect(validateScope({ ...ok, start: "192.168.1.201" }).end).toMatch(/before start/);
     expect(validateScope({ ...ok, lease_time: 5 }).lease_time).toBeDefined();
     expect(validateScope({ ...ok, lease_time: 0 }).lease_time).toBeUndefined();
   });
