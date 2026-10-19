@@ -4,8 +4,79 @@ import { api, ApiError, errorMessage, unwrap, type S } from "../api/client";
 import { useAuth } from "../auth";
 import { OptionsEditor } from "../components/OptionsEditor";
 import { Alert, Button, Card, Input, Modal, PageHeader, Select, Spinner, Table, Td, TextArea, useFeedback } from "../components/ui";
+import { messages } from "../i18n";
+import { c } from "../i18n/common";
 import { hasErrors, validateReservation, type Errors } from "../lib/validate";
 import { useScopes } from "./Scopes";
+
+const m = messages({
+  en: {
+    title: "Reservations",
+    subtitle: "Fixed addresses for specific clients (MAC or client ID)",
+    csvImport: "CSV import",
+    scope: "Scope",
+    allScopes: "All scopes",
+    created: "Reservation created",
+    deleted: "Reservation deleted",
+    saved: "Reservation saved",
+    selectScope: "Select a scope",
+    clientId: "Client ID",
+    hostname: "Hostname",
+    description: "Description",
+    scopeOption: "– Scope –",
+    confirmDelete: "Delete reservation {ip}?",
+    editTitle: "Reservation {ip}",
+    ipAddress: "IP address",
+    macAddress: "MAC address",
+    clientIdHex: "Client ID (hex)",
+    options: "Reservation options (highest priority)",
+    importTitle: "Import reservations (CSV)",
+    import: "Import",
+    columns: "Columns:",
+    nameOrId: "(name or ID)",
+    andOr: "and/or",
+    optional: "optionally",
+    csvRules: "Separator: comma or semicolon. Either everything or nothing is imported.",
+    csvFile: "CSV file",
+    csvContent: "CSV content",
+    imported: "{n} reservations imported.",
+    nothingImported: "Nothing imported – please fix:",
+    lineError: "Line {line}: {message}",
+  },
+  de: {
+    title: "Reservierungen",
+    subtitle: "Feste Adressen für bestimmte Clients (MAC oder Client-ID)",
+    csvImport: "CSV-Import",
+    scope: "Scope",
+    allScopes: "Alle Scopes",
+    created: "Reservierung angelegt",
+    deleted: "Reservierung gelöscht",
+    saved: "Reservierung gespeichert",
+    selectScope: "Scope wählen",
+    clientId: "Client-ID",
+    hostname: "Hostname",
+    description: "Beschreibung",
+    scopeOption: "– Scope –",
+    confirmDelete: "Reservierung {ip} löschen?",
+    editTitle: "Reservierung {ip}",
+    ipAddress: "IP-Adresse",
+    macAddress: "MAC-Adresse",
+    clientIdHex: "Client-ID (hex)",
+    options: "Reservierungs-Optionen (höchste Priorität)",
+    importTitle: "Reservierungen importieren (CSV)",
+    import: "Importieren",
+    columns: "Spalten:",
+    nameOrId: "(Name oder ID)",
+    andOr: "und/oder",
+    optional: "optional",
+    csvRules: "Trennzeichen Komma oder Semikolon. Es wird alles oder nichts importiert.",
+    csvFile: "CSV-Datei",
+    csvContent: "CSV-Inhalt",
+    imported: "{n} Reservierungen importiert.",
+    nothingImported: "Nichts importiert – bitte korrigieren:",
+    lineError: "Zeile {line}: {message}",
+  },
+});
 
 export function ReservationsPage() {
   const scopes = useScopes();
@@ -15,13 +86,13 @@ export function ReservationsPage() {
   return (
     <>
       <PageHeader
-        title="Reservierungen"
-        subtitle="Feste Adressen für bestimmte Clients (MAC oder Client-ID)"
-        actions={canWrite && <Button onClick={() => setImportOpen(true)}>CSV-Import</Button>}
+        title={m("title")}
+        subtitle={m("subtitle")}
+        actions={canWrite && <Button onClick={() => setImportOpen(true)}>{m("csvImport")}</Button>}
       />
       <div className="mb-4 max-w-xs">
-        <Select label="Scope" value={String(scopeId)} onChange={(e) => setScopeId(Number(e.target.value))}>
-          <option value="0">Alle Scopes</option>
+        <Select label={m("scope")} value={String(scopeId)} onChange={(e) => setScopeId(Number(e.target.value))}>
+          <option value="0">{m("allScopes")}</option>
           {scopes.data?.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} ({s.subnet})
@@ -64,7 +135,7 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
     onSuccess: () => {
       refresh();
       setRow({ ...empty, scope_id: row.scope_id });
-      toast("Reservierung angelegt");
+      toast(m("created"));
     },
     onError: (e) => {
       if (e instanceof ApiError) setErrors(e.fields);
@@ -75,7 +146,7 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
     mutationFn: (id: number) => unwrap(api.DELETE("/reservations/{id}", { params: { path: { id } } })),
     onSuccess: () => {
       refresh();
-      toast("Reservierung gelöscht");
+      toast(m("deleted"));
     },
     onError: (e) => toast(errorMessage(e), "error"),
   });
@@ -83,7 +154,7 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
   const submit = () => {
     const sid = row.scope_id || scopeId;
     const e = validateReservation(row, scopeById.get(sid)?.subnet);
-    if (!sid) e.scope_id = "Scope wählen";
+    if (!sid) e.scope_id = m("selectScope");
     setErrors(e);
     if (!hasErrors(e)) add.mutate();
   };
@@ -91,7 +162,7 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
   if (list.isLoading) return <Spinner />;
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <Table head={["IP", "MAC", "Client-ID", "Hostname", "Scope", "Beschreibung", ""]} empty={list.data?.length === 0 && !canWrite}>
+      <Table head={["IP", "MAC", m("clientId"), m("hostname"), m("scope"), m("description"), ""]} empty={list.data?.length === 0 && !canWrite}>
         {canWrite && (
           <tr className="bg-slate-50 dark:bg-slate-950/40">
             <Td>
@@ -101,22 +172,22 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
               <InlineInput label="MAC" value={row.mac} onChange={(v) => setRow({ ...row, mac: v })} error={errors.mac} />
             </Td>
             <Td>
-              <InlineInput label="Client-ID" value={row.client_id} onChange={(v) => setRow({ ...row, client_id: v })} error={errors.client_id} />
+              <InlineInput label={m("clientId")} value={row.client_id} onChange={(v) => setRow({ ...row, client_id: v })} error={errors.client_id} />
             </Td>
             <Td>
-              <InlineInput label="Hostname" value={row.hostname} onChange={(v) => setRow({ ...row, hostname: v })} />
+              <InlineInput label={m("hostname")} value={row.hostname} onChange={(v) => setRow({ ...row, hostname: v })} />
             </Td>
             <Td>
               {scopeId ? (
                 scopeById.get(scopeId)?.name
               ) : (
                 <select
-                  aria-label="Scope"
+                  aria-label={m("scope")}
                   value={row.scope_id}
                   onChange={(e) => setRow({ ...row, scope_id: Number(e.target.value) })}
                   className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"
                 >
-                  <option value={0}>– Scope –</option>
+                  <option value={0}>{m("scopeOption")}</option>
                   {scopes.data?.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -127,11 +198,11 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
               {errors.scope_id && <div className="text-xs text-red-600">{errors.scope_id}</div>}
             </Td>
             <Td>
-              <InlineInput label="Beschreibung" value={row.description} onChange={(v) => setRow({ ...row, description: v })} />
+              <InlineInput label={m("description")} value={row.description} onChange={(v) => setRow({ ...row, description: v })} />
             </Td>
             <Td className="text-right">
               <Button size="sm" variant="primary" onClick={submit} disabled={add.isPending}>
-                Anlegen
+                {c("create")}
               </Button>
             </Td>
           </tr>
@@ -147,11 +218,11 @@ export function ReservationsTable({ scopeId }: { scopeId: number }) {
             <Td className="text-right">
               <div className="flex justify-end gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>
-                  {canWrite ? "Bearbeiten" : "Details"}
+                  {canWrite ? c("edit") : c("details")}
                 </Button>
                 {canWrite && (
-                  <Button size="sm" variant="ghost" onClick={async () => (await confirm(`Reservierung ${r.ip} löschen?`, { danger: true })) && del.mutate(r.id)}>
-                    Löschen
+                  <Button size="sm" variant="ghost" onClick={async () => (await confirm(m("confirmDelete", { ip: r.ip }), { danger: true })) && del.mutate(r.id)}>
+                    {c("delete")}
                   </Button>
                 )}
               </div>
@@ -196,7 +267,7 @@ function EditReservation({ res, subnet, onClose }: { res: S["Reservation"]; subn
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reservations"] });
-      toast("Reservierung gespeichert");
+      toast(m("saved"));
       onClose();
     },
     onError: (e) => {
@@ -206,7 +277,7 @@ function EditReservation({ res, subnet, onClose }: { res: S["Reservation"]; subn
   });
   return (
     <Modal
-      title={`Reservierung ${res.ip}`}
+      title={m("editTitle", { ip: res.ip })}
       onClose={onClose}
       wide
       footer={
@@ -219,21 +290,21 @@ function EditReservation({ res, subnet, onClose }: { res: S["Reservation"]; subn
               if (!hasErrors(e)) save.mutate();
             }}
           >
-            Speichern
+            {c("save")}
           </Button>
         )
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label="IP-Adresse" value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} error={errors.ip} disabled={!canWrite} />
-        <Input label="Hostname" value={f.hostname} onChange={(e) => setF({ ...f, hostname: e.target.value })} disabled={!canWrite} />
-        <Input label="MAC-Adresse" value={f.mac} onChange={(e) => setF({ ...f, mac: e.target.value })} error={errors.mac} disabled={!canWrite} />
-        <Input label="Client-ID (hex)" value={f.client_id} onChange={(e) => setF({ ...f, client_id: e.target.value })} error={errors.client_id} disabled={!canWrite} />
+        <Input label={m("ipAddress")} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} error={errors.ip} disabled={!canWrite} />
+        <Input label={m("hostname")} value={f.hostname} onChange={(e) => setF({ ...f, hostname: e.target.value })} disabled={!canWrite} />
+        <Input label={m("macAddress")} value={f.mac} onChange={(e) => setF({ ...f, mac: e.target.value })} error={errors.mac} disabled={!canWrite} />
+        <Input label={m("clientIdHex")} value={f.client_id} onChange={(e) => setF({ ...f, client_id: e.target.value })} error={errors.client_id} disabled={!canWrite} />
         <div className="sm:col-span-2">
-          <Input label="Beschreibung" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canWrite} />
+          <Input label={m("description")} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canWrite} />
         </div>
       </div>
-      <Card title="Reservierungs-Optionen (höchste Priorität)">
+      <Card title={m("options")}>
         <OptionsEditor owner="reservation" ownerId={res.id} />
       </Card>
     </Modal>
@@ -263,43 +334,41 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
   });
   return (
     <Modal
-      title="Reservierungen importieren (CSV)"
+      title={m("importTitle")}
       onClose={onClose}
       wide
       footer={
         <>
-          <Button onClick={onClose}>Schließen</Button>
+          <Button onClick={onClose}>{c("close")}</Button>
           <Button variant="primary" onClick={() => run.mutate()} disabled={run.isPending}>
-            Importieren
+            {m("import")}
           </Button>
         </>
       }
     >
       <p className="text-sm text-slate-600 dark:text-slate-400">
-        Spalten: <code>scope</code> (Name oder ID), <code>ip</code>, <code>mac</code> und/oder <code>client_id</code>, optional <code>hostname</code>, <code>description</code>. Trennzeichen
-        Komma oder Semikolon. Es wird alles oder nichts importiert.
+        {m("columns")} <code>scope</code> {m("nameOrId")}, <code>ip</code>, <code>mac</code> {m("andOr")} <code>client_id</code>, {m("optional")} <code>hostname</code>,{" "}
+        <code>description</code>. {m("csvRules")}
       </p>
       <input
         type="file"
         accept=".csv,text/csv"
-        aria-label="CSV-Datei"
+        aria-label={m("csvFile")}
         className="text-sm"
         onChange={async (e) => {
           const file = e.target.files?.[0];
           if (file) setText(await file.text());
         }}
       />
-      <TextArea label="CSV-Inhalt" rows={10} value={text} onChange={(e) => setText(e.target.value)} />
+      <TextArea label={m("csvContent")} rows={10} value={text} onChange={(e) => setText(e.target.value)} />
       {error && <Alert>{error}</Alert>}
-      {result && result.errors.length === 0 && <Alert kind="success">{result.created} Reservierungen importiert.</Alert>}
+      {result && result.errors.length === 0 && <Alert kind="success">{m("imported", { n: result.created })}</Alert>}
       {result && result.errors.length > 0 && (
         <Alert>
-          Nichts importiert – bitte korrigieren:
+          {m("nothingImported")}
           <ul className="mt-1 list-disc pl-5">
             {result.errors.map((e, i) => (
-              <li key={i}>
-                Zeile {e.line}: {e.message}
-              </li>
+              <li key={i}>{m("lineError", { line: e.line, message: e.message })}</li>
             ))}
           </ul>
         </Alert>

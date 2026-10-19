@@ -1,355 +1,352 @@
-# Admin-Handbuch
+# Admin guide
 
-Betrieb eines Leasorix-Servers. Hochverfügbarkeit hat ein eigenes Handbuch:
-[HA.md](HA.md), Container-Betrieb [DOCKER.md](DOCKER.md). Entscheidungen und
-Hintergründe: [DECISIONS.md](DECISIONS.md).
+Operating a Leasorix server. High availability has its own guide:
+[HA.md](HA.md), container operation [DOCKER.md](DOCKER.md). Decisions and
+background: [DECISIONS.md](DECISIONS.md).
 
-## 1. Start und Bootstrap-Konfiguration
+## 1. Startup and bootstrap configuration
 
-`leasorixd --config /etc/leasorix/leasorix.yml` startet den Server. Die Datei
-enthält nur Prozess-Einstellungen (Listener, Datenverzeichnis, Interfaces,
-Logging, HA); die eigentliche DHCP-Konfiguration liegt in der Datenbank und
-wird über Web-UI, REST-API oder `leasorixctl` gepflegt. Ein kommentiertes
-Beispiel mit allen Schlüsseln: [`deploy/examples/leasorix.yml`](../deploy/examples/leasorix.yml).
+`leasorixd --config /etc/leasorix/leasorix.yml` starts the server. The file
+contains only process settings (listeners, data directory, interfaces,
+logging, HA); the actual DHCP configuration lives in the database and is
+managed through the web UI, the REST API or `leasorixctl`. An annotated
+example with all keys: [`deploy/examples/leasorix.yml`](../deploy/examples/leasorix.yml).
 
-Jeder Schlüssel lässt sich per Umgebungsvariable überschreiben:
-`LEASORIX_<ABSCHNITT>_<SCHLÜSSEL>`, z. B. `LEASORIX_HTTP_LISTEN=10.0.0.5:8067`,
+Every key can be overridden with an environment variable:
+`LEASORIX_<SECTION>_<KEY>`, e.g. `LEASORIX_HTTP_LISTEN=10.0.0.5:8067`,
 `LEASORIX_DHCP4_INTERFACES=eth0,eth1`, `LEASORIX_HA_PEER_ADDRESS=…`.
 
-| Schlüssel | Default | Bedeutung |
+| Key | Default | Meaning |
 |---|---|---|
-| `data_dir` | `/var/lib/leasorix` | Datenbank, Zertifikate, Lock-Datei |
-| `http.listen` | `127.0.0.1:8067` | Management (UI, API, `/metrics`) – nur Management-Netz |
-| `http.tls.mode` | `self-signed` | `self-signed`, `files` (eigenes Zertifikat) oder `off` |
-| `dhcp4.interfaces` | – | Interfaces, auf denen DHCP bedient wird (leer = aus) |
-| `dhcp4.conflict_detection` | an, 500 ms | Ping vor jeder neuen Adresse |
-| `dhcp4.bootp_lease_time` | `720h` | Lease-Dauer für BOOTP-Clients |
-| `dhcp6.interfaces` | – | Interfaces für DHCPv6 (leer = aus), siehe [Abschnitt 12](#12-dhcpv6) |
-| `dhcp6.decline_time` | `24h` | Sperre für Adressen, die ein Client per DECLINE meldet |
-| `audit.retention` | `2160h` (90 Tage) | Aufbewahrung des Audit-Logs |
-| `auth.*` | | Sitzungsdauer, Login-Sperre, Setup-Token |
-| `ha.*` | aus | siehe [HA.md](HA.md) |
+| `data_dir` | `/var/lib/leasorix` | Database, certificates, lock file |
+| `http.listen` | `127.0.0.1:8067` | Management (UI, API, `/metrics`) – management network only |
+| `http.tls.mode` | `self-signed` | `self-signed`, `files` (your own certificate) or `off` |
+| `dhcp4.interfaces` | – | Interfaces on which DHCP is served (empty = off) |
+| `dhcp4.conflict_detection` | on, 500 ms | Ping before every new address |
+| `dhcp4.bootp_lease_time` | `720h` | Lease duration for BOOTP clients |
+| `dhcp6.interfaces` | – | Interfaces for DHCPv6 (empty = off), see [section 12](#12-dhcpv6) |
+| `dhcp6.decline_time` | `24h` | Block period for addresses that a client reports via DECLINE |
+| `audit.retention` | `2160h` (90 days) | Retention period of the audit log |
+| `auth.*` | | Session duration, login lockout, setup token |
+| `ha.*` | off | see [HA.md](HA.md) |
 
-Ein Datenverzeichnis kann nur von einem Prozess genutzt werden
+A data directory can only be used by one process at a time
 (`leasorixd.lock`).
 
-**Erster Start:** Im Log erscheint ein einmaliges Setup-Token
-(`setup_token=…`); damit legt man im Browser den ersten Administrator an.
-Das Zertifikat ist anfangs selbstsigniert (`<data_dir>/tls`), für den
-Dauerbetrieb ein eigenes Zertifikat (`http.tls.mode: files`) hinterlegen.
+**First start:** A one-time setup token appears in the log
+(`setup_token=…`); use it in the browser to create the first administrator.
+The certificate is self-signed at first (`<data_dir>/tls`); for long-term
+operation, provide your own certificate (`http.tls.mode: files`).
 
 ## 2. Scopes
 
-Ein Scope ist ein IPv4-Subnetz mit dynamischem Bereich, Lease-Dauer und
-Optionen. Welcher Scope einen Client bedient, ergibt sich aus der Adresse
-des Interfaces bzw. bei Relays aus `giaddr` (oder Option 118 / 82.5).
+A scope is an IPv4 subnet with a dynamic range, lease duration and
+options. Which scope serves a client is determined by the address of the
+interface or, for relays, by `giaddr` (or option 118 / 82.5).
 
-- **Ausschlüsse** nehmen Adressen aus der dynamischen Vergabe (z. B. für
-  statisch konfigurierte Geräte).
-- **Reservierungen** binden eine Adresse fest an MAC oder Client-ID; sie
-  haben Vorrang und dürfen außerhalb des dynamischen Bereichs liegen. Import
-  per CSV unter *Reservierungen → CSV-Import*.
-- **Superscopes** fassen Scopes zusammen, die dasselbe physische Netz
-  versorgen (mehrere IP-Netze auf einem Segment, „Multinet“). Clients auf
-  dem Link eines Mitglieds können Adressen aus allen Mitgliedern bekommen –
-  der Router muss alle Netze auf dem Segment bedienen. Anlegen unter
-  *Scopes → Superscopes*, Zuordnung im Scope unter *Einstellungen*.
-- **BOOTP:** Clients mit Reservierung erhalten immer eine BOOTP-Antwort.
-  Dynamisches BOOTP (Adressen aus dem Pool) wird pro Scope mit „BOOTP-Clients
-  dynamisch bedienen“ eingeschaltet; die Lease-Dauer ist
-  `dhcp4.bootp_lease_time`. BOOTP-Antworten enthalten die wichtigsten
-  Optionen (64-Byte-Vendor-Bereich) sowie Bootserver/-datei aus Option 66/67.
-- **Split-Scope:** siehe [HA.md](HA.md#fallback-split-scope-ohne-replikation).
+- **Exclusions** remove addresses from dynamic assignment (e.g. for
+  statically configured devices).
+- **Reservations** permanently bind an address to a MAC or client ID; they
+  take precedence and may lie outside the dynamic range. CSV import under
+  *Reservations → CSV import*.
+- **Superscopes** group scopes that serve the same physical network
+  (multiple IP networks on one segment, "multinet"). Clients on the link of
+  one member can get addresses from all members – the router must serve all
+  networks on the segment. Create them under *Scopes → Superscopes*; assign a
+  scope in the scope's *Settings*.
+- **BOOTP:** Clients with a reservation always receive a BOOTP reply.
+  Dynamic BOOTP (addresses from the pool) is enabled per scope with "Serve
+  BOOTP clients dynamically"; the lease duration is
+  `dhcp4.bootp_lease_time`. BOOTP replies contain the most important
+  options (64-byte vendor area) as well as the boot server/file from option 66/67.
+- **Split scope:** see [HA.md](HA.md#fallback-split-scope-without-replication).
 
-## 3. Optionen, Klassen, Policies, Filter
+## 3. Options, classes, policies, filters
 
-Optionen werden vererbt: Server < Scope < Server-Policy < Scope-Policy <
-Reservierung (die spezifischere Ebene gewinnt). Fordert ein Client eine
-Parameterliste an (Option 55), wird genau diese in seiner Reihenfolge
-geliefert. Eigene Optionscodes lassen sich unter *Benutzer & Einstellungen →
-Server-Optionen* definieren.
+Options are inherited: server < scope < server policy < scope policy <
+reservation (the more specific level wins). If a client requests a
+parameter list (option 55), exactly that list is delivered, in the client's
+order. Custom option codes can be defined under *Users & settings →
+Server options*.
 
-Policies (wie unter Windows) prüfen Bedingungen auf MAC, Client-ID,
-Hostname, Vendor-/User-Class, definierte Klassen und Option 82 (Platzhalter
-`*`/`?`, Hex mit `0x…`) und liefern eigene Optionen, eine eigene Lease-Dauer
-und – auf Scope-Ebene – eigene Adressbereiche. MAC-Filter (Allow/Deny,
-Platzhalter) werden unter *Policies & Filter → Filter* gepflegt und
-aktiviert.
+Policies (as in Windows) evaluate conditions on MAC, client ID, hostname,
+vendor/user class, defined classes and option 82 (wildcards `*`/`?`, hex
+with `0x…`) and deliver their own options, their own lease duration and –
+at scope level – their own address ranges. MAC filters (allow/deny,
+wildcards) are managed and enabled under *Policies & filters → MAC filters*.
 
 ## 4. Leases
 
-*Leases* zeigt alle Datensätze mit Suche und Filter. „Löschen“ gibt eine
-Adresse sofort frei, „In Reservierung umwandeln“ übernimmt IP, MAC und
-Hostname. Abgelaufene und freigegebene Leases bleiben `expired_grace`
-(Default 4 h) erhalten, damit derselbe Client seine Adresse wiederbekommt.
-Antwortet eine Adresse auf den Ping vor der Vergabe, wird sie für
-`decline_time` gesperrt (Zustand „abgelehnt“).
+*Leases* shows all records with search and filters. "Delete" releases an
+address immediately; "Convert to reservation" takes over IP, MAC and
+hostname. Expired and released leases are kept for `expired_grace`
+(default 4 h) so that the same client gets its address back. If an address
+answers the ping before assignment, it is blocked for `decline_time`
+(state "declined").
 
-## 5. Benutzer, Rollen, API-Tokens
+## 5. Users, roles, API tokens
 
-| Rolle | darf |
+| Role | Can |
 |---|---|
-| `readonly` | alles lesen (außer Benutzerverwaltung), Konfiguration exportieren |
-| `operator` | zusätzlich DHCP-Konfiguration und Leases ändern |
-| `admin` | zusätzlich Benutzer, Einstellungen, Import, Backup/Restore, HA-Aktionen |
+| `readonly` | read everything (except user management), export the configuration |
+| `operator` | additionally change the DHCP configuration and leases |
+| `admin` | additionally manage users, settings, import, backup/restore, HA actions |
 
-API-Tokens (`lxt_…`) werden unter *Mein Konto & API-Tokens* erzeugt; ihre
-Rolle ist höchstens die des Benutzers. Sie werden als
-`Authorization: Bearer lxt_…` gesendet und für `leasorixctl` gebraucht.
+API tokens (`lxt_…`) are created under *My account & API tokens*; their
+role is at most that of the user. They are sent as
+`Authorization: Bearer lxt_…` and are required for `leasorixctl`.
 
-## 6. Audit-Log und Überwachung
+## 6. Audit log and monitoring
 
-Jede Änderung (UI, API, DHCP-Ereignisse, HA) steht im Audit-Log mit Akteur
-und Vorher/Nachher. Prometheus-Metriken unter `/metrics`
+Every change (UI, API, DHCP events, HA) is recorded in the audit log with
+the actor and the before/after values. Prometheus metrics at `/metrics`
 (`leasorix_dhcp4_*`, `leasorix_lease_*`, `leasorix_scope_*`, `leasorix_leases`,
-`leasorix_ha_*`, `leasorix_dns_*`), Health unter `/healthz` und `/readyz`.
+`leasorix_ha_*`, `leasorix_dns_*`), health at `/healthz` and `/readyz`.
 
-## 7. Konfiguration exportieren und importieren
+## 7. Export and import the configuration
 
-*Benutzer & Einstellungen → Sicherung & Import* oder
-`leasorixctl config export|import`. Das Format `leasorix-config/v1` (YAML oder
-JSON) enthält Einstellungen, eigene Optionsdefinitionen, Klassen,
-Server-Optionen und -Policies, MAC-Filter, Superscopes, DNS-Zonen und alle
-Scopes mit Ausschlüssen, Reservierungen, Optionen, Policies und
-DNS-Einstellungen, außerdem die DHCPv6-Konfiguration (`server_options6`,
-`scopes6`, siehe [Abschnitt 12](#12-dhcpv6)). Bezüge laufen über Namen, nicht über Datenbank-IDs;
-Benutzer, API-Tokens und TSIG-Schlüssel (Geheimnisse) sind nicht enthalten –
-eine Zone mit Schlüssel lässt sich nur importieren, wenn ein Schlüssel
-gleichen Namens auf dem Zielserver existiert.
+*Users & settings → Backup & import* or
+`leasorixctl config export|import`. The `leasorix-config/v1` format (YAML or
+JSON) contains settings, custom option definitions, classes, server options
+and server policies, MAC filters, superscopes, DNS zones and all scopes with
+their exclusions, reservations, options, policies and DNS settings, plus
+the DHCPv6 configuration (`server_options6`, `scopes6`, see
+[section 12](#12-dhcpv6)). References use names, not database IDs; users,
+API tokens and TSIG keys (secrets) are not included – a zone with a key can
+only be imported if a key with the same name exists on the target server.
 
 ```yaml
 format: leasorix-config/v1
 server_options:
   - {code: 6, value: "10.0.0.53,10.0.0.54"}
 superscopes:
-  - {name: Gebäude A}
+  - {name: Building A}
 scopes:
   - scope: {name: LAN, subnet: 10.0.0.0/24, start: 10.0.0.100, end: 10.0.0.200,
-            lease_time: 86400, enabled: true, superscope: Gebäude A}
+            lease_time: 86400, enabled: true, superscope: Building A}
     exclusions: [{start: 10.0.0.100, end: 10.0.0.109}]
     reservations: [{ip: 10.0.0.20, mac: "00:15:5d:0a:0b:0c", hostname: printer}]
     options: [{code: 3, value: 10.0.0.1}]
     policies: []
 ```
 
-Import-Modi:
+Import modes:
 
-- **Ergänzen** (`merge`): fügt hinzu; bereits vorhandene Objekte (gleicher
-  Scope-Name/überlappendes Subnetz, Klassenname, …) sind Konflikte.
-  Server-Optionen und Einstellungen aus der Datei überschreiben.
-- **Ersetzen** (`replace`): ersetzt die gesamte DHCP-Konfiguration; Leases
-  in weiterhin vorhandenen Subnetzen bleiben erhalten.
-- **Nur prüfen** (Dry-Run): validiert gegen die aktuelle Konfiguration ohne
-  Änderung.
+- **Merge** (`merge`): adds objects; objects that already exist (same
+  scope name/overlapping subnet, class name, …) are conflicts. Server
+  options and settings from the file overwrite the existing ones.
+- **Replace** (`replace`): replaces the entire DHCP configuration; leases
+  in subnets that still exist are kept.
+- **Dry run**: validates against the current configuration without
+  changing anything.
 
-Jeder Import wird vollständig geprüft, bevor etwas übernommen wird – bei
-einem Fehler bleibt alles unverändert. Auf einem HA-Partner ohne
-Config-Leader-Rolle ist der Import gesperrt.
+Every import is fully validated before anything is applied – if there is an
+error, nothing changes. On an HA partner without the config leader role,
+import is blocked.
 
-## 8. Umzug von einem Windows-DHCP-Server
+## 8. Migrating from a Windows DHCP server
 
-Auf dem Windows-Server `netsh dhcp server dump > dhcp.txt` ausführen und die
-Datei unter *Sicherung & Import → Windows-DHCP übernehmen* (zuerst mit
-„Nur prüfen“) oder per `leasorixctl config import --netsh dhcp.txt`
-einspielen. Übernommen werden Scopes (Name, Bereich, Status, Lease-Dauer aus
-Option 51, BOOTP-Freigabe), Ausschlüsse, Reservierungen, Optionswerte auf
-Server-, Scope- und Reservierungsebene, eigene Optionsdefinitionen,
-Klassen, Superscopes, MAC-Filter und die DNS-Update-Einstellungen
-(`set dnsconfig` auf Server- und Scope-Ebene, siehe
-[Abschnitt 11](#11-dns-updates)). DNS-Zonen und TSIG-Schlüssel stehen nicht im
-Dump und müssen in Leasorix angelegt werden. Nicht übernommene Zeilen werden
-mit Grund aufgelistet – typischerweise klassenspezifische Optionswerte (in
-Leasorix als Policy anlegen), Multicast-Scopes und DHCPv6. Aktive Leases sind im Dump nicht enthalten; Clients erneuern ihre
-Adresse beim nächsten Renew (Reservierungen bleiben ohnehin gleich).
+On the Windows server, run `netsh dhcp server dump > dhcp.txt` and load the
+file under *Backup & import → Import from Windows DHCP* (first with
+"Dry run") or with `leasorixctl config import --netsh dhcp.txt`. The import
+covers scopes (name, range, state, lease duration from option 51, BOOTP
+enablement), exclusions, reservations, option values at server, scope and
+reservation level, custom option definitions, classes, superscopes, MAC
+filters and the DNS update settings (`set dnsconfig` at server and scope
+level, see [section 11](#11-dns-updates)). DNS zones and TSIG keys are not
+in the dump and must be created in Leasorix. Lines that are not imported
+are listed with a reason – typically class-specific option values (create
+them as a policy in Leasorix), multicast scopes and DHCPv6. Active leases
+are not included in the dump; clients renew their address at the next
+renew (reservations stay the same anyway).
 
-## 9. Backup und Wiederherstellung
+## 9. Backup and restore
 
-Ein Backup ist eine vollständige, konsistente Kopie der Datenbank (auch im
-laufenden Betrieb) – inklusive Passwort-Hashes, also sicher aufbewahren.
+A backup is a complete, consistent copy of the database (taken even while
+the server is running) – including password hashes, so store it securely.
 
-- UI: *Sicherung & Import → Backup herunterladen / Wiederherstellen…*
-- Server-CLI: `leasorixd backup --config … --out backup.db` (auch im
-  laufenden Betrieb), `leasorixd restore --config … backup.db` (bei gestopptem
-  Dienst)
+- UI: *Backup & import → Download backup / Restore…*
+- Server CLI: `leasorixd backup --config … --out backup.db` (also while the
+  server is running), `leasorixd restore --config … backup.db` (with the
+  service stopped)
 - API/CLI: `GET /api/v1/system/backup`, `POST /api/v1/system/restore`,
   `leasorixctl backup FILE`, `leasorixctl restore FILE --yes`
 
-Die Wiederherstellung übernimmt Konfiguration, Benutzer, API-Tokens und
-Leases (auch DHCPv6-Bindungen); das Audit-Log des Servers bleibt erhalten und bekommt einen Eintrag
-`system.restore`. Alle Sitzungen enden. Backups älterer Versionen werden
-automatisch migriert, Backups einer neueren Version abgelehnt. Für den
-reinen Lease-Notfall gibt es zusätzlich den Lease-Export/-Import (siehe
-[HA.md](HA.md#notfall-lease-datenbank-sichern-und-einspielen)).
+A restore brings back the configuration, users, API tokens and leases
+(including DHCPv6 bindings); the server's audit log is kept and gets a
+`system.restore` entry. All sessions end. Backups from older versions are
+migrated automatically; backups from a newer version are rejected. For a
+lease-only emergency there is also the lease export/import (see
+[HA.md](HA.md#emergency-back-up-and-restore-the-lease-database)).
 
-## 10. Kommandozeile `leasorixctl`
+## 10. Command-line tool `leasorixctl`
 
-`leasorixctl` steuert einen Server über die REST-API:
+`leasorixctl` controls a server through the REST API:
 
 ```sh
 export LEASORIX_URL=https://dhcp01:8067 LEASORIX_TOKEN=lxt_…
-export LEASORIX_CA=/etc/leasorix/tls/cert.pem   # oder LEASORIX_INSECURE=1
+export LEASORIX_CA=/etc/leasorix/tls/cert.pem   # or LEASORIX_INSECURE=1
 leasorixctl status
 leasorixctl scopes list
 leasorixctl leases list --scope LAN -q printer
 leasorixctl ha status
 leasorixctl dns registrations
-leasorixctl v6 leases -q 0003000102    # DHCPv6-Bindungen
+leasorixctl v6 leases -q 0003000102    # DHCPv6 bindings
 leasorixctl config export -f config.yaml
-leasorixctl -o json leases list            # JSON statt Tabelle
+leasorixctl -o json leases list            # JSON instead of a table
 ```
 
-`leasorixctl` ohne Argumente zeigt alle Befehle. Exit-Code 0 = Erfolg,
-1 = Fehler (Meldung des Servers wird ausgegeben), 2 = Aufruffehler.
+`leasorixctl` without arguments lists all commands. Exit code 0 = success,
+1 = error (the server's message is printed), 2 = usage error.
 
-## 11. DNS-Updates
+## 11. DNS updates
 
-Leasorix trägt Clients per RFC 2136 als A- und PTR-Record in DNS ein (wie
-die DNS-Registerkarte eines Windows-DHCP-Scopes). Einrichtung:
+Leasorix registers clients in DNS as A and PTR records via RFC 2136 (like
+the DNS tab of a Windows DHCP scope). Setup:
 
-1. **TSIG-Schlüssel** (*DNS-Updates → TSIG-Schlüssel*, nur Admins): Name und
-   Algorithmus (Standard `hmac-sha256`); das Geheimnis wird zufällig erzeugt
-   oder aus `tsig-keygen` übernommen. Nach dem Speichern zeigt die UI einmalig
-   die passende Konfiguration für BIND und PowerDNS.
-2. **Zonen** (*DNS-Updates → Zonen*): Vorwärtszone (z. B. `example.lan`) und
-   Reverse-Zone (z. B. `1.168.192.in-addr.arpa`) jeweils mit primärem Server
-   (`IP` oder `host:port`) und Schlüssel. Für jeden Namen gilt die
-   spezifischste passende Zone.
+1. **TSIG keys** (*DNS updates → TSIG keys*, admins only): name and
+   algorithm (default `hmac-sha256`); the secret is generated randomly or
+   taken from `tsig-keygen`. After saving, the UI shows the matching
+   configuration for BIND and PowerDNS once.
+2. **Zones** (*DNS updates → Zones*): forward zone (e.g. `example.lan`) and
+   reverse zone (e.g. `1.168.192.in-addr.arpa`), each with a primary server
+   (`IP` or `host:port`) and a key. For each name, the most specific
+   matching zone applies.
 3. **Scope** (*Scope → DNS*):
 
-| Einstellung | Bedeutung |
+| Setting | Meaning |
 |---|---|
-| Records registrieren | **Nie**; **auf Anforderung des Clients** (Option 81: A und PTR, bzw. nur PTR, wenn der Client seinen A-Record selbst einträgt; Clients ohne Option 81 werden nicht registriert); **immer** (A und PTR für jeden Client mit Namen aus Option 81 oder 12) |
-| Domäne | Name = erstes Label des Client-Namens + diese Domäne; leer = Domänenname aus Option 15 |
-| TTL | 0 = ein Drittel der Lease-Dauer (1 min … 1 Tag) |
-| Records entfernen, wenn der Lease endet | Release, Ablauf oder Löschen entfernen A und PTR (Standard: an) |
-| Namensschutz (DHCID) | Ein Name, der einem anderen Client gehört oder manuell angelegt wurde, wird nie überschrieben (RFC 4701/4703, Standard: an) |
+| Register records | **Never**; **on client request** (option 81: A and PTR, or only PTR if the client registers its A record itself; clients without option 81 are not registered); **always** (A and PTR for every client with a name from option 81 or 12) |
+| Domain | Name = first label of the client name + this domain; empty = domain name from option 15 |
+| TTL | 0 = one third of the lease duration (1 min … 1 day) |
+| Remove records when the lease ends | Release, expiry or deletion removes A and PTR (default: on) |
+| Name protection (DHCID) | A name that belongs to another client or was created manually is never overwritten (RFC 4701/4703, default: on) |
 
-Der DHCP-Server wartet nie auf DNS: Updates laufen im Hintergrund mit
-Wiederholungen (30 s, dann verdoppelt bis 1 h). *DNS-Updates →
-Registrierungen* bzw. `leasorixctl dns registrations` zeigt pro Adresse den
-eingetragenen Namen und den Zustand (`registriert`, `ausstehend`, `Konflikt`,
-`Fehler` mit Meldung). Konflikte durch den Namensschutz stehen zusätzlich im
-Audit-Log (`dns.conflict`) und werden bei der nächsten Verlängerung des
-Leases erneut versucht. Metriken: `leasorix_dns_updates_total`,
+The DHCP server never waits for DNS: updates run in the background with
+retries (30 s, then doubling up to 1 h). *DNS updates →
+Registrations* or `leasorixctl dns registrations` shows the registered name
+and the state for each address (`registered`, `pending`, `conflict`,
+`error` with a message). Conflicts caused by name protection are also
+recorded in the audit log (`dns.conflict`) and are retried at the next
+renewal of the lease. Metrics: `leasorix_dns_updates_total`,
 `leasorix_dns_registrations`.
 
-Der Client kann nur einen Namen in der Domäne seines Scopes registrieren –
-ein mitgesendeter vollqualifizierter Name in einer anderen Zone wird auf die
-Scope-Domäne umgeschrieben (und so in der Antwort-Option 81 mitgeteilt).
+A client can only register a name in its scope's domain – a fully
+qualified name in another zone sent by the client is rewritten to the
+scope domain (and reported back to the client in option 81 of the reply).
 
-**DNS-Server:**
+**DNS servers:**
 
-- *BIND:* Schlüssel per `key "…" { … };` einbinden und in jeder Zone
-  `update-policy { grant <schlüssel> zonesub ANY; };` setzen.
-- *PowerDNS:* `dnsupdate=yes`, `allow-dnsupdate-from=<Leasorix-Adresse>`,
-  Schlüssel mit `pdnsutil import-tsig-key` anlegen und pro Zone
-  `pdnsutil set-meta <zone> TSIG-ALLOW-DNSUPDATE <schlüssel>`.
-- *Windows-DNS* unterstützt kein TSIG, sondern nur GSS-TSIG (Kerberos). Mit
-  „nicht sicheren und sicheren“ dynamischen Updates kann die Zone ohne
-  Schlüssel eingetragen werden (Updates dann nur über die Quelladresse
-  geschützt).
+- *BIND:* include the key with `key "…" { … };` and set
+  `update-policy { grant <key> zonesub ANY; };` in each zone.
+- *PowerDNS:* `dnsupdate=yes`, `allow-dnsupdate-from=<Leasorix address>`,
+  create the key with `pdnsutil import-tsig-key` and, per zone, run
+  `pdnsutil set-meta <zone> TSIG-ALLOW-DNSUPDATE <key>`.
+- *Windows DNS* does not support TSIG, only GSS-TSIG (Kerberos). With
+  "Nonsecure and secure" dynamic updates, the zone can be added without a
+  key (updates are then protected only by the source address).
 
-Bei Hochverfügbarkeit registriert jeder Server die Leases, die er vergibt;
-übernimmt der Partner einen Client, aktualisiert er dessen Records (gleiche
-DHCID, daher kein Konflikt). Die Registrierungsliste ist pro Server.
+With high availability, each server registers the leases it assigns; if
+the partner takes over a client, it updates that client's records (same
+DHCID, so no conflict). The registration list is per server.
 
 ## 12. DHCPv6
 
-Leasorix bedient IPv6-Clients zustandsbehaftet nach RFC 8415: Adressen
-(IA_NA) und Präfix-Delegation (IA_PD) für Router, dazu Optionen für
-zustandslose Clients (INFORMATION-REQUEST). Die Konfiguration ist von IPv4
-getrennt (Seite *IPv6 (DHCPv6)*, API unter `/api/v1/v6/…`,
-`leasorixctl v6 …`), folgt aber denselben Konzepten.
+Leasorix serves IPv6 clients statefully per RFC 8415: addresses (IA_NA)
+and prefix delegation (IA_PD) for routers, plus options for stateless
+clients (INFORMATION-REQUEST). The configuration is separate from IPv4
+(page *IPv6 (DHCPv6)*, API under `/api/v1/v6/…`, `leasorixctl v6 …`) but
+follows the same concepts.
 
-**Aktivieren:** in der Bootstrap-Konfiguration
+**Enabling:** in the bootstrap configuration
 
 ```yaml
 dhcp6:
-  interfaces: [eth0]      # Interfaces mit IPv6-Adresse im Präfix eines Scopes
+  interfaces: [eth0]      # interfaces with an IPv6 address in a scope's prefix
 ```
 
-Pro Interface öffnet Leasorix UDP-Port 547 und tritt der Multicast-Gruppe
-`ff02::1:2` bei. Die Server-DUID (DUID-LLT aus der MAC des ersten
-Interfaces) wird beim ersten Start erzeugt und bleibt danach gleich
-(*Benutzer & Einstellungen → System*). Im Container braucht DHCPv6 den
-Host- oder macvlan-Modus mit IPv6 wie DHCPv4.
+On each interface, Leasorix opens UDP port 547 and joins the multicast
+group `ff02::1:2`. The server DUID (DUID-LLT from the MAC of the first
+interface) is generated at first start and stays the same afterwards
+(*Users & settings → System*). In a container, DHCPv6 needs host or macvlan
+mode with IPv6, just like DHCPv4.
 
-**Router-Advertisements:** Ob Clients DHCPv6 überhaupt nutzen, steuert der
-Router: das *Managed*-Flag (M=1) im Router-Advertisement für Adressen, das
-*Other*-Flag (O=1) nur für Optionen. Das Default-Gateway kommt bei IPv6 immer
-aus dem Router-Advertisement, nie von DHCPv6.
+**Router advertisements:** Whether clients use DHCPv6 at all is controlled
+by the router: the *Managed* flag (M=1) in the router advertisement for
+addresses, the *Other* flag (O=1) for options only. With IPv6, the default
+gateway always comes from the router advertisement, never from DHCPv6.
 
-**Scopes** (*IPv6 (DHCPv6) → Neuer IPv6-Scope*):
+**Scopes** (*IPv6 (DHCPv6) → New IPv6 scope*):
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| Präfix | Präfix des Links (z. B. `2001:db8:1::/64`); bestimmt, welche Clients der Scope bedient – über die Adresse des Interfaces oder bei Relays über die *link-address* |
-| Start-/Endadresse | Bereich für die Adressvergabe; leer = keine Adressen (nur Präfix-Delegation) |
-| Bevorzugte / gültige Lebensdauer | in Sekunden; T1/T2 = 50 %/80 % der bevorzugten Lebensdauer |
-| Delegations-Pool, Länge | z. B. `2001:db8:100::/40` mit Länge 56 → 65 536 delegierbare /56 für Router; darf das Link-Präfix nicht überlappen |
-| Server-Präferenz | Option 7 im ADVERTISE (0–255); bei mehreren Servern wählt der Client den höchsten |
-| Rapid Commit | SOLICIT mit Rapid-Commit wird direkt mit REPLY beantwortet (2 statt 4 Nachrichten) |
+| Prefix | Prefix of the link (e.g. `2001:db8:1::/64`); determines which clients the scope serves – via the address of the interface or, for relays, via the *link-address* |
+| Start/end address | Range for address assignment; empty = no addresses (prefix delegation only) |
+| Preferred / valid lifetime | In seconds; T1/T2 = 50%/80% of the preferred lifetime |
+| Delegation pool, length | E.g. `2001:db8:100::/40` with length 56 → 65,536 delegable /56 prefixes for routers; must not overlap the link prefix |
+| Server preference | Option 7 in ADVERTISE (0–255); with multiple servers, the client picks the highest |
+| Rapid Commit | A SOLICIT with Rapid Commit is answered directly with a REPLY (2 instead of 4 messages) |
 
-Adressen werden pro Client deterministisch gewählt (gleicher Client – gleiche
-Adresse, solange sie frei ist); große Bereiche wie ein ganzes /64 sind
-möglich. **Ausschlüsse** nehmen Adressbereiche aus der Vergabe.
-**Reservierungen** binden eine Adresse an die DUID des Clients, optional nur
-für eine IAID (leer = jede IA des Clients); die Adresse muss im Präfix
-liegen, nicht unbedingt im Bereich. Die DUID steht im Lease bzw. im Log des
-Clients (z. B. `/var/lib/dhcp/dhclient6.leases`, Windows: `ipconfig /all`
-„DHCPv6-Client-DUID“).
+Addresses are chosen deterministically per client (same client – same
+address, as long as it is free); large ranges such as an entire /64 are
+possible. **Exclusions** remove address ranges from assignment.
+**Reservations** bind an address to the client's DUID, optionally only for
+one IAID (empty = any IA of the client); the address must be within the
+prefix, but not necessarily within the range. The DUID can be found in the
+lease or in the client's log (e.g. `/var/lib/dhcp/dhclient6.leases`;
+Windows: `ipconfig /all`, "DHCPv6 Client DUID").
 
-**Optionen** gibt es auf Server-, Scope- und Reservierungsebene (die
-spezifischere gewinnt): u. a. DNS-Server (23), Domänen-Suchliste (24), SNTP
-(31), NTP (56), Boot-Datei-URL (59), AFTR-Name (64). Eigene Optionen mit
-Code und Typ sind möglich; Optionen, die das Protokoll selbst setzt (IA,
-Status, Präferenz, Rapid Commit, Relay-Optionen …), sind gesperrt. Ohne
-Option-Request des Clients werden alle konfigurierten Optionen gesendet.
+**Options** exist at server, scope and reservation level (the more
+specific wins), including DNS servers (23), domain search list (24), SNTP
+(31), NTP (56), boot file URL (59) and AFTR name (64). Custom options with
+code and type are possible; options that the protocol sets itself (IA,
+status, preference, Rapid Commit, relay options …) are blocked. If the
+client sends no option request, all configured options are sent.
 
-**Leases** (*IPv6 → Leases*, `leasorixctl v6 leases`) zeigen Adressen und
-delegierte Präfixe mit DUID, IAID, Hostname (aus Option 39) und Laufzeit;
-Operatoren können Bindungen löschen. Abgelaufene oder freigegebene Bindungen
-bleiben `dhcp6.expired_grace` (4 h) für denselben Client reserviert; per
-DECLINE gemeldete Adressen sind `dhcp6.decline_time` gesperrt.
+**Leases** (*IPv6 (DHCPv6) → Leases*, `leasorixctl v6 leases`) show
+addresses and delegated prefixes with DUID, IAID, hostname (from option 39)
+and lifetime; operators can delete bindings. Expired or released bindings
+stay reserved for the same client for `dhcp6.expired_grace` (4 h);
+addresses reported via DECLINE are blocked for `dhcp6.decline_time`.
 
-**Relays:** Ein DHCPv6-Relay (RELAY-FORW, auch mehrstufig) muss an eine
-Adresse eines der `dhcp6.interfaces` senden. Der Scope ergibt sich aus der
-*link-address* des innersten Relays; die Antwort geht als RELAY-REPL an das
-Relay zurück (Interface-ID wird zurückgegeben). Direkt per Unicast gesendete
-Anfragen beantwortet Leasorix mit `UseMulticast` (es bietet keine
-Server-Unicast-Option an).
+**Relays:** A DHCPv6 relay (RELAY-FORW, including multi-hop) must send to
+an address of one of the `dhcp6.interfaces`. The scope is determined by the
+*link-address* of the innermost relay; the reply goes back to the relay as
+RELAY-REPL (the Interface-ID is returned). Requests sent directly via
+unicast are answered with `UseMulticast` (Leasorix does not offer the
+server unicast option).
 
-**MAC-Filter** gelten auch für DHCPv6, sofern die MAC des Clients bekannt
-ist (DUID-LL/-LLT mit Ethernet-Adresse oder Option 79 vom Relay).
+**MAC filters** also apply to DHCPv6 if the client's MAC is known
+(DUID-LL/-LLT with an Ethernet address, or option 79 from the relay).
 
-**Hochverfügbarkeit:** Die DHCPv6-Konfiguration wird wie die IPv4-
-Konfiguration vom Config-Leader repliziert. DHCPv6-Bindungen werden **nicht**
-repliziert: Die Clients (nach DUID) und die Adressen/Präfixe werden wie bei
-IPv4 nach dem HA-Modus aufgeteilt, und jeder Server vergibt nur aus seinem
-Anteil. Ist ein Server ausgefallen, bedient der Partner alle Clients – aber
-weiterhin nur aus seinem Anteil; Clients des ausgefallenen
-Servers bekommen beim nächsten Rebind eine neue Adresse (die alte mit
-Lebensdauer 0). Die Bereiche sollten daher großzügig sein (bei /64 kein
-Thema). Details: [HA.md](HA.md#dhcpv6).
+**High availability:** The DHCPv6 configuration is replicated by the
+config leader just like the IPv4 configuration. DHCPv6 bindings are
+**not** replicated: the clients (by DUID) and the addresses/prefixes are
+split according to the HA mode as with IPv4, and each server assigns only
+from its own share. If a server fails, the partner serves all clients – but
+still only from its own share; clients of the failed server get a new
+address at the next rebind (the old one with a lifetime of 0). The ranges
+should therefore be generous (not an issue with a /64). Details:
+[HA.md](HA.md#dhcpv6).
 
-**Nicht umgesetzt:** DNS-Updates (AAAA) für DHCPv6, Policies/Klassen für
-IPv6, Lease-Export/-Import für DHCPv6 (Backup enthält die Bindungen),
-Reconfigure, Server-Unicast-Option, Übernahme von Windows-DHCPv6-Scopes aus
-dem netsh-Dump.
+**Not implemented:** DNS updates (AAAA) for DHCPv6, policies/classes for
+IPv6, lease export/import for DHCPv6 (backups include the bindings),
+Reconfigure, the server unicast option, importing Windows DHCPv6 scopes
+from the netsh dump.
 
-Metriken: `leasorix_dhcp6_packets_received_total`, `…_packets_sent_total`,
-`…_packets_dropped_total` (nach Grund) und `…_lease_events_total`.
+Metrics: `leasorix_dhcp6_packets_received_total`, `…_packets_sent_total`,
+`…_packets_dropped_total` (by reason) and `…_lease_events_total`.
 
-## 13. Sicherheit
+## 13. Security
 
-- Den Management-Listener nur im Management-Netz (oder auf localhost hinter
-  einem Reverse Proxy) erreichbar machen.
-- **Rogue-DHCP:** Ein fremder DHCP-Server im Netz kann Clients falsche
-  Adressen und Gateways geben. Auf den Switches **DHCP Snooping** aktivieren
-  und nur die Ports der Leasorix-Server (bzw. der Relays) als vertrauenswürdig
-  markieren.
-- Backups und HA-Schlüssel sind vertraulich; API-Tokens mit der kleinsten
-  nötigen Rolle anlegen und ein Ablaufdatum setzen.
-- TSIG-Schlüssel liegen in der Datenbank (für die Signatur nötig), werden
-  von der API nie ausgegeben und sind nur für Admins änderbar. DNS-Updates
-  ohne Schlüssel nur in vertrauenswürdigen Netzen verwenden.
+- Make the management listener reachable only from the management network
+  (or only on localhost behind a reverse proxy).
+- **Rogue DHCP:** A foreign DHCP server on the network can hand out wrong
+  addresses and gateways to clients. Enable **DHCP snooping** on the
+  switches and mark only the ports of the Leasorix servers (or of the
+  relays) as trusted.
+- Backups and HA keys are confidential; create API tokens with the smallest
+  necessary role and set an expiration date.
+- TSIG keys are stored in the database (they are needed for signing), are
+  never returned by the API and can only be changed by admins. Use DNS
+  updates without a key only in trusted networks.

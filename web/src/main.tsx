@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "./index.css";
 import { AuthProvider, useAuth } from "./auth";
+import { LanguageProvider } from "./i18n";
 import { Layout } from "./components/Layout";
 import { FeedbackProvider, Spinner } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
@@ -53,11 +54,13 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <FeedbackProvider>
-          <AuthProvider>
-            <Gate />
-          </AuthProvider>
-        </FeedbackProvider>
+        <LanguageProvider>
+          <FeedbackProvider>
+            <AuthProvider>
+              <Gate />
+            </AuthProvider>
+          </FeedbackProvider>
+        </LanguageProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,
