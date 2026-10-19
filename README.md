@@ -53,6 +53,7 @@ external database.
 - **Backup/restore** while running, emergency lease export
 
 ### Deployment
+- **Ready-made releases:** multi-arch image `ghcr.io/meister119/leasorix` (amd64, arm64) and binaries with a systemd unit – nothing to build on the server
 - Static Go binary, SQLite (WAL), no further dependencies
 - Distroless **Docker image** running as non-root with file capabilities
 - Compose variants for host networking, macvlan and an HA pair
@@ -116,32 +117,43 @@ flowchart LR
 
 More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Quick start with Docker Compose
+## Quick start
+
+Every release is published ready to run – nothing to build on the server:
+a multi-arch **Docker image** (`ghcr.io/meister119/leasorix`, linux/amd64
+and arm64) and **binaries** with a systemd unit on the
+[releases page](https://github.com/meister119/leasorix/releases).
 
 DHCP needs layer 2 access to the LAN, so the container runs in the host
 network (or with its own address via macvlan – a bridge network without a
 relay does not work):
 
 ```sh
-git clone https://github.com/meister119/leasorix && cd leasorix/deploy
-export LEASORIX_DHCP4_INTERFACES=eth0             # LAN interface of the host
-export LEASORIX_HTTP_LISTEN=192.168.1.10:8067     # address of the web UI
-docker compose up -d                              # image: ghcr.io/meister119/leasorix
-docker compose logs leasorix | grep setup_token   # one-time setup token
+mkdir leasorix && cd leasorix
+gh release download -R meister119/leasorix -p docker-compose.yml   # or from the releases page
+cat > .env <<'EOF'
+LEASORIX_DHCP4_INTERFACES=eth0
+LEASORIX_HTTP_LISTEN=192.168.1.10:8067
+EOF
+docker compose up -d                               # pulls the image, no build
+docker compose logs leasorix | grep setup_token    # one-time setup token
 ```
 
 Open `https://192.168.1.10:8067/`, create the first administrator with the
-token, set up a scope – done. To use a locally built image instead of the
-registry: `make docker` and `LEASORIX_IMAGE=leasorix:latest docker compose up -d`.
+token, set up a scope – done. Or just the image:
+`docker pull ghcr.io/meister119/leasorix:latest`.
 
-| Compose file | Variant |
+| Compose file (release asset, also in `deploy/`) | Variant |
 |---|---|
-| `deploy/docker-compose.yml` | one server, host network |
-| `deploy/docker-compose.macvlan.yml` | one server with its own IP in the LAN |
-| `deploy/docker-compose.ha.yml` | HA pair (two containers, mTLS certificates created automatically) |
+| `docker-compose.yml` | one server, host network |
+| `docker-compose.macvlan.yml` | one server with its own IP in the LAN |
+| `docker-compose.ha.yml` | HA pair (two containers, mTLS certificates created automatically) |
 
-Details, permissions, macvlan specifics and troubleshooting:
-[docs/DOCKER.md](docs/DOCKER.md).
+Image tags, binaries with systemd, updates and access to a private
+repository: [docs/INSTALL.md](docs/INSTALL.md). Permissions, macvlan
+specifics and troubleshooting: [docs/DOCKER.md](docs/DOCKER.md). To use a
+locally built image instead: `make docker` and
+`LEASORIX_IMAGE=leasorix:latest docker compose -f deploy/docker-compose.yml up -d`.
 
 ## Building
 
@@ -161,6 +173,7 @@ make test-dns     # DNS updates against BIND and PowerDNS (root, Docker)
 make test-e2e     # Playwright against the real UI + a real DHCP client (root)
 make screenshots  # regenerate the README screenshots (root)
 make docker       # container image leasorix:<version> and :latest
+make ui dist      # release files in dist/: binaries for amd64/arm64, Compose files, SHA256SUMS
 make test-docker  # test the image and the Compose files (host, macvlan, HA; root)
 make generate     # regenerate API and peer protocol code (protoc 3.21)
 make ci           # lint + test + ui-test + build + vuln
@@ -219,6 +232,7 @@ leasorixd restore --config … backup.db                 # restore (service stop
 
 | Document | Contents |
 |---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | Installation from a release (Docker, binaries with systemd), updates, image tags, publishing a release |
 | [docs/ADMIN.md](docs/ADMIN.md) | Administrator guide: scopes, options, policies, roles, export/import, migration from Windows, DNS updates, DHCPv6 |
 | [docs/HA.md](docs/HA.md) | Setting up and running high availability |
 | [docs/DOCKER.md](docs/DOCKER.md) | Docker, Compose, network notes |

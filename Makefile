@@ -18,7 +18,7 @@ NPM ?= npm
 IMAGE ?= leasorix
 DOCKER_BUILD_ARGS ?=
 
-.PHONY: all ci build build-go build-noui ui ui-test generate test test-integration test-e2e test-dns screenshots fuzz lint vuln fmt tidy clean
+.PHONY: all ci build build-go build-noui dist docker ui ui-test generate test test-integration test-e2e test-dns screenshots fuzz lint vuln fmt tidy clean
 
 all: ci
 
@@ -37,6 +37,32 @@ build-go:
 build-noui:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixd ./cmd/leasorixd
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/leasorixctl ./cmd/leasorixctl
+
+## dist: release files in dist/ (run `make ui` first): per platform an archive
+## with leasorixd (UI embedded), leasorixctl, the example configuration and the
+## systemd unit; the Compose files without a build section, pinned to
+## $(DIST_IMAGE):$(DIST_IMAGE_TAG); SHA256SUMS
+DIST_DIR       := dist
+DIST_PLATFORMS ?= linux/amd64 linux/arm64
+DIST_IMAGE     ?= ghcr.io/meister119/leasorix
+DIST_IMAGE_TAG ?= latest
+dist:
+	@test -f web/dist/index.html || { echo "web/dist is missing: run 'make ui' first" >&2; exit 1; }
+	rm -rf $(DIST_DIR) && mkdir -p $(DIST_DIR)
+	@set -e; for p in $(DIST_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; name=leasorix_$(VERSION:v%=%)_$${os}_$${arch}; dir=$(DIST_DIR)/$$name; \
+		echo "building $$name"; mkdir -p $$dir; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -tags ui -trimpath -ldflags "$(LDFLAGS)" -o $$dir/leasorixd ./cmd/leasorixd; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$dir/leasorixctl ./cmd/leasorixctl; \
+		cp README.md deploy/examples/leasorix.yml deploy/systemd/leasorixd.service $$dir/; \
+		tar -C $(DIST_DIR) --sort=name --owner=0 --group=0 --numeric-owner -czf $$dir.tar.gz $$name; \
+		rm -rf $$dir; \
+	done
+	@for f in deploy/docker-compose*.yml; do \
+		sed -e '/^ *build:$$/,/^ *dockerfile: deploy\/Dockerfile$$/d' \
+			-e 's#ghcr.io/meister119/leasorix:latest#$(DIST_IMAGE):$(DIST_IMAGE_TAG)#' $$f > $(DIST_DIR)/$${f##*/}; \
+	done
+	cd $(DIST_DIR) && sha256sum *.tar.gz *.yml > SHA256SUMS
 
 ## docker: build the container image $(IMAGE):$(VERSION) and :latest
 ## (DOCKER_BUILD_ARGS e.g. "--build-arg GO_IMAGE=mirror.gcr.io/library/golang:1.27-bookworm")
@@ -115,4 +141,4 @@ tidy:
 	$(GO) mod tidy
 
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) $(DIST_DIR)

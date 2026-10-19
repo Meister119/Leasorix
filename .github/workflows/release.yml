@@ -1,8 +1,14 @@
 name: release
 
-# Builds the container image for linux/amd64 and linux/arm64 and pushes it to
-# the GitHub Container Registry: on a version tag (v1.2.3 -> 1.2.3, 1.2,
-# latest) and on main (edge). Pull requests only build.
+# Publishes Leasorix ready to run, so nothing has to be built on a server:
+# - the container image for linux/amd64 and linux/arm64 in the GitHub
+#   Container Registry: on a version tag (v1.2.3 -> 1.2.3, 1.2, latest) and
+#   on main (edge);
+# - on a version tag also a GitHub release with the binaries for both
+#   platforms (make dist), the Compose files pinned to the version and
+#   SHA256SUMS. Tags with a suffix (v1.2.3-rc.1) become pre-releases and do
+#   not move latest.
+# Pull requests that touch the release only build.
 on:
   push:
     branches: [main]
@@ -10,15 +16,18 @@ on:
   pull_request:
     paths:
       - deploy/**
+      - Makefile
       - .github/workflows/release.yml
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -61,3 +70,83 @@ jobs:
             DATE=${{ steps.args.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  binaries:
+    if: github.ref_type == 'tag' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: build the release files
+        run: |
+          version="$(git describe --tags --always)" tag=latest
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME" tag="${GITHUB_REF_NAME#v}"; fi
+          make ui
+          make dist VERSION="$version" DIST_IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}" DIST_IMAGE_TAG="$tag"
+          ls -l dist
+      - name: smoke test
+        run: |
+          tar -xzf dist/leasorix_*_linux_amd64.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP"/leasorix_*_linux_amd64/leasorixd version
+          "$RUNNER_TEMP"/leasorix_*_linux_amd64/leasorixctl version
+          (cd dist && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [image, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist
+      - name: publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docs="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$TAG/docs"
+          cat > notes.md <<EOF
+          ## Install
+
+          **Docker** (linux/amd64, linux/arm64):
+
+              docker pull $image:$version
+
+          With Docker Compose: download \`docker-compose.yml\` (or the macvlan/HA
+          variant) below – it is pinned to this version – and follow
+          [DOCKER.md]($docs/DOCKER.md).
+
+          **Binaries** (no Docker): \`leasorix_${version}_linux_amd64.tar.gz\` or
+          \`…_arm64.tar.gz\` contain \`leasorixd\` with the web UI, \`leasorixctl\`, an
+          example configuration and a systemd unit – see [INSTALL.md]($docs/INSTALL.md).
+          Verify downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`.
+
+          EOF
+          flags=()
+          if [[ "$version" == *-* ]]; then flags+=(--prerelease); fi
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # created by hand (e.g. in the web UI): only attach the files
+            gh release upload "$TAG" dist/* -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* -R "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Leasorix $version" --notes-file notes.md --generate-notes "${flags[@]}"
+          fi
