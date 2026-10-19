@@ -78,7 +78,8 @@ jobs:
       - name: install browser
         run: cd web && npx playwright install --with-deps chromium
       - name: playwright end-to-end tests
-        run: sudo -E env "PATH=$PATH" ./test/e2e/run.sh
+        # Pass the browser path explicitly: sudo does not reliably keep it.
+        run: sudo -E env "PATH=$PATH" "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" ./test/e2e/run.sh
 
   docker:
     runs-on: ubuntu-latest
