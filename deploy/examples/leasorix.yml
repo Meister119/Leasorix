@@ -28,12 +28,15 @@ http:
     mode: self-signed
     # cert_file: /etc/leasorix/tls/cert.pem
     # key_file: /etc/leasorix/tls/key.pem
+  # Require an API token (any role) for /metrics. Turn on whenever the
+  # listener is reachable from more than a management network.
+  metrics_auth: false
 
 auth:
   # Absolute session lifetime and inactivity timeout of web sessions.
   session_ttl: 12h
   idle_timeout: 1h
-  # Failed logins per client IP and per username before blocking.
+  # Failed logins per client IP and per username + client IP before blocking.
   login_max_failures: 10
   login_window: 15m
   # One-time token for creating the first admin. Default: random, printed

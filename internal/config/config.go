@@ -87,6 +87,11 @@ type HTTPConfig struct {
 	// ShutdownTimeout bounds graceful shutdown of in-flight requests.
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 	TLS             TLSConfig     `yaml:"tls"`
+	// MetricsAuth requires an API token (any role) or a web session for
+	// /metrics. Off by default so that existing Prometheus scrapes keep
+	// working; turn it on whenever the listener is reachable from more
+	// than a dedicated management network.
+	MetricsAuth bool `yaml:"metrics_auth"`
 }
 
 // TLS modes.

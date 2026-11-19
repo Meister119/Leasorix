@@ -401,12 +401,11 @@ table, tested), not scattered across the handlers.
 
 ## D-036 – Login rate limit
 
-Max. 10 failed attempts per 15 min per client IP **and** per username
-(sliding window, in memory), then `429` with `Retry-After`.
-Failed attempts are recorded in the audit log (`auth.login_failed`). The lock per
-username theoretically allows an account to be locked out
-briefly – accepted deliberately (management UI on the internal network, short
-window, an admin can keep working via an API token).
+Max. 10 failed attempts per 15 min per client IP **and** per username and
+client IP (sliding window, in memory), then `429` with `Retry-After`.
+Failed attempts are recorded in the audit log (`auth.login_failed`). The
+per-username lock is keyed by username *and* source address (changed in
+D-076), so wrong passwords sent from elsewhere cannot lock out a user.
 
 ## D-037 – TLS on by default (self-signed)
 
@@ -424,7 +423,8 @@ no inline script: theme detection lives in `/theme.js`. In addition,
 `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`,
 `Referrer-Policy: no-referrer`, COOP/CORP, `Cache-Control: no-store` for the
 API. `X-Forwarded-For` is not evaluated (D-008). `/metrics` is reachable without
-signing in (Prometheus scrape) – protected via the bind address.
+signing in (Prometheus scrape) – protected via the bind address, or with
+`http.metrics_auth: true` by an API token (D-076).
 
 ## D-039 – Web UI
 
@@ -1044,3 +1044,28 @@ needed.
   package is private, `docker pull` needs a login (`read:packages`); the
   owner can make the package public independently of the repository
   (INSTALL.md).
+
+## D-076 – Security audit fixes
+
+Findings of a code audit and how they are fixed:
+
+- **Login memory DoS:** every password check runs argon2id with 64 MiB.
+  At most 4 checks run at the same time (semaphore in `internal/auth`);
+  a login waits up to 5 s for a free slot and otherwise gets `503` with
+  `Retry-After`. Before, parallel logins (also for unknown users) could
+  exhaust the memory of the host and stop the DHCP service with it.
+- **Account lockout by third parties:** the per-username login limit is
+  keyed by username and client IP (D-036).
+- **Tokens and credentials:** API tokens can no longer list, create or
+  revoke tokens or change the password (`403`); that needs a web session.
+  A leaked read-only token can thus neither revoke the admin's tokens nor
+  take over the account.
+- **Password change revokes tokens:** changing the own password and a
+  password reset by an admin delete all API tokens of the user (audit
+  detail `tokens_revoked`). Disabling a user still keeps them (they stop
+  working while the user is disabled).
+- **`/metrics`:** new option `http.metrics_auth` (default `false` for
+  existing scrapes): when on, `/metrics` needs an API token of any role
+  (`bearer_token` in Prometheus) or a session. Recommended whenever the
+  listener is not limited to a management network (e.g. the container
+  default `0.0.0.0:8067`). `/healthz` and `/readyz` stay public.

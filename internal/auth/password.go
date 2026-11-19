@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -20,6 +21,27 @@ const (
 	saltLen      = 16
 )
 
+// maxConcurrentHashes bounds the argon2id computations running at the same
+// time. Each one needs argonMemory (64 MiB), so without a bound a burst of
+// parallel login requests could exhaust the memory of the host.
+const maxConcurrentHashes = 4
+
+// hashSlots is the semaphore for maxConcurrentHashes.
+var hashSlots = make(chan struct{}, maxConcurrentHashes)
+
+// ErrBusy is returned when no argon2id slot became free in time.
+var ErrBusy = errors.New("too many concurrent password checks, try again later")
+
+// acquireHashSlot waits for a free argon2id slot until ctx ends.
+func acquireHashSlot(ctx context.Context) (release func(), err error) {
+	select {
+	case hashSlots <- struct{}{}:
+		return func() { <-hashSlots }, nil
+	case <-ctx.Done():
+		return nil, ErrBusy
+	}
+}
+
 // MinPasswordLen is the minimum accepted password length.
 const MinPasswordLen = 10
 
@@ -30,7 +52,9 @@ func HashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
+	release, _ := acquireHashSlot(context.Background())
 	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	release()
 	b64 := base64.RawStdEncoding
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, argonMemory, argonTime, argonThreads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
@@ -42,6 +66,12 @@ var errBadHash = errors.New("invalid password hash")
 // parameters stored in the hash are used, so they can be raised later
 // without invalidating existing passwords.
 func VerifyPassword(encoded, password string) (bool, error) {
+	return VerifyPasswordContext(context.Background(), encoded, password)
+}
+
+// VerifyPasswordContext is VerifyPassword with a bound on the time spent
+// waiting for a free argon2id slot: it returns ErrBusy when ctx ends first.
+func VerifyPasswordContext(ctx context.Context, encoded, password string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, errBadHash
@@ -65,7 +95,12 @@ func VerifyPassword(encoded, password string) (bool, error) {
 	if err != nil || len(want) == 0 {
 		return false, errBadHash
 	}
+	release, err := acquireHashSlot(ctx)
+	if err != nil {
+		return false, err
+	}
 	got := argon2.IDKey([]byte(password), salt, t, mem, p, uint32(len(want)))
+	release()
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 

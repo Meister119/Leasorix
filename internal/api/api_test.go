@@ -39,6 +39,7 @@ type stack struct {
 	scopes6 *scope6.Store
 	leases6 *lease6.Manager
 	auth    *auth.Service
+	server  *Server
 }
 
 func newStack(t *testing.T) *stack { return newStackWith(t, nil) }
@@ -80,7 +81,7 @@ func newStackWith(t *testing.T, mod func(*Deps)) *stack {
 	s := NewServer("127.0.0.1:0", time.Second, deps)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(func() { srv.Close(); cancel(); <-done; _ = db.Close() })
-	return &stack{t: t, srv: srv, scopes: scopes, leases: leases, scopes6: scopes6, leases6: leases6, auth: authSvc}
+	return &stack{t: t, srv: srv, scopes: scopes, leases: leases, scopes6: scopes6, leases6: leases6, auth: authSvc, server: s}
 }
 
 // client is a browser-like client with cookie jar and CSRF token, or an

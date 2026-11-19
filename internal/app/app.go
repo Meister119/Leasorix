@@ -248,6 +248,7 @@ func (a *App) init(ctx context.Context) error {
 		TLS:              tlsCfg,
 		LoginMaxFailures: a.cfg.Auth.LoginMaxFailures,
 		LoginWindow:      a.cfg.Auth.LoginWindow,
+		MetricsAuth:      a.cfg.HTTP.MetricsAuth,
 	})
 	return nil
 }

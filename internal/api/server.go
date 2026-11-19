@@ -81,6 +81,9 @@ type Deps struct {
 	// Login rate limit.
 	LoginMaxFailures int
 	LoginWindow      time.Duration
+	// MetricsAuth requires an authenticated caller (API token or session,
+	// any role) for /metrics. Needs Auth.
+	MetricsAuth bool
 }
 
 // Server is the management HTTP server.
@@ -122,7 +125,11 @@ func (s *Server) routes() chi.Router {
 
 	r.Method(http.MethodGet, "/healthz", health.LivenessHandler())
 	r.Method(http.MethodGet, "/readyz", s.deps.Health.ReadinessHandler())
-	r.Method(http.MethodGet, "/metrics", s.deps.Metrics.Handler())
+	if s.deps.MetricsAuth && s.deps.Auth != nil {
+		r.With(s.authenticate, requirePrincipal).Method(http.MethodGet, "/metrics", s.deps.Metrics.Handler())
+	} else {
+		r.Method(http.MethodGet, "/metrics", s.deps.Metrics.Handler())
+	}
 
 	if s.deps.Auth != nil {
 		r.Route("/api/v1", func(api chi.Router) {
