@@ -2,8 +2,6 @@
 
 Two Leasorix servers on the same network share the scopes, replicate
 leases and configuration, and take over for each other when one fails.
-Background on the decisions: [DECISIONS.md](DECISIONS.md) D-043 to
-D-052.
 
 ## Modes
 
@@ -121,7 +119,7 @@ server.
 
 The DHCPv6 configuration (IPv6 scopes, exclusions, reservations, options)
 is replicated by the config leader just like the IPv4 configuration.
-DHCPv6 **bindings**, however, are not replicated (D-073):
+DHCPv6 **bindings**, however, are not replicated:
 
 - Clients are split by a hash of the DUID, addresses and delegated
   prefixes by a hash of the address – in the same ratio as with IPv4 (load
@@ -204,10 +202,10 @@ subsequent merge, and configuration replication.
 ## Limitations
 
 - Exactly two servers per partnership and one partnership per server
-  (all scopes); no Raft cluster (D-052).
+  (all scopes); no Raft cluster.
 - The clocks of both servers should be kept in sync via NTP (lease times
   and the ordering of changes are based on timestamps).
 - Admin deletions made during a network partition can reappear during
-  synchronization (D-048).
+  synchronization.
 - DHCPv6 bindings are not replicated; if a server fails, its DHCPv6
   clients change their address (see [DHCPv6](#dhcpv6)).

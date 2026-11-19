@@ -1,8 +1,7 @@
 # Admin guide
 
 Operating a Leasorix server. High availability has its own guide:
-[HA.md](HA.md), container operation [DOCKER.md](DOCKER.md). Decisions and
-background: [DECISIONS.md](DECISIONS.md).
+[HA.md](HA.md), container operation [DOCKER.md](DOCKER.md).
 
 ## 1. Startup and bootstrap configuration
 

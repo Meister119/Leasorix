@@ -201,7 +201,7 @@ func sameTables(a, b *testNode) bool {
 func TestPairConfigAndLeaseReplication(t *testing.T) {
 	ca, cb := haConfigs(t, config.HALoadBalance)
 	// Under load (race detector, parallel packages) synchronous updates can
-	// time out and leases are shortened to MCLT (D-068); a longer MCLT keeps
+	// time out and leases are shortened to MCLT; a longer MCLT keeps
 	// them active until the counts below.
 	ca.MCLT, cb.MCLT = time.Minute, time.Minute
 	a, b := startNode(t, ca, ""), startNode(t, cb, "")

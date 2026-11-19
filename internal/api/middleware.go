@@ -29,7 +29,7 @@ func principalFrom(ctx context.Context) *auth.Principal {
 }
 
 // clientIP returns the peer address. X-Forwarded-For is deliberately
-// ignored (see DECISIONS D-008).
+// ignored: it can be forged by any client.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

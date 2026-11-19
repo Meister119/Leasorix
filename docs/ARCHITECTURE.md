@@ -54,7 +54,7 @@ is canceled and all components shut down in an orderly fashion.
 
 ## Configuration
 
-Two levels (see DECISIONS D-003):
+Two levels:
 
 1. **Bootstrap** — YAML file + `LEASORIX_*` env: listeners, data directory,
    logging, interfaces, HA peers.
@@ -134,7 +134,7 @@ prevents parallel processes on the same database.
 
 ## High availability
 
-Details and operation: [HA.md](HA.md); decisions D-043 to D-052.
+Details and operation: [HA.md](HA.md).
 
 ```
   Server A (primary, config leader)            Server B (secondary)
@@ -167,7 +167,7 @@ Details and operation: [HA.md](HA.md); decisions D-043 to D-052.
 
 ## Deployment (containers)
 
-Details: [DOCKER.md](DOCKER.md); decisions D-060 to D-063.
+Details: [DOCKER.md](DOCKER.md).
 
 ```
  deploy/Dockerfile
@@ -191,7 +191,7 @@ Details: [DOCKER.md](DOCKER.md); decisions D-060 to D-063.
 
 ## DNS updates
 
-Details: [ADMIN.md](ADMIN.md#11-dns-updates); decisions D-064 to D-067.
+Details: [ADMIN.md](ADMIN.md#11-dns-updates).
 
 ```
  dhcp4.Handler (ACK) ── dnsupdate.Decide(scope.DNS, option 81, option 12, option 15)
@@ -212,7 +212,7 @@ Details: [ADMIN.md](ADMIN.md#11-dns-updates); decisions D-064 to D-067.
 
 ## DHCPv6
 
-Details: [ADMIN.md](ADMIN.md#12-dhcpv6); decisions D-069 to D-073.
+Details: [ADMIN.md](ADMIN.md#12-dhcpv6).
 
 ```
  UDP [::]:547 per interface (SO_BINDTODEVICE, ff02::1:2)
@@ -227,12 +227,11 @@ Details: [ADMIN.md](ADMIN.md#12-dhcpv6); decisions D-069 to D-073.
                                        └─ HA: CanAllocate6 (own share)
 ```
 
-- Separate from the IPv4 path (own tables and packages, D-070), but
+- Separate from the IPv4 path (own tables and packages), but
   following the same pattern: configuration in the snapshot, bindings in
   memory and persisted before the response, expiry goroutine, audit,
   metrics (`leasorix_dhcp6_*`).
 - Addresses are searched deterministically from DUID/IAID (scan up to
-  65,536, otherwise hash candidates), so that even a /64 works as a range
-  (D-071).
+  65,536, otherwise hash candidates), so that even a /64 works as a range.
 - HA: configuration is replicated, bindings are not; each server allocates
-  only from its own share (D-073).
+  only from its own share.

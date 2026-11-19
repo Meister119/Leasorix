@@ -13,8 +13,6 @@ external database.
   <img alt="Dashboard with utilization per scope and recent events" src="docs/images/dashboard.png">
 </picture>
 
-> Status: all phases of [PLAN.md](PLAN.md) are implemented (including the optional DHCPv6) – see [docs/PROGRESS.md](docs/PROGRESS.md).
-
 ## Features
 
 ### DHCPv4
@@ -237,5 +235,3 @@ leasorixd restore --config … backup.db                 # restore (service stop
 | [docs/HA.md](docs/HA.md) | Setting up and running high availability |
 | [docs/DOCKER.md](docs/DOCKER.md) | Docker, Compose, network notes |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Structure and data flows |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Decisions and their reasons |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Progress per phase |
