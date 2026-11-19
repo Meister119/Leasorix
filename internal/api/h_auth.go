@@ -75,13 +75,23 @@ func tooMany(w http.ResponseWriter, wait time.Duration) {
 	writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later", nil)
 }
 
+// busy answers 503 when all password check slots are in use.
+func busy(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "5")
+	writeError(w, http.StatusServiceUnavailable, "server busy, try again later", nil)
+}
+
 func (h *handlers) Login(w http.ResponseWriter, r *http.Request) {
 	var in gen.LoginRequest
 	if !decode(w, r, &in) {
 		return
 	}
 	ip := clientIP(r)
-	userKey := "user:" + strings.ToLower(strings.TrimSpace(in.Username))
+	// The per-user lockout is keyed by user and source address: a third
+	// party sending wrong passwords from elsewhere must not be able to lock
+	// a legitimate user (e.g. the only admin) out. Guessing from many
+	// addresses is still bounded by the per-address limit of each of them.
+	userKey := "user:" + strings.ToLower(strings.TrimSpace(in.Username)) + "|ip:" + ip
 	if blocked, wait := h.s.ipLimiter.Blocked("ip:" + ip); blocked {
 		tooMany(w, wait)
 		return
@@ -97,6 +107,10 @@ func (h *handlers) Login(w http.ResponseWriter, r *http.Request) {
 			h.s.userLimiter.Fail(userKey)
 			h.s.deps.Auth.RecordLoginFailure(r.Context(), in.Username, "invalid credentials")
 			writeError(w, http.StatusUnauthorized, "invalid username or password", nil)
+			return
+		}
+		if errors.Is(err, auth.ErrBusy) {
+			busy(w)
 			return
 		}
 		h.fail(w, r, err)
@@ -146,6 +160,10 @@ func (h *handlers) ChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	p := principalFrom(r.Context())
 	if err := h.s.deps.Auth.ChangePassword(r.Context(), p.Session, p.User.ID, in.CurrentPassword, in.NewPassword); err != nil {
+		if errors.Is(err, auth.ErrBusy) {
+			busy(w)
+			return
+		}
 		h.fail(w, r, err)
 		return
 	}

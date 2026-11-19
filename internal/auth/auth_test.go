@@ -317,3 +317,23 @@ func TestRoles(t *testing.T) {
 		t.Fatal("role ordering")
 	}
 }
+
+func TestHashSlotsBoundConcurrency(t *testing.T) {
+	// Occupy all slots: a password check must give up with ErrBusy once its
+	// context ends instead of starting another 64 MiB argon2id run.
+	for i := 0; i < maxConcurrentHashes; i++ {
+		hashSlots <- struct{}{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := VerifyPasswordContext(ctx, dummyHash, "whatever-password")
+	for i := 0; i < maxConcurrentHashes; i++ {
+		<-hashSlots
+	}
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("err = %v, want ErrBusy", err)
+	}
+	if ok, err := VerifyPassword(dummyHash, "leasorix-dummy-password"); err != nil || !ok {
+		t.Fatalf("verify after release: %v %v", ok, err)
+	}
+}

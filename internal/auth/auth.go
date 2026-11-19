@@ -386,6 +386,11 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, up UserUpdate) (User
 				return err
 			}
 			details["password_changed"] = true
+			n, err := revokeTokensTx(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			details["tokens_revoked"] = n
 		}
 		if up.Password != nil || u.Disabled || u.Role != old.Role {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
@@ -427,8 +432,15 @@ func (s *Service) DeleteUser(ctx context.Context, id int64) error {
 
 // ---- login / sessions ----------------------------------------------------------
 
-// Authenticate verifies username and password of an enabled user.
+// hashWait bounds how long a login waits for a free argon2id slot before
+// it is rejected with ErrBusy.
+const hashWait = 5 * time.Second
+
+// Authenticate verifies username and password of an enabled user. It
+// returns ErrBusy when the password checks are saturated.
 func (s *Service) Authenticate(ctx context.Context, username, password string) (User, error) {
+	ctx, cancel := context.WithTimeout(ctx, hashWait)
+	defer cancel()
 	var hash string
 	var u User
 	var role string
@@ -436,13 +448,15 @@ func (s *Service) Authenticate(ctx context.Context, username, password string) (
 	err := s.db.R.QueryRowContext(ctx, `SELECT id, username, role, disabled, created_at, updated_at, password_hash FROM users WHERE username = ?`,
 		strings.TrimSpace(username)).Scan(&u.ID, &u.Username, &role, &u.Disabled, &created, &updated, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, _ = VerifyPassword(dummyHash, password) // equalise timing
+		if _, err := VerifyPasswordContext(ctx, dummyHash, password); errors.Is(err, ErrBusy) { // equalise timing
+			return User{}, err
+		}
 		return User{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, err
 	}
-	ok, err := VerifyPassword(hash, password)
+	ok, err := VerifyPasswordContext(ctx, hash, password)
 	if err != nil {
 		return User{}, err
 	}
@@ -548,7 +562,9 @@ func (s *Service) ChangePassword(ctx context.Context, sess *Session, userID int6
 	if err := s.db.R.QueryRowContext(ctx, `SELECT username, password_hash FROM users WHERE id = ?`, userID).Scan(&username, &hash); err != nil {
 		return err
 	}
-	ok, err := VerifyPassword(hash, current)
+	vctx, cancel := context.WithTimeout(ctx, hashWait)
+	defer cancel()
+	ok, err := VerifyPasswordContext(vctx, hash, current)
 	if err != nil {
 		return err
 	}
@@ -573,11 +589,26 @@ func (s *Service) ChangePassword(ctx context.Context, sess *Session, userID int6
 		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND id_hash <> ?`, userID, keep); err != nil {
 			return err
 		}
-		return audit.Insert(ctx, tx, audit.New(ctx, "user.password", "user", fmt.Sprint(userID), nil))
+		n, err := revokeTokensTx(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		return audit.Insert(ctx, tx, audit.New(ctx, "user.password", "user", fmt.Sprint(userID), map[string]any{"tokens_revoked": n}))
 	})
 }
 
 // ---- API tokens ------------------------------------------------------------------
+
+// revokeTokensTx deletes all API tokens of a user. A password change is the
+// usual reaction to a suspected compromise, so tokens issued under the old
+// password must not survive it.
+func revokeTokensTx(ctx context.Context, tx *sql.Tx, userID int64) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id = ?`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
 
 // TokenPrefix marks leasorix API tokens.
 const TokenPrefix = "lxt_"

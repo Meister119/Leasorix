@@ -10,6 +10,8 @@ http:
   # Inside the container network namespace. With network_mode: host set
   # LEASORIX_HTTP_LISTEN to a management address (or 127.0.0.1:8067).
   listen: 0.0.0.0:8067
+  # /metrics is public unless LEASORIX_HTTP_METRICS_AUTH=true (then it
+  # needs an API token) – recommended when the UI is reachable in the LAN.
   tls:
     mode: self-signed
 dhcp4:

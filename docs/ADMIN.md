@@ -21,6 +21,7 @@ Every key can be overridden with an environment variable:
 | `data_dir` | `/var/lib/leasorix` | Database, certificates, lock file |
 | `http.listen` | `127.0.0.1:8067` | Management (UI, API, `/metrics`) – management network only |
 | `http.tls.mode` | `self-signed` | `self-signed`, `files` (your own certificate) or `off` |
+| `http.metrics_auth` | `false` | `true`: `/metrics` requires an API token (any role) – recommended if the listener is reachable beyond a management network |
 | `dhcp4.interfaces` | – | Interfaces on which DHCP is served (empty = off) |
 | `dhcp4.conflict_detection` | on, 500 ms | Ping before every new address |
 | `dhcp4.bootp_lease_time` | `720h` | Lease duration for BOOTP clients |
@@ -95,6 +96,9 @@ answers the ping before assignment, it is blocked for `decline_time`
 API tokens (`lxt_…`) are created under *My account & API tokens*; their
 role is at most that of the user. They are sent as
 `Authorization: Bearer lxt_…` and are required for `leasorixctl`.
+Tokens cannot manage tokens or change passwords – that needs a signed-in
+web session. Changing a password (your own, or a reset by an admin)
+revokes all API tokens of that user; create new ones afterwards.
 
 ## 6. Audit log and monitoring
 
@@ -102,6 +106,8 @@ Every change (UI, API, DHCP events, HA) is recorded in the audit log with
 the actor and the before/after values. Prometheus metrics at `/metrics`
 (`leasorix_dhcp4_*`, `leasorix_lease_*`, `leasorix_scope_*`, `leasorix_leases`,
 `leasorix_ha_*`, `leasorix_dns_*`), health at `/healthz` and `/readyz`.
+With `http.metrics_auth: true` Prometheus needs a read-only API token
+(`authorization: { credentials: lxt_… }` in the scrape config).
 
 ## 7. Export and import the configuration
 

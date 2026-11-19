@@ -136,6 +136,28 @@ func requiredRole(method, path string) (role auth.Role, public bool) {
 	return auth.RoleOperator, false
 }
 
+// requirePrincipal rejects requests without an authenticated caller (used
+// for /metrics with http.metrics_auth; any role may read metrics).
+func requirePrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if principalFrom(r.Context()) == nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="leasorix"`)
+			writeError(w, http.StatusUnauthorized, "authentication required", nil)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sessionOnly reports whether a request manages credentials and therefore
+// needs a web session: an API token may neither list, create or revoke
+// tokens nor change the password, so a leaked (possibly read-only) token
+// cannot be used to take over or lock out the account.
+func sessionOnly(path string) bool {
+	p := strings.TrimPrefix(path, apiPrefix)
+	return p == "/tokens" || strings.HasPrefix(p, "/tokens/") || p == "/auth/password"
+}
+
 func (s *Server) authorize(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
@@ -155,6 +177,10 @@ func (s *Server) authorize(next http.Handler) http.Handler {
 		p := principalFrom(r.Context())
 		if p == nil {
 			writeError(w, http.StatusUnauthorized, "authentication required", nil)
+			return
+		}
+		if p.Session == nil && sessionOnly(r.URL.Path) {
+			writeError(w, http.StatusForbidden, "managing API tokens and passwords requires signing in, not an API token", nil)
 			return
 		}
 		if mutating && p.Session != nil {
