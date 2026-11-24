@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Leasorix! For security problems please use
+        [private reporting](https://github.com/meister119/leasorix/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`leasorixd version` or Settings → System in the web UI"
+      placeholder: v1.0.0 (abc1234)
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker (host networking)
+        - Docker (macvlan)
+        - Binary / systemd
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: features
+    attributes:
+      label: Features involved
+      options:
+        - label: High availability (two servers)
+        - label: DHCPv6
+        - label: DHCP relay
+        - label: Dynamic DNS updates
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines (`docker compose logs leasorix` or `journalctl -u leasorixd`). Remove anything you do not want to publish (IP/MAC addresses, host names).
+      render: text
+  - type: textarea
+    id: client
+    attributes:
+      label: Client / network details
+      description: Client OS, relay or switch, anything special about the network

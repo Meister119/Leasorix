@@ -58,7 +58,7 @@ LABEL org.opencontainers.image.title="Leasorix" \
       org.opencontainers.image.description="Self-hosted DHCP server with web UI and high availability" \
       org.opencontainers.image.source="https://github.com/meister119/leasorix" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.licenses="NOASSERTION"
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 COPY --from=build /out/usr/local/bin/ /usr/local/bin/
 COPY --from=build --chown=65532:65532 /out/data /data
 COPY --from=build --chown=65532:65532 /out/certs /certs

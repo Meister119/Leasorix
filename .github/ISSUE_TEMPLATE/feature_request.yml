@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea or a missing feature
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to achieve?
+      description: Describe the use case, not only the solution. How do you solve it today (e.g. on Windows DHCP, ISC dhcpd, Kea)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

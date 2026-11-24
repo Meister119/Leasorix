@@ -59,6 +59,8 @@ const m = messages({
     define: "Define",
     system: "System",
     version: "Version",
+    license: "License",
+    sourceCode: "Source code",
     started: "Started",
     dhcp4Interfaces: "DHCPv4 interfaces",
     dhcp4None: "none (DHCP disabled)",
@@ -118,6 +120,8 @@ const m = messages({
     define: "Definieren",
     system: "System",
     version: "Version",
+    license: "Lizenz",
+    sourceCode: "Quellcode",
     started: "Gestartet",
     dhcp4Interfaces: "DHCPv4-Interfaces",
     dhcp4None: "keine (DHCP deaktiviert)",
@@ -468,6 +472,13 @@ function SystemInfo() {
           </dd>
           <dt className="text-slate-500">Go</dt>
           <dd>{i.go_version}</dd>
+          <dt className="text-slate-500">{m("license")}</dt>
+          <dd>
+            AGPL-3.0 –{" "}
+            <a className="underline" href="https://github.com/meister119/leasorix" target="_blank" rel="noopener noreferrer">
+              {m("sourceCode")}
+            </a>
+          </dd>
           <dt className="text-slate-500">{m("started")}</dt>
           <dd>{formatDateTime(i.started_at)}</dd>
           <dt className="text-slate-500">{m("dhcp4Interfaces")}</dt>

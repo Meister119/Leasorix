@@ -1,12 +1,18 @@
 # Leasorix
 
 [![ci](https://github.com/meister119/leasorix/actions/workflows/ci.yml/badge.svg)](https://github.com/meister119/leasorix/actions/workflows/ci.yml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 A self-hosted DHCP server with the feature set of a Windows DHCP server:
 scopes, reservations, options, policies and failover – plus a modern web UI,
 a REST API, dynamic DNS updates, DHCPv6 and a ready-to-use Docker/Compose
 deployment. One single binary with the UI embedded and SQLite inside, no
 external database.
+
+> **Status: beta – testers wanted.** All features are implemented and
+> covered by automated tests, but Leasorix has seen little production use
+> so far. Please try it in a lab or test network first, and
+> [tell us how it went](https://github.com/meister119/leasorix/issues/new/choose).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
@@ -235,3 +241,16 @@ leasorixd restore --config … backup.db                 # restore (service stop
 | [docs/HA.md](docs/HA.md) | Setting up and running high availability |
 | [docs/DOCKER.md](docs/DOCKER.md) | Docker, Compose, network notes |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Structure and data flows |
+
+## Contributing
+
+Bug reports, test results and pull requests are welcome – see
+[CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems
+privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Leasorix is free software under the [GNU Affero General Public License v3.0](LICENSE).
+You may use, modify and redistribute it; if you offer a modified version
+to others over a network, you must make its source code available to them
+as well.
