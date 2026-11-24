@@ -3,11 +3,14 @@
 [![ci](https://github.com/meister119/leasorix/actions/workflows/ci.yml/badge.svg)](https://github.com/meister119/leasorix/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
-A self-hosted DHCP server with the feature set of a Windows DHCP server:
-scopes, reservations, options, policies and failover – plus a modern web UI,
-a REST API, dynamic DNS updates, DHCPv6 and a ready-to-use Docker/Compose
-deployment. One single binary with the UI embedded and SQLite inside, no
-external database.
+**The features of a Windows DHCP server – without Windows.**
+
+Leasorix is a self-hosted DHCP server for Linux and Docker: scopes,
+reservations, options, policies and failover like on Windows Server, with a
+modern web UI, a REST API, dynamic DNS updates and DHCPv6. One single binary
+with the UI embedded and SQLite inside – no external database, no config
+files to hand-edit. Moving from Windows? Import your existing setup from a
+`netsh` export.
 
 > **Status: beta – testers wanted.** All features are implemented and
 > covered by automated tests, but Leasorix has seen little production use
@@ -18,6 +21,56 @@ external database.
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
   <img alt="Dashboard with utilization per scope and recent events" src="docs/images/dashboard.png">
 </picture>
+
+## Quick start
+
+Every release is published ready to run – nothing to build on the server:
+a multi-arch **Docker image** (`ghcr.io/meister119/leasorix`, linux/amd64
+and arm64) and **binaries** with a systemd unit on the
+[releases page](https://github.com/meister119/leasorix/releases).
+
+DHCP needs layer 2 access to the LAN, so the container runs in the host
+network (or with its own address via macvlan – a bridge network without a
+relay does not work):
+
+```sh
+mkdir leasorix && cd leasorix
+curl -fsSLO https://github.com/meister119/leasorix/releases/latest/download/docker-compose.yml
+cat > .env <<'EOF'
+LEASORIX_DHCP4_INTERFACES=eth0           # interface(s) to serve DHCP on
+LEASORIX_HTTP_LISTEN=192.168.1.10:8067   # management address of this host
+EOF
+docker compose up -d                               # pulls the image, no build
+docker compose logs leasorix | grep setup_token    # one-time setup token
+```
+
+Open `https://192.168.1.10:8067/`, create the first administrator with the
+token, set up a scope – done. Or just the image:
+`docker pull ghcr.io/meister119/leasorix:latest`.
+
+| Compose file (release asset, also in `deploy/`) | Variant |
+|---|---|
+| `docker-compose.yml` | one server, host network |
+| `docker-compose.macvlan.yml` | one server with its own IP in the LAN |
+| `docker-compose.ha.yml` | HA pair (two containers, mTLS certificates created automatically) |
+
+Image tags, binaries with systemd, updates and access to a private
+repository: [docs/INSTALL.md](docs/INSTALL.md). Permissions, macvlan
+specifics and troubleshooting: [docs/DOCKER.md](docs/DOCKER.md). To use a
+locally built image instead: `make docker` and
+`LEASORIX_IMAGE=leasorix:latest docker compose -f deploy/docker-compose.yml up -d`.
+
+## Why Leasorix?
+
+| | Leasorix | Windows DHCP | ISC dhcpd | Kea |
+|---|---|---|---|---|
+| Runs on Linux / in Docker | ✅ | ❌ | ✅ | ✅ |
+| Web UI for configuration | ✅ built in | MMC (Windows only) | ❌ | via Stork (separate) |
+| Failover with two servers | ✅ | ✅ | ✅ | ✅ (HA hook) |
+| Windows-style policies and classes | ✅ | ✅ | classes | client classes |
+| Import from Windows DHCP (`netsh`) | ✅ | – | ❌ | ❌ |
+| REST API, audit log, roles | ✅ | PowerShell | ❌ | REST API |
+| Actively maintained | ✅ | ✅ | ❌ end of life since 2022 | ✅ |
 
 ## Features
 
@@ -120,44 +173,6 @@ flowchart LR
 ```
 
 More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Quick start
-
-Every release is published ready to run – nothing to build on the server:
-a multi-arch **Docker image** (`ghcr.io/meister119/leasorix`, linux/amd64
-and arm64) and **binaries** with a systemd unit on the
-[releases page](https://github.com/meister119/leasorix/releases).
-
-DHCP needs layer 2 access to the LAN, so the container runs in the host
-network (or with its own address via macvlan – a bridge network without a
-relay does not work):
-
-```sh
-mkdir leasorix && cd leasorix
-gh release download -R meister119/leasorix -p docker-compose.yml   # or from the releases page
-cat > .env <<'EOF'
-LEASORIX_DHCP4_INTERFACES=eth0
-LEASORIX_HTTP_LISTEN=192.168.1.10:8067
-EOF
-docker compose up -d                               # pulls the image, no build
-docker compose logs leasorix | grep setup_token    # one-time setup token
-```
-
-Open `https://192.168.1.10:8067/`, create the first administrator with the
-token, set up a scope – done. Or just the image:
-`docker pull ghcr.io/meister119/leasorix:latest`.
-
-| Compose file (release asset, also in `deploy/`) | Variant |
-|---|---|
-| `docker-compose.yml` | one server, host network |
-| `docker-compose.macvlan.yml` | one server with its own IP in the LAN |
-| `docker-compose.ha.yml` | HA pair (two containers, mTLS certificates created automatically) |
-
-Image tags, binaries with systemd, updates and access to a private
-repository: [docs/INSTALL.md](docs/INSTALL.md). Permissions, macvlan
-specifics and troubleshooting: [docs/DOCKER.md](docs/DOCKER.md). To use a
-locally built image instead: `make docker` and
-`LEASORIX_IMAGE=leasorix:latest docker compose -f deploy/docker-compose.yml up -d`.
 
 ## Building
 
